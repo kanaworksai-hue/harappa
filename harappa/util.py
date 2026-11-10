@@ -5,12 +5,25 @@ import bpy
 
 TAG = "harappa"
 VERSION_KEY = "hrp_ver"
+BUILDING = 0                    # version tag while a group or material is being built
 
 
 def sock(sockets, name, kind=None):
-    """Enabled socket by name (and optional type); falls back to any match. Ints index directly."""
-    if isinstance(name, int):
-        return sockets[name]
+    """Socket by name (and optional type), never by position.
+
+    Blender adds sockets to existing nodes between releases (5.3 put a 'LightIndex' input in front of Vector
+    Transform's 'Vector'), so a position that is right today links to something else tomorrow - silently.
+    name is the socket's name or identifier; ("Value", 1) is the second socket called "Value" (Math, Vector
+    Math and Mix Shader name several inputs the same). Enabled sockets win, e.g. the Mix node's 'A' of the
+    current data type."""
+    if isinstance(name, tuple):
+        nm, nth = name
+        same = [s for s in sockets if s.name == nm and (kind is None or s.type == kind)]
+        if nth >= len(same):
+            raise KeyError(f"{nm} #{nth} ({kind}) not in {[x.name for x in sockets]}")
+        return same[nth]
+    if not isinstance(name, str):
+        raise TypeError(f"sockets are looked up by name, not by position ({name!r})")
     for s in sockets:
         if s.name == name and s.enabled and (kind is None or s.type == kind):
             return s
@@ -18,6 +31,15 @@ def sock(sockets, name, kind=None):
         if (s.name == name or s.identifier == name) and (kind is None or s.type == kind):
             return s
     raise KeyError(f"{name} ({kind}) not in {[x.name for x in sockets]}")
+
+
+def only(sockets):
+    """The one enabled socket of a node that has exactly one (a Math node's result, a Value node's value).
+    Raises as soon as a Blender version gives the node a second one, instead of picking whichever comes first."""
+    live = [s for s in sockets if s.enabled]
+    if len(live) != 1:
+        raise KeyError(f"expected one enabled socket, found {[x.name for x in live]}")
+    return live[0]
 
 
 class G:
@@ -39,9 +61,12 @@ class G:
         return node
 
     def out(self, node, name=0, kind=None):
+        """Output by name; without a name (or 0) the node's only output."""
+        if name is None or (isinstance(name, int) and name == 0):
+            return only(node.outputs)
         return sock(node.outputs, name, kind)
 
-    def inp(self, node, name=0, kind=None):
+    def inp(self, node, name, kind=None):
         return sock(node.inputs, name, kind)
 
     def link(self, a, aname, b, bname, akind=None, bkind=None):
@@ -61,10 +86,11 @@ class G:
         for i, v in enumerate((a, b, c)):
             if v is None:
                 continue
+            s = sock(node.inputs, ("Value", i))
             if isinstance(v, bpy.types.NodeSocket):
-                self.links.new(v, node.inputs[i])
+                self.links.new(v, s)
             else:
-                node.inputs[i].default_value = v
+                s.default_value = v
         return node
 
     def vmath(self, op, x, y, a=None, b=None, label=None, scale=None):
@@ -72,12 +98,13 @@ class G:
         for i, v in enumerate((a, b)):
             if v is None:
                 continue
+            s = sock(node.inputs, ("Vector", i))
             if isinstance(v, bpy.types.NodeSocket):
-                self.links.new(v, node.inputs[i])
+                self.links.new(v, s)
             else:
-                node.inputs[i].default_value = v
+                s.default_value = v
         if scale is not None:
-            s = node.inputs["Scale"]
+            s = sock(node.inputs, "Scale")
             if isinstance(scale, bpy.types.NodeSocket):
                 self.links.new(scale, s)
             else:
@@ -173,7 +200,10 @@ def to_hex(lin):
 
 
 def fresh_group(name, kind, version):
-    """Return (group, rebuilt?) — rebuilds the node group when its version tag differs."""
+    """Return (group, rebuilt?) - the node group is emptied for a rebuild when its version tag differs.
+
+    The caller stamps the version with stamp() after it has built the group, so a build that stopped half-way
+    (an error on a new Blender) is not mistaken for a finished one and is rebuilt next time."""
     ng = bpy.data.node_groups.get(name)
     if ng is not None and ng.get(VERSION_KEY) == version:
         return ng, False
@@ -182,8 +212,13 @@ def fresh_group(name, kind, version):
     else:
         ng.nodes.clear()
         ng.interface.clear()
-    ng[VERSION_KEY] = version
+    ng[VERSION_KEY] = BUILDING
     return ng, True
+
+
+def stamp(idblock, version):
+    """Mark a node group / material / world as completely built at this version."""
+    idblock[VERSION_KEY] = version
 
 
 def mod_input(mod, name, value=None):

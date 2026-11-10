@@ -1,5 +1,8 @@
 """Headless test: Harappa on scenes it was never tuned for.
-blender -b --factory-startup --python tests/test_generic.py -- <out_dir>"""
+blender -b --factory-startup --python tests/test_generic.py -- <out_dir>
+
+Node wiring and the six season pictures are compared with tests/baseline/. After changing nodes or the look on
+purpose, record new ones with HARAPPA_UPDATE_BASELINE=1 (on the oldest supported LTS) and check the pictures."""
 import math
 import os
 import re
@@ -11,11 +14,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = sys.argv[sys.argv.index("--") + 1] if "--" in sys.argv else os.path.join(HERE, "out")
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, os.path.join(HERE, ".."))
+sys.path.insert(0, HERE)
+UPDATE = os.environ.get("HARAPPA_UPDATE_BASELINE") == "1"
 import numpy as np  # noqa: E402
 
 import harappa as H  # noqa: E402
-from harappa import build, i18n, presets, scatter, shading  # noqa: E402
+from harappa import build, i18n, presets, scatter, shading, util  # noqa: E402
 from harappa.util import mod_input  # noqa: E402
+import seasons  # noqa: E402
+import wiring  # noqa: E402
 
 H.register()
 sc = bpy.context.scene
@@ -195,6 +202,26 @@ s.variation = 0
 check(all(all(abs(a - b) < 1e-5 for a, b in zip(getattr(s, k), base[k])) for k, _ in H.COLOUR_PROPS),
       "variation 0 restores the base colours")
 
+# --- 3b. node wiring: every link joins the sockets it was written for, on this Blender version ------------
+shading.all_materials()
+for build_group in (scatter.wind_group, scatter.grass_group, scatter.flowers_group, scatter.foliage_group):
+    build_group()
+bad = wiring.problems()
+check(not bad, f"every node link is valid and joins matching sockets ({len(bad)} bad: {bad[:4]})")
+ok, msg = wiring.compare(update=UPDATE)
+check(ok, f"node links, settings and input values are the recorded ones ({msg})")
+hits = wiring.positional_access(os.path.join(HERE, ".."))
+check(not hits, f"no socket is picked by position in the source ({hits})")
+probe = bpy.data.materials[shading.MAT_GROUND].node_tree.nodes.new("ShaderNodeVectorTransform")
+try:
+    util.sock(probe.inputs, 0)
+    refused = False
+except TypeError:
+    refused = True
+check(refused and util.sock(probe.inputs, "Vector").type == "VECTOR" and util.only(probe.outputs).type == "VECTOR",
+      "socket helpers find 'Vector' by name and refuse a position")
+bpy.data.materials[shading.MAT_GROUND].node_tree.nodes.remove(probe)
+
 # --- 4. wind moves (frame 1 vs 30), a static shot is stable --------------------------------------------
 sc.frame_end = 60
 a = render("wind_f1", 1)
@@ -268,4 +295,37 @@ check(floor.modifiers.get(build.GRASS_MOD) is None and cube.modifiers.get("Harap
 check(floor.data.materials[0] == mat and floor.visible_shadow, "revert restored material and shadows")
 H.unregister()
 check(not hasattr(bpy.types.Scene, "harappa"), "unregister clean")
+
+# --- 7. the look: the default landscape in all six seasons against the recorded pictures -------------------
+bpy.ops.wm.read_factory_settings()
+H.register()
+sc = seasons.run(OUT, list(presets.SEASONS), check, update=UPDATE)
+clouds_ob = bpy.data.objects.get("Anime Clouds")
+check(clouds_ob is not None and len(clouds_ob.data.vertices) > 0, "the default landscape has clouds")
+hills = bpy.data.objects["Far Hills"]
+check(min(p.normal.z for p in hills.data.polygons) > 0.0, "far hills face up (their fringe stands on the face normal)")
+
+# --- 8. a scene made with an older version: the first action brings every material up to date -------------
+# The materials share HRP Palette / HRP Cel / HRP Clump Normal. Rebuilding one of those for a new version drops
+# the links of every material that is not rebuilt with it, and the scene turns grey without any error.
+s = sc.harappa
+s.season = "AUTUMN"
+autumn_lit = shading.palette_get("grass_lit")
+old = [ng for ng in bpy.data.node_groups if ng.name in (shading.PALETTE, shading.CLUMP, shading.CEL)]
+old += [m for m in bpy.data.materials if m.name.startswith("HRP") and m.get(util.VERSION_KEY) is not None]
+for idb in old:
+    idb[util.VERSION_KEY] = shading.SHADER_VER - 1
+s.clump_size = s.clump_size                                # any one palette write, e.g. moving a slider
+check(all(idb.get(util.VERSION_KEY) == shading.SHADER_VER for idb in old) and len(old) >= 10,
+      f"an older scene: one action rebuilds all {len(old)} shader groups and materials")
+ok, msg = wiring.compare()
+check(ok and not wiring.problems(), f"an older scene: no link is lost in the rebuild ({msg})")
+check(all(abs(a - b) < 1e-5 for a, b in zip(shading.palette_get("grass_lit"), autumn_lit)),
+      "an older scene keeps its colours")
+pal = bpy.data.node_groups[shading.PALETTE]
+check(pal.animation_data is not None and len(pal.animation_data.drivers) == 1, "an older scene keeps the sun driver")
+if not UPDATE:
+    ok, msg = seasons.compare(sc, "AUTUMN", os.path.join(OUT, "upgrade_autumn.png"))
+    check(ok, f"an older scene renders like a new one ({msg})")
+H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")

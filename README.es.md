@@ -126,7 +126,7 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 
 ### Instálalo tú mismo
 
-**Necesitas:** Blender 5.0 o posterior (probado en Blender 5.2), con EEVEE como motor de render.
+**Necesitas:** Blender 5.0 o posterior (probado en Blender 5.2 LTS y 5.3), con EEVEE como motor de render.
 
 1. Descarga `harappa-x.y.z.zip` desde [Releases](https://github.com/kanaworksai-hue/harappa/releases/latest) (no lo descomprimas)
 2. Blender → Edit → Preferences → Get Extensions → ⌄ arriba a la derecha → **Install from Disk…** (instalar desde disco) → elige el zip

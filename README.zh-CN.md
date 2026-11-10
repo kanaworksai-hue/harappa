@@ -126,7 +126,7 @@ flowchart LR
 
 ### 自己安装
 
-**需要：** Blender 5.0 及以上（已在 Blender 5.2 上测试），渲染引擎为 EEVEE。
+**需要：** Blender 5.0 及以上（已在 Blender 5.2 LTS 和 5.3 上测试），渲染引擎为 EEVEE。
 
 1. 从 [Releases](https://github.com/kanaworksai-hue/harappa/releases/latest) 下载 `harappa-x.y.z.zip`（不要解压）
 2. Blender → 编辑 → 偏好设置 → 获取扩展 → 右上角 ⌄ → **从磁盘安装…** → 选择 zip

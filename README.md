@@ -126,7 +126,7 @@ Claude Code や Codex のような、パソコンを操作できる AI エージ
 
 ### 自分でインストールする
 
-**必要なもの：** Blender 5.0 以降（Blender 5.2 で動作確認済み）、レンダーエンジンは EEVEE。
+**必要なもの：** Blender 5.0 以降（Blender 5.2 LTS と 5.3 で動作確認済み）、レンダーエンジンは EEVEE。
 
 1. [Releases](https://github.com/kanaworksai-hue/harappa/releases/latest) から `harappa-x.y.z.zip` をダウンロード（解凍しないでください）
 2. Blender → 編集 → プリファレンス → エクステンションを入手 → 右上の ⌄ → **ディスクからインストール…** → zip を選択

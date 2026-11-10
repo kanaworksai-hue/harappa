@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "harappa"
-version = "1.0.0"
+version = "1.0.1"
 name = "Harappa"
 tagline = "One-click anime grass, trees and flowers (EEVEE)"
 maintainer = "Tokyo AI Visuals LLC"

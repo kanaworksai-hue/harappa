@@ -126,7 +126,7 @@ flowchart LR
 
 ### 직접 설치하기
 
-**필요한 것:** Blender 5.0 이상(Blender 5.2에서 동작 확인), 렌더 엔진은 EEVEE.
+**필요한 것:** Blender 5.0 이상(Blender 5.2 LTS와 5.3에서 동작 확인), 렌더 엔진은 EEVEE.
 
 1. [Releases](https://github.com/kanaworksai-hue/harappa/releases/latest)에서 `harappa-x.y.z.zip`을 다운로드합니다(압축은 풀지 마세요)
 2. Blender → 편집(Edit) → 환경 설정(Preferences) → 확장 기능 받기(Get Extensions) → 오른쪽 위의 ⌄ → **디스크에서 설치…(Install from Disk…)** → zip 파일 선택

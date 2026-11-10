@@ -7,10 +7,10 @@ import bpy
 from mathutils import Euler, Vector
 
 from . import shading
-from .util import G, srgb
+from .util import BUILDING, G, only, srgb, stamp
 
 WORLD = "HRP Sky"
-SUN = "HRP Sun"
+SUN = shading.SUN
 SKY_VER = 8
 
 
@@ -49,17 +49,17 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
     if world is None or world.get("hrp_ver") != SKY_VER:
         if world is None:
             world = bpy.data.worlds.new(WORLD)
-        world["hrp_ver"] = SKY_VER
+        world["hrp_ver"] = BUILDING
         world.use_nodes = True
         nt = world.node_tree
         nt.nodes.clear()
         g = G(nt)
         tc = g.n("ShaderNodeTexCoord", -900, 0)
         sep = g.n("ShaderNodeSeparateXYZ", -700, 0)
-        g.link(tc, "Generated", sep, 0)
+        g.link(tc, "Generated", sep, "Vector")
         mr = g.maprange(-600, 0, g.out(sep, "Z"), -0.03, 0.5, 0.0, 1.0)
         ramp = g.n("ShaderNodeValToRGB", -400, 0, label="sky ramp")
-        g.link(mr, "Result", ramp, 0)
+        g.link(mr, "Result", ramp, "Fac")
         cr = ramp.color_ramp
         cr.interpolation = "EASE"
         cr.elements[0].position = 0.0
@@ -72,36 +72,37 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         g.link(nd, 0, vs, "Vector")
         st = g.maprange(-300, -300, g.out(vs, "Distance"), 0.12, 0.05)
         sc_ = g.n("ShaderNodeSeparateColor", -300, -450)
-        g.link(vs, "Color", sc_, 0)
-        keep = g.math("GREATER_THAN", -150, -450, g.out(sc_, 0), 0.55)
+        g.link(vs, "Color", sc_, "Color")
+        keep = g.math("GREATER_THAN", -150, -450, g.out(sc_, "Red"), 0.55)
         up = g.maprange(-150, -600, g.out(sep, "Z"), 0.04, 0.3)
-        s1 = g.math("MULTIPLY", 0, -300, g.out(st, "Result"), g.out(keep, 0))
-        s2 = g.math("MULTIPLY", 150, -350, g.out(s1, 0), g.out(up, "Result"))
+        s1 = g.math("MULTIPLY", 0, -300, g.out(st, "Result"), g.out(keep))
+        s2 = g.math("MULTIPLY", 150, -350, g.out(s1), g.out(up, "Result"))
         sv = g.n("ShaderNodeValue", 0, -500, label="sky stars")
-        s3 = g.math("MULTIPLY", 300, -350, g.out(s2, 0), g.out(sv, 0))
+        s3 = g.math("MULTIPLY", 300, -350, g.out(s2), g.out(sv))
         md = g.n("ShaderNodeCombineXYZ", -500, -750, label="moon dir")
-        dt = g.vmath("DOT_PRODUCT", -300, -700, g.out(nd, 0), g.out(md, 0))
+        dt = g.vmath("DOT_PRODUCT", -300, -700, g.out(nd), g.out(md))
         disc = g.maprange(-150, -700, g.out(dt, "Value"), 0.99935, 0.99955)
         glow = g.maprange(-150, -850, g.out(dt, "Value"), 0.982, 1.0)
         gl2 = g.math("POWER", 0, -850, g.out(glow, "Result"), 3.0)
         mv = g.n("ShaderNodeValue", 0, -1000, label="sky moon")
-        md2 = g.math("MULTIPLY", 300, -800, g.out(disc, "Result"), g.out(mv, 0))
-        lights = g.math("ADD", 450, -500, g.out(s3, 0), g.out(md2, 0))
-        hal = g.math("MULTIPLY", 300, -950, g.math("MULTIPLY", 150, -950, g.out(gl2, 0), 0.35).outputs[0],
-                     g.out(mv, 0))
-        sky0 = g.mix(-200, 450, "ADD", fac=g.out(hal, 0), a=g.out(ramp, "Color"), b=(0.35, 0.44, 0.66, 1.0))
-        sky = g.mix(-200, 300, "ADD", fac=g.out(lights, 0), a=g.mixout(sky0), b=(1.0, 0.97, 0.88, 1.0))
+        md2 = g.math("MULTIPLY", 300, -800, g.out(disc, "Result"), g.out(mv))
+        lights = g.math("ADD", 450, -500, g.out(s3), g.out(md2))
+        hal = g.math("MULTIPLY", 300, -950, g.out(g.math("MULTIPLY", 150, -950, g.out(gl2), 0.35)),
+                     g.out(mv))
+        sky0 = g.mix(-200, 450, "ADD", fac=g.out(hal), a=g.out(ramp, "Color"), b=(0.35, 0.44, 0.66, 1.0))
+        sky = g.mix(-200, 300, "ADD", fac=g.out(lights), a=g.mixout(sky0), b=(1.0, 0.97, 0.88, 1.0))
         bg = g.n("ShaderNodeBackground", -200, 100)
         g.links.new(g.mixout(sky), bg.inputs["Color"])
         amb = g.n("ShaderNodeBackground", -200, -100, label="ambient")
         amb.inputs["Strength"].default_value = 0.0
         lp = g.n("ShaderNodeLightPath", -200, 300)
         ms = g.n("ShaderNodeMixShader", 50, 0)
-        g.link(lp, "Is Camera Ray", ms, 0)
-        g.link(amb, 0, ms, 1)
-        g.link(bg, 0, ms, 2)
+        g.link(lp, "Is Camera Ray", ms, "Fac")
+        g.link(amb, 0, ms, ("Shader", 0))
+        g.link(bg, 0, ms, ("Shader", 1))
         out = g.n("ShaderNodeOutputWorld", 250, 0)
         g.link(ms, 0, out, "Surface")
+        stamp(world, SKY_VER)
     set_sky_colours(world, zenith, horizon, ground)
     scene.world = world
     return world
@@ -112,7 +113,7 @@ def set_night(world, stars=0.0, moon=0.0, camera=None):
     for key, val in (("sky stars", stars), ("sky moon", moon)):
         n = nt.nodes.get(key)
         if n is not None:
-            n.outputs[0].default_value = val
+            only(n.outputs).default_value = val
     md = nt.nodes.get("moon dir")
     bpy.context.view_layer.update()
     if md is not None:
