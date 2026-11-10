@@ -1,0 +1,19 @@
+schema_version = "1.0.0"
+
+id = "harappa"
+version = "1.0.0"
+name = "Harappa"
+tagline = "One-click anime grass, trees and flowers (EEVEE)"
+maintainer = "Tokyo AI Visuals LLC"
+type = "add-on"
+website = "https://github.com/kanaworksai-hue/harappa"
+
+tags = ["Geometry Nodes", "Material", "Object"]
+
+blender_version_min = "5.0.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Tokyo AI Visuals LLC"]
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "/.git/", "*.zip", ".DS_Store"]
