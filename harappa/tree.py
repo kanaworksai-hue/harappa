@@ -141,6 +141,11 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
         r = cr * 0.9
         bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0,
                                    matrix=Matrix.Translation(top) @ Matrix.Diagonal((r, r, r * 0.8, 1)))
+    if sp.get("conifer"):                      # a pointed tip, so no bare trunk pokes out of the top tier
+        tip = Vector((centre.x, centre.y, centre.z + ch * 0.9))
+        r = cr * 0.42
+        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0,
+                                   matrix=Matrix.Translation(tip) @ Matrix.Diagonal((r, r, r * 2.0, 1)))
     for f in bm.faces:
         f.smooth = True
     bm.to_mesh(cm)
@@ -151,13 +156,13 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
     tm = bpy.data.meshes.new(name + " Trunk")
     bm = bmesh.new()
     r0 = sp["trunk"] * H
-    fork = Vector((0, 0, centre.z - ch * 0.55)) if not sp.get("conifer") else Vector((0, 0, centre.z + ch * 0.9))
+    fork = Vector((0, 0, centre.z - ch * 0.55)) if not sp.get("conifer") else Vector((0, 0, centre.z + ch * 0.78))
     trunk = _branch_path(rng, Vector((0, 0, 0)), fork, H * 0.03, segs=8)
     trunk_r = []
     for i, p in enumerate(trunk):
         t = i / (len(trunk) - 1)
         flare = 1.0 + 0.7 * max(0.0, 1 - t * 6) ** 2
-        trunk_r.append(r0 * (1.0 - 0.45 * t) * flare)
+        trunk_r.append(r0 * (1.0 - (0.9 if sp.get("conifer") else 0.45) * t) * flare)    # a conifer's leader thins out
     _tube(bm, trunk, trunk_r, sides=9)
     # branches from the upper trunk into each clump
     for i, c in enumerate(clumps):
