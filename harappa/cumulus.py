@@ -260,7 +260,7 @@ def layout(context, count=5, seed=0, distance=320.0):
         hero = i == 0
         medium = 1 <= i <= 2
         for attempt in range(80):
-            shrink = 1.0 if attempt < 30 else (0.75 if attempt < 55 else 0.55)
+            shrink = 1.0 if attempt < 12 else (0.8 if attempt < 30 else (0.62 if attempt < 55 else 0.45))
             d = distance * (rng.uniform(1.0, 1.3) if hero else rng.uniform(1.0, 1.9))
             rel = (rng.uniform(0.34, 0.46) if hero else rng.uniform(0.17, 0.27) if medium
                    else rng.uniform(0.07, 0.14)) * shrink
@@ -276,6 +276,8 @@ def layout(context, count=5, seed=0, distance=320.0):
                 low = min(ridge_top + 0.5, max(low, top))
             if hero:                                               # the big one rises from behind the mountains,
                 base = max(low, ridge_top - 2.0)                   # its flat base just hidden by their tops
+                if top < base and attempt < 79:
+                    continue                                       # too tall for the frame: try a smaller one
                 el = rng.uniform(base, max(base, min(top, base + 2.0)))
             elif medium:
                 el = rng.uniform(low + 1.0, max(low + 1.0, min(top, low + 9.0)))

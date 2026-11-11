@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 28
+SHADER_VER = 29
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -97,6 +97,9 @@ PALETTE_KEYS = {
     "mountain_1": ("RGB", "#3F9A6A"),       # distant ridges, near to far
     "mountain_2": ("RGB", "#5AA0B4"),
     "mountain_3": ("RGB", "#8FBFE0"),
+    "style_sat": ("VALUE", 1.0),            # the paint style's share of the grade (the season sets grade_*)
+    "style_contrast": ("VALUE", 1.0),
+    "cloud_jitter": ("VALUE", 1.0),         # how broken the painted edge between cloud tones is
     "grade_sat": ("VALUE", 1.0),            # overall colour strength of everything Harappa paints
     "grade_contrast": ("VALUE", 1.0),       # overall contrast (around mid grey)
     "sun_x": ("VALUE", 0.0),                # direction to the sun (world), written with the sun
@@ -370,7 +373,9 @@ def grade_group():
     grey = g.n("ShaderNodeCombineColor", -620, 0)
     for ch in ("Red", "Green", "Blue"):
         g.links.new(g.out(bw), grey.inputs[ch])
-    sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(pal, "grade_sat"), a=g.out(grey), b=g.out(gi, "Color"))
+    amount = g.math("MULTIPLY", -700, -150, g.out(pal, "grade_sat"), g.out(pal, "style_sat"))
+    power = g.math("MULTIPLY", -100, -500, g.out(pal, "grade_contrast"), g.out(pal, "style_contrast"))
+    sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(amount), a=g.out(grey), b=g.out(gi, "Color"))
     sat.clamp_factor = False                       # above 1 = stronger than the palette colour
     sep = g.n("ShaderNodeSeparateColor", -300, 0)
     g.links.new(g.mixout(sat), sep.inputs["Color"])
@@ -379,7 +384,7 @@ def grade_group():
         y = 200 - i * 200
         pos = g.math("MAXIMUM", -120, y, g.out(sep, ch), 0.0)
         rel = g.math("DIVIDE", 20, y, g.out(pos), 0.18)
-        pw = g.math("POWER", 160, y, g.out(rel), g.out(pal, "grade_contrast"))
+        pw = g.math("POWER", 160, y, g.out(rel), g.out(power))
         g.links.new(g.out(g.math("MULTIPLY", 300, y, g.out(pw), 0.18)), comb.inputs[ch])
     g.link(comb, "Color", go, "Color")
     stamp(ng, SHADER_VER)
@@ -986,7 +991,8 @@ def cumulus_material():
     g.link(tc, "Object", noi, "Vector")
     for k, v in (("Scale", 0.09), ("Detail", 3.0), ("Roughness", 0.55), ("Distortion", 0.3)):
         g.set(noi, k, v)
-    jit = g.math("MULTIPLY", -1300, -300, g.out(g.math("SUBTRACT", -1400, -300, g.out(noi, "Fac"), 0.5)), 0.22)
+    jit = g.math("MULTIPLY", -1300, -300, g.out(g.math("SUBTRACT", -1400, -300, g.out(noi, "Fac"), 0.5)),
+                 g.out(g.math("MULTIPLY", -1400, -450, g.out(pal, "cloud_jitter"), 0.22)))
     v = g.math("MULTIPLY_ADD", -330, 500, g.out(ch, "Fac"), 0.28, g.out(g.math("MULTIPLY", -420, 420, g.out(lv), 0.78)))
     v = g.math("ADD", -180, 500, g.out(v), g.out(jit))
     soft = g.math("ADD", -330, 250, g.out(pal, "softness"), 0.012)

@@ -55,6 +55,9 @@ VALUE_PROPS = [
     ("rim_amount", "Rim Light", 0.0, 1.0, "Warm light along the sun-facing edges of trees"),
     ("grade_sat", "Colour Strength", 0.0, 2.0, "Overall strength of every colour Harappa paints (1 = as set)"),
     ("grade_contrast", "Picture Contrast", 0.5, 2.0, "Overall contrast of everything Harappa paints (1 = as set)"),
+    ("style_sat", "Style Colour Strength", 0.0, 2.0, "Colour strength the paint style adds on top of the season"),
+    ("style_contrast", "Style Contrast", 0.5, 2.0, "Contrast the paint style adds on top of the season"),
+    ("cloud_jitter", "Cloud Brushiness", 0.0, 4.0, "How broken and brushy the edge between a cloud's light and shade is"),
     ("cloud_rim_amount", "Cloud Rim Glow", 0.0, 1.0, "Bright edge on clouds that have the sun behind them"),
     ("cloud_threshold", "Cloud Light / Shadow Split", 0.0, 1.0, "How much of each cloud is in shade"),
 ]
@@ -469,7 +472,7 @@ def _add_camera(context, target):
     ok, hit, _n, _i = target.ray_cast(inv @ (loc + Vector((0, 0, 1000))), inv.to_3x3() @ Vector((0, 0, -1)))
     z = (target.matrix_world @ hit).z if ok else c.z
     cam.location = Vector((loc.x, loc.y, z + 1.7 + size * 0.02))
-    cam.rotation_euler = (math.radians(90), 0, 0)
+    cam.rotation_euler = (math.radians(93.5), 0, 0)
     cd.clip_end = max(200.0, size * 4)
     sc.camera = cam
     return cam
