@@ -66,11 +66,13 @@ VALUE_PROPS = [
     ("style_contrast", "Style Contrast", 0.5, 2.0, "Contrast the paint style adds on top of the season"),
     ("sky_brush", "Sky Brushiness", 0.0, 1.0, "Brushy streaks across the sky gradient"),
     ("sky_bands", "Sky Bands", 0.0, 1.0, "Flat poster bands in the sky gradient instead of a smooth blend"),
-    ("sky_curve", "Sky Depth", 0.3, 3.0, "Below 1 the deep top colour of the sky reaches further down; above 1 the "
-                                         "pale horizon colour rises higher"),
+    ("sky_curve", "Horizon Glow", 0.3, 3.0, "How high the pale horizon colour rises into the sky: higher is a paler, "
+                                            "airier sky, lower brings the deep top colour further down. The paint "
+                                            "style sets this value"),
     ("cirrus_mult", "Cirrus Amount", 0.0, 3.0, "How much of the season's high cirrus the paint style shows"),
     ("ridge_soft", "Mountain Softness", 0.0, 0.5, "How soft the painted shapes on the distant mountains are"),
-    ("cloud_shade", "Cloud Shadows", 0.0, 1.0, "Shadows of the clouds on the open ground in the middle distance"),
+    ("cloud_shade", "Cloud Shadows", 0.0, 1.0, "Shadows of the clouds on the open ground in the middle distance. "
+                                               "The season sets this value"),
     ("cloud_jitter", "Cloud Brushiness", 0.0, 4.0, "How broken and brushy the edge between a cloud's light and shade is"),
     ("cloud_rim_amount", "Cloud Rim Glow", 0.0, 1.0, "Bright edge on clouds that have the sun behind them"),
     ("cloud_threshold", "Cloud Light / Shadow Split", 0.0, 1.0, "How much of each cloud is in shade"),
@@ -332,7 +334,7 @@ def _reseed(sc, rng):
                 if rng is None:
                     del ob[f"hrp_seed_{m.name}"]
     rl = sc.get("hrp_ridge_layout")
-    if rl is not None and ridges.ridges_of(sc):                      # new mountain shapes with every shuffle
+    if rl is not None and ridges.ridges_of(sc) and not ridges.touched(sc):   # new shapes, unless they are the user's
         layers, rseed = list(rl)
         base = sc.get("hrp_ridge_seed_base")
         if base is None:
@@ -426,8 +428,11 @@ def _cloud_props():
         ob = _active_cloud()
         if ob:
             ob.scale = (v, v, v)
+            if "hrp_cloud_auto" in ob:
+                del ob["hrp_cloud_auto"]
     return {
-        "cloud_seed": bpy.props.IntProperty(name="Cloud Shape", min=0, max=99999, get=g_seed, set=s_seed,
+        "cloud_seed": bpy.props.IntProperty(name="Cloud Shape", min=0, max=2 ** 31 - 1, soft_max=99999,
+                                            get=g_seed, set=s_seed,
                                             description="Pick another shape for this cloud (it stays where it is)"),
         "cloud_tower": bpy.props.FloatProperty(name="Tower", min=0.0, max=1.0, get=g_tower, set=s_tower,
                                                description="How high the cloud piles up: flat cumulus at 0, a "
@@ -455,8 +460,8 @@ def _settings_annotations():
                                         description="How the light and shadow are painted", update=apply_style),
         "variation": bpy.props.IntProperty(
             name="Variation", default=0, min=0, max=99999, update=apply_variation,
-            description="Re-rolls colours, clumps, flowers, sun angle and each tree's tint around the current "
-                        "season and style. 0 = off"),
+            description="Re-rolls colours, clumps, flowers, sun angle, each tree's tint, the mountain shapes and "
+                        "the clouds Make Clouds placed, around the current season and style. 0 = off"),
         "sun_elevation": bpy.props.FloatProperty(name="Sun Height", default=42.0, min=2.0, max=89.0,
                                                  description="Sun elevation in degrees", update=_upd_sun),
         "sun_side": bpy.props.FloatProperty(name="Sun Direction", default=-55.0, min=-180.0, max=180.0,
@@ -474,7 +479,7 @@ def _settings_annotations():
                                               description="How many layers of mountains Distant Mountains builds "
                                                           "(0 removes them)"),
         "cloud_count": bpy.props.IntProperty(name="Clouds", default=6, min=0, max=60,
-                                             description="How many clouds Add Clouds builds (0 removes them)"),
+                                             description="How many clouds Make Clouds builds (0 removes them)"),
         "mask_paint": bpy.props.EnumProperty(name="Paint", items=[("GRASS", "Grass", "Paint grass back in"),
                                                                   ("PATH", "Path", "Paint a bare path")],
                                              default="PATH", description="What the brush paints"),
@@ -642,6 +647,8 @@ class HRP_OT_make_meadow(bpy.types.Operator):
             _add_camera(context, targets[0])
         if not _scene_ready(sc):
             setup_scene(context)
+        elif sc.world.get("hrp_ver") != hscene.SKY_VER:               # a sky from an older version: bring it up
+            _upd_sky(sc.harappa, context)
         size = max(max(targets[0].dimensions.x, targets[0].dimensions.y), 1.0)
         s = sc.harappa
         _busy["on"] = True
@@ -724,7 +731,10 @@ class HRP_OT_plant_trees(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return meadow_of(context.active_object) is not None
+        if meadow_of(context.active_object) is not None:
+            return True
+        cls.poll_message_set(i18n.t("Select a meadow first"))
+        return False
 
     def invoke(self, context, event):
         s = context.scene.harappa
@@ -770,8 +780,26 @@ class HRP_OT_plant_trees(bpy.types.Operator):
                                            and abs(rel.normalized().dot(fwd)) > 0.85):
                     continue
             placed.append((co, h))
-        for co, h in placed:
+        # mixed planting gets a focal point: the tree nearest a third of the frame becomes a big round broadleaf,
+        # the other trees in view step down in size, so they are not three equal trees in a row
+        roles = {}
+        if self.mixed and cam is not None and placed:
+            from bpy_extras.object_utils import world_to_camera_view
+            seen = []
+            for k, (co, h) in enumerate(placed):
+                q = world_to_camera_view(sc, cam, co + Vector((0, 0, h * 0.5)))
+                if q.z > 0 and 0.08 < q.x < 0.92 and -0.2 < q.y < 1.0:
+                    seen.append((min(abs(q.x - 1 / 3), abs(q.x - 2 / 3)), k))
+            seen.sort()
+            for rank, (_d, k) in enumerate(seen):
+                roles[k] = rank
+        for k, (co, h) in enumerate(placed):
             shape = rng.choice(shapes)
+            rank = roles.get(k)
+            if rank == 0:
+                shape, h = "ROUND", h * 1.25
+            elif rank is not None:
+                h *= (0.8, 0.62, 0.5)[min(rank - 1, 2)] * rng.uniform(0.95, 1.1)
             if shape == "BUSH":
                 h *= 0.4
             bl = max(sc.harappa.new_blossom, tree.SHAPES[shape]["bloom"])     # a cherry is always in blossom
@@ -963,8 +991,8 @@ class HRP_OT_add_clouds(bpy.types.Operator):
 
     count: bpy.props.IntProperty(name="Clouds", default=4, min=0, max=60, description="How many clouds")
     seed: bpy.props.IntProperty(name="Seed", default=-1, min=-1, max=99999, description="Cloud seed (-1 = random)")
-    distance: bpy.props.FloatProperty(name="Distance", default=320.0, min=5.0, max=100000.0, subtype="DISTANCE",
-                                      description="How far away the clouds float")
+    distance: bpy.props.FloatProperty(name="Distance", default=0.0, min=0.0, max=1000000.0, subtype="DISTANCE",
+                                      description="How far away the clouds float (0 = behind the farthest mountains)")
 
     def invoke(self, context, event):
         self.count = context.scene.harappa.cloud_count
@@ -978,7 +1006,7 @@ class HRP_OT_add_clouds(bpy.types.Operator):
         made = cumulus.layout(context, self.count, seed, self.distance)
         if not _scene_ready(context.scene):
             setup_scene(context)
-        self.report({"INFO"}, report(f"{len(made)} cloud(s) added"))
+        self.report({"INFO"}, report(f"Made {len(made)} cloud(s)"))
         return {"FINISHED"}
 
 
@@ -1156,6 +1184,22 @@ class HRP_OT_set_detail(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HRP_OT_cloud_new_shape(bpy.types.Operator):
+    bl_idname = "harappa.cloud_new_shape"
+    bl_label = "New Shape"
+    bl_description = "Give this cloud another shape; it stays where it is, and from now on it is yours"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return _active_cloud(context) is not None
+
+    def execute(self, context):
+        ob = _active_cloud(context)
+        _reshape(ob, random.randint(0, 99999), _cloud_args(ob)[1])
+        return {"FINISHED"}
+
+
 class HRP_OT_cloud_give_back(bpy.types.Operator):
     bl_idname = "harappa.cloud_give_back"
     bl_label = "Give Back to Auto Layout"
@@ -1168,10 +1212,9 @@ class HRP_OT_cloud_give_back(bpy.types.Operator):
 
     def execute(self, context):
         n = 0
-        for ob in context.selected_objects or [_active_cloud(context)]:
+        for ob in {*context.selected_objects, _active_cloud(context)}:
             if ob is not None and ob.get(cumulus.TAG):
-                ob["hrp_cloud_auto"] = True
-                ob["hrp_cloud_home"] = cumulus._home(ob)
+                cumulus.mark_auto(ob)
                 n += 1
         self.report({"INFO"}, report(f"{n} cloud(s) given back to the auto layout"))
         return {"FINISHED"}
@@ -1203,7 +1246,7 @@ CLASSES = (
     HRP_Settings, HRP_TreeSettings, HRP_OT_make_meadow, HRP_OT_add_tree, HRP_OT_plant_trees,
     HRP_OT_rebuild_tree, HRP_OT_set_tree_enum, HRP_OT_edit_canopy,
     HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_add_ridges, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
-    HRP_OT_revert, HRP_OT_set_enum, HRP_OT_set_detail, HRP_OT_cloud_give_back,
+    HRP_OT_revert, HRP_OT_set_enum, HRP_OT_set_detail, HRP_OT_cloud_give_back, HRP_OT_cloud_new_shape,
 )
 
 
@@ -1217,18 +1260,26 @@ def _follow_camera(scene, _depsgraph=None):
         w = scene.world
         if w is None or w.name != hscene.WORLD or w.get("hrp_ver") != hscene.SKY_VER:
             return
-        sig = hscene.camera_signature(scene)
+        sig = hscene.camera_signature(scene, _depsgraph)
         if _sky_seen.get(scene.name) != sig:
             _sky_seen[scene.name] = sig
-            hscene.aim_sky(scene, w, update=False)
+            hscene.aim_sky(scene, w, update=False, depsgraph=_depsgraph)
     except (AttributeError, ReferenceError):
         pass
+
+
+@bpy.app.handlers.persistent
+def _forget_cameras(*_args):
+    """A newly opened file has its own cameras: fit its skies afresh."""
+    _sky_seen.clear()
 
 
 def register():
     for h in (bpy.app.handlers.depsgraph_update_post, bpy.app.handlers.frame_change_post):
         if _follow_camera not in h:
             h.append(_follow_camera)
+    if _forget_cameras not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_forget_cameras)
     i18n.register()
     for c in CLASSES:
         bpy.utils.register_class(c)
@@ -1241,6 +1292,8 @@ def unregister():
     for h in (bpy.app.handlers.depsgraph_update_post, bpy.app.handlers.frame_change_post):
         if _follow_camera in h:
             h.remove(_follow_camera)
+    if _forget_cameras in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_forget_cameras)
     ui.unregister()
     del bpy.types.Object.harappa_tree
     del bpy.types.Scene.harappa

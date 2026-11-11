@@ -24,7 +24,7 @@ def _enum(layout, owner, name, label=None):
     prop = owner.bl_rna.properties[name]
     cur = getattr(owner, name)
     item = next((i.name for i in prop.enum_items if i.identifier == cur), cur)
-    row = layout.row(align=True)
+    row = layout.split(factor=0.36, align=True)
     row.label(text=t(label or prop.name), translate=False)
     row.menu(f"HRP_MT_{name}", text=t(item), translate=False)
 
@@ -65,10 +65,11 @@ def _tree_enum_menu(prop_name):
     return _M
 
 
-def _mod_inputs(layout, mod, names):
+def _mod_inputs(layout, mod, names, labels=None):
     ng = mod.node_group
     if ng is None:
         return
+    labels = labels or {}
     props = getattr(mod, "properties", None)
     for name in names:
         item = next((i for i in ng.interface.items_tree if getattr(i, "item_type", "") == "SOCKET"
@@ -78,9 +79,9 @@ def _mod_inputs(layout, mod, names):
         if props is not None and hasattr(props, "inputs"):
             slot = getattr(props.inputs, item.identifier, None)
             if slot is not None:
-                layout.prop(slot, "value", text=t(name), translate=False)
+                layout.prop(slot, "value", text=t(labels.get(name, name)), translate=False)
                 continue
-        layout.prop(mod, f'["{item.identifier}"]', text=t(name), translate=False)
+        layout.prop(mod, f'["{item.identifier}"]', text=t(labels.get(name, name)), translate=False)
 
 
 class HrpPanel:
@@ -138,15 +139,15 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
             op = row.operator("harappa.set_detail", text=t(it.name), translate=False,
                               depress=s.detail_level == it.identifier)
             op.level = it.identifier
-        row = layout.row(align=True)
+        row = layout.split(factor=0.55, align=True)
         _prop(row, s, "variation")
         _op(row, "harappa.shuffle", "Shuffle", icon="FILE_REFRESH")
-        row = layout.row(align=True)
+        row = layout.split(factor=0.62, align=True)
         _op(row, "harappa.add_clouds", "Make Clouds", icon="OUTLINER_DATA_VOLUME")
-        _prop(row, s, "cloud_count")
-        row = layout.row(align=True)
+        _prop(row, s, "cloud_count", "Count")
+        row = layout.split(factor=0.62, align=True)
         _op(row, "harappa.add_ridges", "Distant Mountains", icon="IPO_ELASTIC")
-        _prop(row, s, "ridge_layers")
+        _prop(row, s, "ridge_layers", "Layers")
         row = layout.row(align=True)
         _op(row, "harappa.make_foliage", "Make Foliage", icon="MOD_PARTICLE_INSTANCE")
         _op(row, "harappa.setup_scene", "Anime Sky & Sun", icon="LIGHT_SUN")
@@ -211,14 +212,17 @@ class HRP_PT_cloud(HrpSub, bpy.types.Panel):
         s = context.scene.harappa
         ob = context.active_object
         layout = self.layout
+        row = layout.row(align=True)
+        row.scale_y = 1.2
+        _op(row, "harappa.cloud_new_shape", "New Shape", icon="FILE_REFRESH")
         col = layout.column(align=True)
-        for k in ("cloud_seed", "cloud_tower", "cloud_width"):
+        for k in ("cloud_tower", "cloud_width"):
             _prop(col, s, k)
         mod = ob.modifiers.get(cumulus.MOD)
         if mod is not None:
             col = layout.column(align=True)
-            _mod_inputs(col, mod, ("Detail", "Flat Base"))
-        if ob.get("hrp_cloud_auto"):
+            _mod_inputs(col, mod, ("Detail", "Flat Base"), labels={"Detail": "Bump Size"})
+        if cumulus.is_auto(ob):
             layout.label(text=t("Managed by Make Clouds"), icon="INFO", translate=False)
         else:
             _op(layout, "harappa.cloud_give_back", "Give Back to Auto Layout", icon="LOOP_BACK")
@@ -299,6 +303,7 @@ class HRP_PT_light(HrpSub, bpy.types.Panel):
         for k in ("sky_zenith", "sky_horizon", "haze_colour", "sun_tint"):
             _prop(col, s, k)
         col = self.layout.column(align=True)
+        col.label(text=t("Sky & Clouds"), translate=False)
         for k in ("sky_curve", "cloud_shade"):
             _prop(col, s, k)
 

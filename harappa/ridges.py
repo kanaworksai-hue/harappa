@@ -30,6 +30,21 @@ def remove(scene):
             bpy.data.meshes.remove(me)
 
 
+def _home(ob):
+    return [round(v, 4) for v in (*ob.location, *ob.rotation_euler, *ob.scale)]
+
+
+def touched(scene):
+    """True when the user has moved, turned, scaled or deleted a mountain layer: from then on they are the
+    user's, and Shuffle leaves them alone (Distant Mountains still rebuilds them on request)."""
+    obs = ridges_of(scene)
+    lay = scene.get("hrp_ridge_layout")
+    if lay is not None and len(obs) < int(lay[0]):
+        return True
+    return any(o.get("hrp_ridge_home") is not None and any(abs(a - b) > 1e-3 for a, b in zip(_home(o), o["hrp_ridge_home"]))
+               for o in obs)
+
+
 def _profile(a, layer, seed, rough, sharp):
     """Height 0..1 of the ridge line at angle a."""
     p = Vector((math.cos(a), math.sin(a), 0.0))
@@ -40,7 +55,10 @@ def _profile(a, layer, seed, rough, sharp):
         r = 1.0 - abs(noise.noise(p * rough * 3.2 + off * 0.6))
         h = h * (1.0 - 0.3 * sharp) + (r * r) * 0.3 * sharp * (0.4 + 0.6 * h)
     big = noise.noise(p * 0.9 + off * 0.3) * 0.5 + 0.5      # one side of the panorama stands taller
-    h = max(0.0, min(1.0, (h - 0.2) / 0.6)) ** 1.3          # full range: real valleys between the tops
+    x = max(0.0, (h - 0.2) / 0.6)                           # full range: real valleys between the tops ...
+    if x > 0.8:                                             # ... and tops that round off instead of a flat cut
+        x = 0.8 + 0.2 * math.tanh((x - 0.8) / 0.2)
+    h = x ** 1.3
     return max(0.0, min(1.0, 0.1 + 0.9 * h * (0.45 + 0.55 * big)))
 
 
@@ -118,6 +136,7 @@ def build(context, ground=None, seed=0, layers=3):
         ob[TAG] = True
         ob["hrp_layer"] = float(k)
         ob["hrp_ridge_top"] = float(elev)
+        ob["hrp_ridge_home"] = _home(ob)
         ob.visible_shadow = False
         made.append(ob)
     cam = scene.camera

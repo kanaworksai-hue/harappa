@@ -16,7 +16,7 @@ from . import shading
 from .util import G, fresh_group, iface, mod_input, stamp
 
 CLOUD = "HRP Cloud"
-CLOUD_VER = 3
+CLOUD_VER = 4
 MOD = "Harappa Cloud"
 TAG = "hrp_cloud"                       # on every cloud object
 RADIUS = "hrp_r"
@@ -85,10 +85,10 @@ def cloud_group():
     g.link(pos, "Position", near, "Sample Position")
     away = g.vmath("NORMALIZE", 200, -300, g.out(near, "Value", "VECTOR"))
     nrm = g.n("GeometryNodeInputNormal", 50, -500)
-    mixn = g.mix(350, -350, dtype="VECTOR", fac=0.72, a=g.out(nrm, "Normal"), b=g.out(away))
+    mixn = g.mix(350, -350, dtype="VECTOR", fac=0.85, a=g.out(nrm, "Normal"), b=g.out(away))
     blur = g.n("GeometryNodeBlurAttribute", 520, -350, data_type="FLOAT_VECTOR")
     g.links.new(g.mixout(mixn), g.inp(blur, "Value", "VECTOR"))
-    its = g.math("MULTIPLY", 350, -550, g.out(gi, "Quality"), 3.0)      # same shapes of light at every resolution
+    its = g.math("MULTIPLY", 350, -550, g.out(gi, "Quality"), 2.0)      # same shapes of light at every resolution
     g.links.new(g.out(g.math("ROUND", 450, -550, g.out(its))), g.inp(blur, "Iterations"))
     soft = g.vmath("NORMALIZE", 700, -350, g.out(blur, "Value", "VECTOR"))
     st = g.n("GeometryNodeStoreNamedAttribute", 900, 0, data_type="FLOAT_VECTOR", domain="POINT")
@@ -170,6 +170,15 @@ def lobes(width, seed=0, tower=0.0):
                 rr = r * rng.uniform(0.8, 1.1)
                 mid.append((c, rr))
                 out.append((c, rr))
+                # cauliflower: smaller puffs bulging out of the storey's sides, so the tower's outline is lumpy
+                # instead of a stack of smooth balls
+                side = 1.0 if c.x >= col.x else -1.0
+                for _j in range(3):
+                    a = math.radians(rng.uniform(0, 65))
+                    yaw = rng.uniform(-0.6, 0.6)
+                    d = Vector((side * math.cos(a) * math.cos(yaw), math.sin(yaw) * 0.6, math.sin(a)))
+                    sr = rr * rng.uniform(0.25, 0.38)
+                    out.append((c + d * (rr * 0.86), sr))
             z += r * 0.95
             r *= rng.uniform(0.8, 0.9)
     small = on_top(mid, rng.randint(14, 20), (0.4, 0.62), 0.2)
@@ -243,17 +252,45 @@ def _home(ob):
     return [round(v, 4) for v in (*ob.location, *ob.rotation_euler, *ob.scale)]
 
 
+def _mods(ob):
+    mod = ob.modifiers.get(MOD)
+    if mod is None or mod.node_group is None:
+        return []
+    out = []
+    for name in ("Detail", "Flat Base"):
+        try:
+            out.append(round(float(mod_input(mod, name)), 5))
+        except KeyError:
+            out.append(0.0)
+    return out
+
+
+def is_auto(ob):
+    """Still the layout's own: marked so, and not moved, turned, scaled or given another Detail / Flat Base."""
+    if not ob.get("hrp_cloud_auto"):
+        return False
+    home = ob.get("hrp_cloud_home")
+    if home is not None and any(abs(a - b) > 1e-3 for a, b in zip(_home(ob), home)):
+        return False
+    mods = ob.get("hrp_cloud_mods")
+    return mods is None or all(abs(a - b) < 1e-5 for a, b in zip(_mods(ob), mods))
+
+
+def mark_auto(ob):
+    ob["hrp_cloud_auto"] = True
+    ob["hrp_cloud_home"] = _home(ob)
+    ob["hrp_cloud_mods"] = _mods(ob)
+
+
 def remove_layout(scene):
     """Delete the clouds the layout made (and the single card-cloud object of 1.0).
 
-    A cloud the user has moved, turned, scaled or copied is theirs from then on: it loses its 'auto' mark and
-    stays. Clouds added by hand never had the mark."""
+    A cloud the user has moved, turned, scaled, copied or given another Detail / Flat Base is theirs from then
+    on: it loses its 'auto' mark and stays. Clouds added by hand never had the mark."""
     for ob in list(scene.objects):
-        if ob.get("hrp_cloud_auto"):
-            home = ob.get("hrp_cloud_home")
-            if home is not None and any(abs(a - b) > 1e-3 for a, b in zip(_home(ob), home)):
-                del ob["hrp_cloud_auto"]
-                continue
+        if ob.get("hrp_cloud_auto") and not is_auto(ob):
+            del ob["hrp_cloud_auto"]
+            continue
         if ob.get("hrp_cloud_auto") or ob.get("hrp_clouds"):
             me = ob.data
             bpy.data.objects.remove(ob)
@@ -273,8 +310,8 @@ def _frame(scene, cam):
 
 
 def _skyline(scene, origin):
-    """elev(az, half): the mean height in degrees of the mountain ridge line seen from 'origin', over the
-    azimuths az +- half (radians); 0 with no mountains there."""
+    """elev(az, half, max_dist): the mean height in degrees of the mountain ridge line seen from 'origin' over the
+    azimuths az +- half (radians), counting only mountains nearer than max_dist; 0 with none there."""
     bins = {}
     step = math.radians(0.5)
     for ob in scene.objects:
@@ -287,24 +324,36 @@ def _skyline(scene, origin):
             if flat < 1e-6:
                 continue
             k = int(math.floor(math.atan2(p.y, p.x) / step))
-            e = math.degrees(math.atan2(p.z, flat))
-            if e > bins.get(k, -90.0):
-                bins[k] = e
+            bins.setdefault(k, []).append((flat, math.degrees(math.atan2(p.z, flat))))
 
-    def elev(az, half):
+    def elev(az, half, max_dist=float("inf")):
         ks = range(int(math.floor((az - half) / step)), int(math.floor((az + half) / step)) + 1)
-        es = [bins[k] for k in ks if k in bins]
+        es = [max((e for f, e in bins[k] if f < max_dist), default=None) for k in ks if k in bins]
+        es = [e for e in es if e is not None]
         return sum(es) / len(es) if es else 0.0
     return elev
 
 
-def layout(context, count=5, seed=0, distance=320.0):
+def auto_distance(scene):
+    """How far the clouds float when nobody says: where the last layout put them, else behind the farthest
+    mountains of the biggest meadow (12 x its size, at least 160 m)."""
+    lay = scene.get("hrp_cloud_layout")
+    if lay is not None and len(lay) > 2 and float(lay[2]) > 0.0:
+        return float(lay[2])
+    grounds = [o for o in scene.objects if o.get("hrp_ground") and not o.get("hrp_far_hills")]
+    size = max((max(o.dimensions.x, o.dimensions.y) for o in grounds), default=40.0)
+    return max(160.0, size * 12.0)
+
+
+def layout(context, count=5, seed=0, distance=0.0):
     """(Re)build the clouds in front of the scene camera: one big tower, small clouds high up and a band of small
     far ones on the mountain tops, inside the frame and clear of the tree crowns. Returns the cloud objects it made.
 
     With no sky in the frame (a camera looking down) or no camera, the clouds go above the horizon ahead."""
     from . import clouds as old
     scene = context.scene
+    if distance <= 0.0:
+        distance = auto_distance(scene)
     remove_layout(scene)
     scene["hrp_cloud_layout"] = [int(count), int(seed), float(distance)]
     if count <= 0:
@@ -349,9 +398,10 @@ def layout(context, count=5, seed=0, distance=320.0):
             if role == "hero":
                 d = distance * rng.uniform(1.0, 1.15)
                 frac, tower = rng.uniform(0.3, 0.36), rng.uniform(0.55, 0.85)
-            elif role == "high":
+            elif role == "high":                            # the first a little bigger, the next small and flat
                 d = distance * rng.uniform(1.0, 1.5)
-                frac, tower = rng.uniform(0.05, 0.09), 0.0
+                frac = rng.uniform(0.075, 0.095) if roles.index("high") == i else rng.uniform(0.04, 0.055)
+                tower = 0.0
             else:
                 d = distance * rng.uniform(1.35, 1.9)
                 frac, tower = rng.uniform(0.05, 0.11), rng.uniform(0.0, 0.25)
@@ -363,7 +413,7 @@ def layout(context, count=5, seed=0, distance=320.0):
             low = max(0.8, math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 0.0).z)))) + 2.0)
             flat = direction(sx, 0.5)
             az = math.atan2(flat.y, flat.x)
-            ridge = skyline(az, 0.5 * rel)
+            ridge = skyline(az, 0.5 * rel, d)                   # only the mountains in front of it
             if role == "hero":                          # its foot hidden behind the mountain tops
                 if ridge > 0.0:
                     low = max(low, ridge - 0.25 * height_deg)
@@ -394,8 +444,11 @@ def layout(context, count=5, seed=0, distance=320.0):
             placed.append((sx, gap, role))
             ob = add_cloud(context, c, w, seed=cseed, tower=tower, yaw=az - math.pi / 2,
                            name="Cloud Hero" if role == "hero" else "Cloud")
-            ob["hrp_cloud_auto"] = True
-            ob["hrp_cloud_home"] = _home(ob)
+            if role == "high" and roles.index("high") != i:
+                ob.scale.z = w * 0.62                    # a flattened little one
+            if role == "hero":                          # its small side puffs need a finer grid to stay round
+                mod_input(ob.modifiers[MOD], "Detail", 0.011)
+            mark_auto(ob)
             made.append(ob)
             break
     if cam is not None and made:
@@ -408,4 +461,4 @@ def fit_clip(cam, far):
     """Let the camera see as far as 'far' without wrecking depth precision for what is near."""
     cd = cam.data
     cd.clip_end = max(cd.clip_end, far)
-    cd.clip_start = max(cd.clip_start, cd.clip_end / 50000.0)
+    cd.clip_start = max(cd.clip_start, cd.clip_end / 99000.0)

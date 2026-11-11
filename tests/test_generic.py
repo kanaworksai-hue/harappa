@@ -588,4 +588,88 @@ cd = sc.camera.data
 check(cd.clip_end / cd.clip_start <= 1e5 and cd.clip_end > 2000.0 * 10.0,
       f"a 2 km ground keeps a sane clip range ({cd.clip_start:.2f} .. {cd.clip_end:.0f})")
 H.unregister()
+
+# --- 13. the default scene, used the way the panel is used ------------------------------------------------
+bpy.ops.wm.read_factory_settings()
+H.register()
+sc = bpy.context.scene
+bpy.ops.harappa.make_meadow()
+ground = next(o for o in sc.objects if o.get("hrp_ground") and not o.get("hrp_far_hills"))
+bpy.context.view_layer.objects.active = ground
+bpy.ops.harappa.plant_trees(count=6, seed=2)
+cam = sc.camera
+# the Make Clouds button keeps the clouds behind the mountains: the big one's foot hides behind those in front of it
+bpy.ops.harappa.add_clouds("INVOKE_DEFAULT")
+hero = next(o for o in sc.objects if o.get("hrp_cloud_auto") and o.name.startswith("Cloud Hero"))
+_o = cam.matrix_world.translation
+_v = hero.location - _o
+_front = cumulus._skyline(sc, _o)(math.atan2(_v.y, _v.x), 0.5 * hero.scale.x / _v.xy.length, _v.xy.length)
+_base = math.degrees(math.atan2(_v.z, _v.xy.length))
+check(_base < _front and _front > 0.0,
+      f"after the Make Clouds button the big cloud still rises from behind the mountains in front of it "
+      f"(foot {_base:.2f} deg, mountains {_front:.2f} deg)")
+# a cloud given another Detail is the user's; giving back works on the active cloud even when it is not selected
+_c = next(o for o in sc.objects if o.get("hrp_cloud_auto") and o is not hero)
+mod_input(_c.modifiers[cumulus.MOD], "Flat Base", 0.5)
+check(not cumulus.is_auto(_c), "a cloud given another Flat Base is the user's")
+for o in sc.objects:
+    o.select_set(False)
+bpy.context.view_layer.objects.active = _c
+bpy.ops.harappa.cloud_give_back()
+check(cumulus.is_auto(_c), "Give Back works on the active cloud even when nothing is selected")
+bpy.ops.harappa.cloud_new_shape()
+check(not cumulus.is_auto(_c), "New Shape makes the cloud the user's")
+# planting: the tree nearest a third of the frame is a round broadleaf and the tallest of those in view
+from bpy_extras.object_utils import world_to_camera_view  # noqa: E402
+_seen = [o for o in sc.objects if "hrp_tree" in o and 0.08 < world_to_camera_view(sc, cam, o.location).x < 0.92
+         and world_to_camera_view(sc, cam, o.location).z > 0]
+_big = max(_seen, key=lambda o: o["hrp_height"])
+check(_big["hrp_tree"] == "ROUND", "mixed planting gives the picture a round broadleaf as its tallest tree")
+# night: the clouds' edges facing the moon shine; by day they do not
+sc.harappa.season = "NIGHT"
+check(shading.palette_get("moon_rim") > 0.9, "at night the clouds get a moon rim")
+sc.harappa.season = "SUMMER"
+check(shading.palette_get("moon_rim") < 0.01, "by day no moon rim")
+# Shuffle leaves mountains the user moved alone
+from harappa import ridges as hridges  # noqa: E402
+_r = hridges.ridges_of(sc)[0]
+_r.location.x += 30.0
+_rx = _r.location.x
+sc.harappa.variation = 3
+check(_r.name in sc.objects and abs(_r.location.x - _rx) < 1e-4, "Shuffle leaves a mountain layer the user moved")
+sc.harappa.variation = 0
+# Make Meadow on a scene with a sky from an older version brings the sky up to date
+sc.world["hrp_ver"] = 1
+bpy.context.view_layer.objects.active = ground
+ground.select_set(True)
+bpy.ops.harappa.make_meadow()
+from harappa import scene as hscene  # noqa: E402
+check(sc.world.get("hrp_ver") == hscene.SKY_VER, "Make Meadow brings an older sky up to date")
+# an animation render fits the sky to the camera of every frame (the render has its own copy of the scene)
+cam.animation_data_clear()
+cam.rotation_euler[0] = math.radians(90.0)
+cam.keyframe_insert("rotation_euler", frame=1)
+cam.rotation_euler[0] = math.radians(125.0)
+cam.keyframe_insert("rotation_euler", frame=3)
+sc.frame_start, sc.frame_end = 1, 3
+sc.render.resolution_x, sc.render.resolution_y, sc.render.resolution_percentage = 96, 54, 100
+sc.render.image_settings.file_format = "PNG"
+sc.render.filepath = os.path.join(OUT, "anim_")
+bpy.ops.render.render(animation=True)
+
+
+def _top(path):
+    im = bpy.data.images.load(path)
+    a = np.array(im.pixels[:]).reshape(im.size[1], im.size[0], 4)[-3:, :, :3].mean(axis=(0, 1))
+    bpy.data.images.remove(im)
+    return a
+
+
+sc.frame_set(1)
+H._follow_camera(sc)
+sc.render.filepath = os.path.join(OUT, "anim_still_1.png")
+bpy.ops.render.render(write_still=True)
+check(np.abs(_top(os.path.join(OUT, "anim_0001.png")) - _top(os.path.join(OUT, "anim_still_1.png"))).max() < 0.01,
+      "an animation render fits the sky to each frame's camera")
+H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")

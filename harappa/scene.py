@@ -187,9 +187,10 @@ def _sky_day(g, nd, sep, sky):
     return g.mixout(g.mix(x + 1560, y - 400, "MIX", fac=g.out(disc), a=sky, b=(1.0, 0.98, 0.9, 1.0)))
 
 
-def aim_sky(scene, world=None, update=True):
+def aim_sky(scene, world=None, update=True, depsgraph=None):
     """Fit the sky gradient to the camera: its top to the height of the frame's top edge. Called when the camera,
-    the lens or the picture format changes (the add-on watches for that)."""
+    the lens or the picture format changes (the add-on watches for that). With a depsgraph (a frame of an
+    animation render) the camera is read as that depsgraph evaluated it."""
     world = world or scene.world
     if world is None or world.node_tree is None:
         return
@@ -199,24 +200,26 @@ def aim_sky(scene, world=None, update=True):
         return
     v = 0.5
     if cam is not None and cam.type == "CAMERA":
-        if update:
+        if update and depsgraph is None:
             bpy.context.view_layer.update()
-        tr, _br, _bl, tl = cam.data.view_frame(scene=scene)
-        d = (cam.matrix_world.to_quaternion() @ tl.lerp(tr, 0.5)).normalized()
+        ev = cam.evaluated_get(depsgraph) if depsgraph is not None else cam
+        tr, _br, _bl, tl = ev.data.view_frame(scene=scene)
+        d = (ev.matrix_world.to_quaternion() @ tl.lerp(tr, 0.5)).normalized()
         v = min(max(d.z * 1.08 + 0.03, 0.16), 1.0)
     sock = only(top.outputs)
     if abs(sock.default_value - v) > 1e-4:
         sock.default_value = v
 
 
-def camera_signature(scene):
+def camera_signature(scene, depsgraph=None):
     """Everything the sky's fit depends on; when it changes the sky is fitted again."""
     cam = scene.camera
     if cam is None or cam.type != "CAMERA":
         return None
     r = scene.render
-    cd = cam.data
-    return (tuple(round(x, 4) for row in cam.matrix_world for x in row), round(cd.lens, 3), round(cd.sensor_width, 3),
+    ev = cam.evaluated_get(depsgraph) if depsgraph is not None else cam
+    cd = ev.data
+    return (tuple(round(x, 4) for row in ev.matrix_world for x in row), round(cd.lens, 3), round(cd.sensor_width, 3),
             round(cd.shift_x, 4), round(cd.shift_y, 4), cd.sensor_fit, r.resolution_x, r.resolution_y)
 
 
@@ -259,10 +262,13 @@ def set_night(world, stars=0.0, moon=0.0, camera=None):
             only(n.outputs).default_value = val
     md = nt.nodes.get("moon dir")
     bpy.context.view_layer.update()
+    d = _moon_direction(camera)
     if md is not None:
-        d = _moon_direction(camera)
         for c, v in zip("XYZ", d):
             md.inputs[c].default_value = v
+    for c, v in zip("xyz", d):                           # the clouds' edges facing the moon shine at night
+        shading.palette_set("moon_" + c, float(v))
+    shading.palette_set("moon_rim", float(min(1.0, moon)))
 
 
 def _moon_direction(camera):
