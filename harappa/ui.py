@@ -248,6 +248,9 @@ class HRP_PT_light(HrpSub, bpy.types.Panel):
         for k in ("threshold", "deep_threshold", "softness"):
             _prop(col, s, k)
         col = self.layout.column(align=True)
+        for k in ("grade_sat", "grade_contrast"):
+            _prop(col, s, k)
+        col = self.layout.column(align=True)
         for k in ("haze_amount", "haze_start", "haze_end"):
             _prop(col, s, k)
         col = self.layout.column(align=True)

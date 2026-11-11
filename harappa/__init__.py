@@ -52,6 +52,8 @@ VALUE_PROPS = [
     ("haze_end", "Haze End", 0.0, 100000.0, "Camera distance in metres where the haze is full"),
     ("flower_dim", "Flower Brightness", 0.0, 2.0, "Brightness of the meadow flowers (lower at night)"),
     ("rim_amount", "Rim Light", 0.0, 1.0, "Warm light along the sun-facing edges of trees"),
+    ("grade_sat", "Colour Strength", 0.0, 2.0, "Overall strength of every colour Harappa paints (1 = as set)"),
+    ("grade_contrast", "Picture Contrast", 0.5, 2.0, "Overall contrast of everything Harappa paints (1 = as set)"),
     ("cloud_rim_amount", "Cloud Rim Glow", 0.0, 1.0, "Bright edge on clouds that have the sun behind them"),
     ("cloud_threshold", "Cloud Light / Shadow Split", 0.0, 1.0, "How much of each cloud is in shade"),
 ]
@@ -519,7 +521,7 @@ class HRP_OT_make_meadow(bpy.types.Operator):
         size = max(max(targets[0].dimensions.x, targets[0].dimensions.y), 1.0)
         s = sc.harappa
         _busy["on"] = True
-        s.haze_start = size * 0.25
+        s.haze_start = size * 0.6
         s.haze_end = size * 3.0
         _busy["on"] = False
         shading.palette_set("haze_start", s.haze_start)

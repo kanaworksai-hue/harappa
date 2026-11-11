@@ -17,10 +17,11 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 26
+SHADER_VER = 27
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
+GRADE = "HRP Grade"
 MAT_GROUND = "HRP Ground"
 MAT_GRASS = "HRP Grass"
 MAT_FLOWER = "HRP Flower"
@@ -92,6 +93,8 @@ PALETTE_KEYS = {
     "cloud_rim": ("RGB", "#FFF6D6"),        # the bright edge of a cloud with the sun behind it
     "cloud_rim_amount": ("VALUE", 0.35),
     "cloud_threshold": ("VALUE", 0.4),      # where a cloud turns from lit to shaded
+    "grade_sat": ("VALUE", 1.0),            # overall colour strength of everything Harappa paints
+    "grade_contrast": ("VALUE", 1.0),       # overall contrast (around mid grey)
     "sun_x": ("VALUE", 0.0),                # direction to the sun (world), written with the sun
     "sun_y": ("VALUE", 0.0),
     "sun_z": ("VALUE", 1.0),
@@ -343,6 +346,41 @@ def cel_group():
     return ng
 
 
+def grade_group():
+    """One grade for every Harappa material: colour strength and contrast, read from the palette. It sits in
+    the materials (not in the compositor), so the viewport shows what the render shows and the user's own
+    compositing is left alone. At 1.0 / 1.0 it changes nothing."""
+    ng, rebuilt = fresh_group(GRADE, "ShaderNodeTree", SHADER_VER)
+    if not rebuilt:
+        return ng
+    g = G(ng)
+    iface(ng, "Color", "INPUT", "NodeSocketColor", (0.5, 0.5, 0.5, 1))
+    iface(ng, "Color", "OUTPUT", "NodeSocketColor")
+    gi = g.n("NodeGroupInput", -900, 0)
+    go = g.n("NodeGroupOutput", 900, 0)
+    pal = g.n("ShaderNodeGroup", -900, -300)
+    pal.node_tree = palette_group()
+    bw = g.n("ShaderNodeRGBToBW", -700, 150)
+    g.link(gi, "Color", bw, "Color")
+    grey = g.n("ShaderNodeCombineColor", -620, 0)
+    for ch in ("Red", "Green", "Blue"):
+        g.links.new(g.out(bw), grey.inputs[ch])
+    sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(pal, "grade_sat"), a=g.out(grey), b=g.out(gi, "Color"))
+    sat.clamp_factor = False                       # above 1 = stronger than the palette colour
+    sep = g.n("ShaderNodeSeparateColor", -300, 0)
+    g.links.new(g.mixout(sat), sep.inputs["Color"])
+    comb = g.n("ShaderNodeCombineColor", 500, 0)
+    for i, ch in enumerate(("Red", "Green", "Blue")):
+        y = 200 - i * 200
+        pos = g.math("MAXIMUM", -120, y, g.out(sep, ch), 0.0)
+        rel = g.math("DIVIDE", 20, y, g.out(pos), 0.18)
+        pw = g.math("POWER", 160, y, g.out(rel), g.out(pal, "grade_contrast"))
+        g.links.new(g.out(g.math("MULTIPLY", 300, y, g.out(pw), 0.18)), comb.inputs[ch])
+    g.link(comb, "Color", go, "Color")
+    stamp(ng, SHADER_VER)
+    return ng
+
+
 # ----------------------------------------------------------------------------------------------
 # materials
 # ----------------------------------------------------------------------------------------------
@@ -383,6 +421,11 @@ def _haze(g, pal, x, y, color_sock, amount=1.0, cap=0.92):
 
 def _emit_out(g, color_sock, x, y, alpha=None, shadow_off=False, pal=None, haze=1.0, haze_cap=0.92):
     """Emission of the cel colour (+ haze); optional alpha cut-out; optional 'no cast shadow'."""
+    if pal is not None:
+        gr = g.n("ShaderNodeGroup", x - 760, y + 120, label="grade")
+        gr.node_tree = grade_group()
+        g.links.new(color_sock, gr.inputs["Color"])
+        color_sock = g.out(gr, "Color")
     if pal is not None and (isinstance(haze, bpy.types.NodeSocket) or haze > 0):
         color_sock = _haze(g, pal, x, y, color_sock, haze, haze_cap)
     em = g.n("ShaderNodeEmission", x, y)
