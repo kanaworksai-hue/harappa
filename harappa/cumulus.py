@@ -254,13 +254,14 @@ def layout(context, count=5, seed=0, distance=320.0):
     else:
         origin, yaw, pitch, hfov, vfov = Vector((0, 0, 0)), math.pi / 2, 0.0, 80.0, 45.0
     boxes = old._tree_boxes(scene, cam)
+    ridge_top = max((float(o.get("hrp_ridge_top", 0.0)) for o in scene.objects if o.get("hrp_ridge")), default=0.0)
     placed, made = [], []
     for i in range(count):
         hero = i == 0
         medium = 1 <= i <= 2
         for attempt in range(80):
             shrink = 1.0 if attempt < 30 else (0.75 if attempt < 55 else 0.55)
-            d = distance * (rng.uniform(1.0, 1.3) if hero else rng.uniform(0.8, 1.9))
+            d = distance * (rng.uniform(1.0, 1.3) if hero else rng.uniform(1.0, 1.9))
             rel = (rng.uniform(0.34, 0.46) if hero else rng.uniform(0.17, 0.27) if medium
                    else rng.uniform(0.07, 0.14)) * shrink
             w = d * rel
@@ -271,8 +272,11 @@ def layout(context, count=5, seed=0, distance=320.0):
             low = max(0.8, pitch - vfov * 0.5 + 2.0)
             if top < low:
                 continue
-            if hero:                                               # the big one rises from behind the hills
-                el = rng.uniform(low, max(low, min(top, low + 3.0)))
+            if not hero and ridge_top > low:                       # the others float clear of the mountain tops
+                low = min(ridge_top + 0.5, max(low, top))
+            if hero:                                               # the big one rises from behind the mountains,
+                base = max(low, ridge_top - 2.0)                   # its flat base just hidden by their tops
+                el = rng.uniform(base, max(base, min(top, base + 2.0)))
             elif medium:
                 el = rng.uniform(low + 1.0, max(low + 1.0, min(top, low + 9.0)))
             else:

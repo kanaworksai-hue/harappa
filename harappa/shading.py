@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 27
+SHADER_VER = 28
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -31,6 +31,7 @@ MAT_FILL = "HRP Canopy Fill"
 MAT_CLOUD = "HRP Cloud"
 MAT_CLOUD_FILL = "HRP Cloud Fill"
 MAT_CUMULUS = "HRP Cumulus"
+MAT_RIDGE = "HRP Ridge"
 SUN = "HRP Sun"
 
 # key -> (kind, default). Colours are sRGB hex here, stored linear.
@@ -93,6 +94,9 @@ PALETTE_KEYS = {
     "cloud_rim": ("RGB", "#FFF6D6"),        # the bright edge of a cloud with the sun behind it
     "cloud_rim_amount": ("VALUE", 0.35),
     "cloud_threshold": ("VALUE", 0.4),      # where a cloud turns from lit to shaded
+    "mountain_1": ("RGB", "#3F9A6A"),       # distant ridges, near to far
+    "mountain_2": ("RGB", "#5AA0B4"),
+    "mountain_3": ("RGB", "#8FBFE0"),
     "grade_sat": ("VALUE", 1.0),            # overall colour strength of everything Harappa paints
     "grade_contrast": ("VALUE", 1.0),       # overall contrast (around mid grey)
     "sun_x": ("VALUE", 0.0),                # direction to the sun (world), written with the sun
@@ -163,7 +167,8 @@ def _rebuild_stale():
         return
     builders = {MAT_GROUND: ground_material, MAT_GRASS: grass_material, MAT_FLOWER: flower_material,
                 MAT_BARK: bark_material, MAT_FILL: fill_material, MAT_CLOUD: cloud_material,
-                MAT_CLOUD_FILL: cloud_fill_material, MAT_CUMULUS: cumulus_material}
+                MAT_CLOUD_FILL: cloud_fill_material, MAT_CUMULUS: cumulus_material,
+                MAT_RIDGE: ridge_material}
     for style in LEAF_STYLES:
         builders[leaves_name(style)] = lambda style=style: leaves_material(style)
     old = [name for name in builders
@@ -1019,11 +1024,46 @@ def cumulus_material():
     return mat
 
 
+def ridge_material():
+    """Distant ridges (ridges.py): one flat colour per layer with a few broad darker shapes on the nearer ones,
+    fading to the haze colour at the foot."""
+    mat, rebuilt = _fresh_mat(MAT_RIDGE)
+    if not rebuilt:
+        return mat
+    g = G(mat.node_tree)
+    pal = g.n("ShaderNodeGroup", -1300, 0)
+    pal.node_tree = palette_group()
+    lay = _attr(g, "hrp_layer", "OBJECT", -1300, 400)
+    t = _attr(g, "hrp_t", "GEOMETRY", -1300, 200)
+    f12 = g.maprange(-1050, 450, g.out(lay, "Fac"), 0.0, 1.0)
+    f23 = g.maprange(-1050, 250, g.out(lay, "Fac"), 1.0, 2.0)
+    c12 = g.mix(-850, 400, fac=g.out(f12, "Result"), a=g.out(pal, "mountain_1"), b=g.out(pal, "mountain_2"))
+    col = g.mix(-650, 350, fac=g.out(f23, "Result"), a=g.mixout(c12), b=g.out(pal, "mountain_3"))
+    # broad shaded shapes, strongest on the nearest layer and gone on the farthest
+    tc = g.n("ShaderNodeTexCoord", -1300, -300)
+    sc = g.vmath("MULTIPLY", -1120, -300, g.out(tc, "Object"), (0.012, 0.012, 0.05))
+    noi = g.n("ShaderNodeTexNoise", -950, -300, noise_dimensions="3D")
+    g.links.new(g.out(sc), g.inp(noi, "Vector"))
+    for k, v in (("Scale", 1.0), ("Detail", 2.0), ("Roughness", 0.5), ("Distortion", 0.6)):
+        g.set(noi, k, v)
+    shape = g.math("SUBTRACT", -780, -300, g.out(noi, "Fac"), g.out(g.math("MULTIPLY", -880, -450, g.out(t, "Fac"), 0.3)))
+    cut = g.maprange(-620, -300, g.out(shape), 0.36, 0.4, smooth=True)
+    amt = g.maprange(-620, -500, g.out(lay, "Fac"), 0.0, 2.0, 0.26, 0.0)
+    dk = g.math("MULTIPLY", -450, -350, g.out(cut, "Result"), g.out(amt, "Result"))
+    shade = g.mix(-250, 200, "MULTIPLY", fac=g.out(dk), a=g.mixout(col), b=(0.55, 0.62, 0.9, 1.0))
+    # air at the foot
+    foot = g.maprange(-620, 0, g.out(t, "Fac"), 0.0, 0.5, 0.75, 0.0, smooth=True)
+    out = g.mix(-50, 200, fac=g.out(foot, "Result"), a=g.mixout(shade), b=g.out(pal, "haze_colour"))
+    _emit_out(g, g.mixout(out), 700, 200, pal=pal, haze=0.0)
+    _done(mat, "ridge")
+    return mat
+
+
 def cloud_fill_material():
     return cloud_material(fill=True)
 
 
 def all_materials():
     return [ground_material(), grass_material(), flower_material(), bark_material(), fill_material(),
-            cloud_material(), cloud_fill_material(), cumulus_material()] + \
+            cloud_material(), cloud_fill_material(), cumulus_material(), ridge_material()] + \
         [leaves_material(st) for st in LEAF_STYLES]

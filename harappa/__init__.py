@@ -13,7 +13,7 @@ import bmesh
 import bpy
 from mathutils import Vector, noise
 
-from . import build, clouds, cumulus, i18n, presets, scatter, scene as hscene, shading, tree, ui
+from . import build, clouds, cumulus, i18n, presets, ridges, scatter, scene as hscene, shading, tree, ui
 from .i18n import report
 from .util import mod_input, srgb, to_hex
 
@@ -30,6 +30,7 @@ COLOUR_PROPS = [
     ("flower_centre", "Flower Centre"), ("flower_shade", "Flower Shade"), ("sun_tint", "Sunlight Tint"),
     ("cloud_lit", "Cloud Lit"), ("cloud_shadow", "Cloud Shadow"), ("cloud_deep", "Cloud Deep Shadow"),
     ("haze_colour", "Haze"), ("rim_colour", "Rim Light"), ("cloud_rim", "Cloud Rim"),
+    ("mountain_1", "Near Ridge"), ("mountain_2", "Middle Ridge"), ("mountain_3", "Far Ridge"),
 ]
 VALUE_PROPS = [
     # key, label, min, max, description
@@ -526,10 +527,11 @@ class HRP_OT_make_meadow(bpy.types.Operator):
         _busy["on"] = False
         shading.palette_set("haze_start", s.haze_start)
         shading.palette_set("haze_end", s.haze_end)
-        if created and not cumulus.clouds_of(sc):
-            cumulus.layout(context, s.cloud_count, seed=s.variation, distance=max(160.0, size * 8))
         if created:
             clouds.far_hills(context, targets[0], seed=s.variation)
+            ridges.build(context, targets[0], seed=s.variation)
+        if created and not cumulus.clouds_of(sc):                 # behind the farthest ridge
+            cumulus.layout(context, s.cloud_count, seed=s.variation, distance=max(160.0, size * 12))
         if created:
             for o in context.selected_objects:
                 o.select_set(False)
