@@ -56,13 +56,26 @@ def trees():
     return sorted(out, key=lambda t: t[0])
 
 
+_SUFFIX = re.compile(r"_\d{3}$")
 GROUP_NODES = {"NodeGroupInput", "NodeGroupOutput", "ShaderNodeGroup", "GeometryNodeGroup"}
 
 
 def _sid(node, sock):
     """A socket's stable id. The sockets of the add-on's own groups get a new identifier at every rebuild, so
     those go by the name the add-on gave them."""
-    return sock.name if node.bl_idname in GROUP_NODES else sock.identifier
+    if node.bl_idname in GROUP_NODES:
+        return sock.name
+    ident = sock.identifier
+    # Before 5.2 a few nodes (Random Value) kept one socket per data type: 'Value', 'Value_001', ... with only
+    # the current type's enabled. 5.2 merged them into one 'Value'. When the suffix only tells data types apart
+    # (no other enabled socket shares the base name) both spellings are the same socket.
+    base = _SUFFIX.sub("", ident)
+    if base != ident:
+        group = node.outputs if sock.is_output else node.inputs
+        twins = [s for s in group if s.enabled and s.identifier != ident and _SUFFIX.sub("", s.identifier) == base]
+        if not twins:
+            return base
+    return ident
 
 
 def _plain(v):
