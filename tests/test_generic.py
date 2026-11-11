@@ -665,11 +665,14 @@ def _top(path):
     return a
 
 
-sc.frame_set(1)
-H._follow_camera(sc)
-sc.render.filepath = os.path.join(OUT, "anim_still_1.png")
-bpy.ops.render.render(write_still=True)
-check(np.abs(_top(os.path.join(OUT, "anim_0001.png")) - _top(os.path.join(OUT, "anim_still_1.png"))).max() < 0.01,
-      "an animation render fits the sky to each frame's camera")
+_worst = 0.0
+for _f in (1, 2, 3):
+    sc.frame_set(_f)
+    H._follow_camera(sc)
+    sc.render.filepath = os.path.join(OUT, f"anim_still_{_f}.png")
+    bpy.ops.render.render(write_still=True)
+    _worst = max(_worst, float(np.abs(_top(os.path.join(OUT, f"anim_{_f:04d}.png"))
+                                      - _top(os.path.join(OUT, f"anim_still_{_f}.png"))).max()))
+check(_worst < 0.01, f"an animation render fits the sky to each frame's camera (worst {_worst:.4f})")
 H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")

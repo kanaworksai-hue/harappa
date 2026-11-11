@@ -427,7 +427,8 @@ def _cloud_props():
     def s_width(self, v):
         ob = _active_cloud()
         if ob:
-            ob.scale = (v, v, v)
+            k = v / max(ob.scale.x, 1e-9)                      # keeps a flattened cloud flat
+            ob.scale = (v, ob.scale.y * k, ob.scale.z * k)
             if "hrp_cloud_auto" in ob:
                 del ob["hrp_cloud_auto"]
     return {
@@ -716,6 +717,32 @@ class HRP_OT_add_tree(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _onto_third(sc, cam, ground, co, h, others, mask):
+    """Slide the focal tree sideways onto the nearer third of the frame, onto the ground, if there is room."""
+    from bpy_extras.object_utils import world_to_camera_view
+    q = world_to_camera_view(sc, cam, co)
+    target = 1 / 3 if q.x < 0.5 else 2 / 3
+    tr, br, _bl, _tl = cam.data.view_frame(scene=sc)
+    half = abs(tr.x) / max(abs(tr.z), 1e-6)                    # half the frame width per metre of depth
+    right = cam.matrix_world.to_quaternion() @ Vector((1, 0, 0))
+    right.z = 0.0
+    if right.length < 1e-6:
+        return co
+    p = co + right.normalized() * (target - q.x) * 2.0 * half * q.z
+    inv = ground.matrix_world.inverted()
+    hit, loc, _n, idx = ground.ray_cast(inv @ (p + Vector((0, 0, 1000.0))), Vector((0, 0, -1)))
+    if not hit:
+        return co
+    p = ground.matrix_world @ loc
+    if mask is not None:
+        poly = ground.data.polygons[idx]
+        if min(mask.data[v].color[0] for v in poly.vertices) < 0.7:   # not onto a painted path
+            return co
+    if any((p - o).length < h * 0.9 for o in others):
+        return co
+    return p
+
+
 class HRP_OT_plant_trees(bpy.types.Operator):
     bl_idname = "harappa.plant_trees"
     bl_label = "Plant Trees"
@@ -797,7 +824,8 @@ class HRP_OT_plant_trees(bpy.types.Operator):
             shape = rng.choice(shapes)
             rank = roles.get(k)
             if rank == 0:
-                shape, h = "ROUND", h * 1.25
+                shape, h = "ROUND", h * 1.15
+                co = _onto_third(sc, cam, ground, co, h, [q for j, (q, _hq) in enumerate(placed) if j != k], mask)
             elif rank is not None:
                 h *= (0.8, 0.62, 0.5)[min(rank - 1, 2)] * rng.uniform(0.95, 1.1)
             if shape == "BUSH":

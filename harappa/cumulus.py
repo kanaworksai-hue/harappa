@@ -137,7 +137,9 @@ def lobes(width, seed=0, tower=0.0):
         t = (i + 0.5) / n_big * 2 - 1                     # -1 .. 1 along the cloud
         shape = max(0.0, 1.0 - (t - lean) ** 2) ** 0.6
         r = width * (0.085 + 0.115 * shape) * rng.uniform(0.85, 1.15)
-        c = Vector((t * width * 0.4, rng.uniform(-0.05, 0.05) * width, r * rng.uniform(0.4, 0.95)))
+        c = Vector((t * width * (0.4 - 0.12 * tower), rng.uniform(-0.05, 0.05) * width, r * rng.uniform(0.55, 0.9)))
+        if abs(t) > 0.7:
+            r *= 0.8                                      # round ends, no flat wing sticking out of the base
         big.append((c, r))
     out += big
 
@@ -170,6 +172,9 @@ def lobes(width, seed=0, tower=0.0):
                 rr = r * rng.uniform(0.8, 1.1)
                 mid.append((c, rr))
                 out.append((c, rr))
+                if k > 0:                                 # a middle-sized puff in the seam with the storey below
+                    m = Vector((c.x + rng.uniform(-0.3, 0.3) * rr, c.y + rng.uniform(-0.6, 0.6) * rr, c.z - rr * 0.6))
+                    out.append((m, rr * rng.uniform(0.45, 0.6)))
                 # cauliflower: smaller puffs bulging out of the storey's sides, so the tower's outline is lumpy
                 # instead of a stack of smooth balls
                 side = 1.0 if c.x >= col.x else -1.0
@@ -337,11 +342,11 @@ def _skyline(scene, origin):
 def auto_distance(scene):
     """How far the clouds float when nobody says: where the last layout put them, else behind the farthest
     mountains of the biggest meadow (12 x its size, at least 160 m)."""
-    lay = scene.get("hrp_cloud_layout")
-    if lay is not None and len(lay) > 2 and float(lay[2]) > 0.0:
-        return float(lay[2])
     grounds = [o for o in scene.objects if o.get("hrp_ground") and not o.get("hrp_far_hills")]
     size = max((max(o.dimensions.x, o.dimensions.y) for o in grounds), default=40.0)
+    lay = scene.get("hrp_cloud_layout")
+    if lay is not None and len(lay) > 2 and float(lay[2]) >= size * 11.0:    # still behind the mountains
+        return float(lay[2])
     return max(160.0, size * 12.0)
 
 

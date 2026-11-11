@@ -23,7 +23,7 @@ from .util import mod_input
 # branch spread, conifer layering
 SHAPES = {
     "ROUND": dict(cw=0.42, ch=0.34, cz=0.66, clumps=9, cr=0.47, style="ROUND", dens=48, leaf=0.075,
-                  bloom=0.0, trunk=0.038, roundness=0.4),
+                  bloom=0.0, trunk=0.038, roundness=0.4, fullbase=True),
     "TALL": dict(cw=0.2, ch=0.42, cz=0.6, clumps=13, cr=0.5, style="SMALL", dens=60, leaf=0.06,
                  bloom=0.0, trunk=0.045, roundness=0.55),
     "WIDE": dict(cw=0.58, ch=0.31, cz=0.66, clumps=15, cr=0.36, style="SMALL", dens=55, leaf=0.06,
@@ -44,18 +44,18 @@ SHAPES = {
 }
 
 
-def _ellipsoid_points(rng, n, cw, ch, centre, min_d):
-    """Poisson-ish points in an ellipsoid shell (0.25..0.8 of the radius), upper half favoured."""
+def _ellipsoid_points(rng, n, cw, ch, centre, min_d, up=0.25, low=-0.22):
+    """Poisson-ish points in an ellipsoid shell (0.25..0.8 of the radius), upper half favoured by 'up'."""
     pts = []
     tries = 0
     while len(pts) < n and tries < 4000:
         tries += 1
-        v = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1) + 0.25))
+        v = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1) + up))
         if v.length < 1e-6:
             continue
         v.normalize()
         r = rng.uniform(0.25, 0.8)
-        if v.z * r < -0.22:            # no separate lobe hanging under the crown
+        if v.z * r < low:              # no separate lobe hanging under the crown
             continue
         p = Vector((v.x * cw * r, v.y * cw * r, v.z * ch * r + rng.uniform(-0.15, 0.15) * ch)) + centre
         if all((p - q).length > min_d for q in pts):
@@ -177,6 +177,13 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
         clumps, sizes = [p for p, _ in sp_pts], [f for _, f in sp_pts]
     elif sp.get("pads"):
         clumps = _pad_points(rng, sp["clumps"], cw, ch, centre)
+    elif sp.get("fullbase"):                 # a round crown that is round underneath too, not a cone into the trunk
+        clumps = _ellipsoid_points(rng, sp["clumps"], cw, ch, centre, cr * 0.75, up=0.05, low=-0.42)
+        a0 = rng.uniform(0, math.tau)
+        for k in range(4):                    # a ring of lobes round the lower rim of the crown
+            a = a0 + k / 4 * math.tau + rng.uniform(-0.3, 0.3)
+            clumps.append(Vector((centre.x + math.cos(a) * cw * 0.55, centre.y + math.sin(a) * cw * 0.5,
+                                  centre.z - ch * rng.uniform(0.3, 0.45))))
     else:
         clumps = _ellipsoid_points(rng, sp["clumps"], cw, ch, centre, cr * 0.75)
     # canopy: one ico sphere per clump, radius varies, slightly squashed
@@ -227,6 +234,8 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
         fork = Vector((centre.x * 0.5, centre.y * 0.5, centre.z + ch * 0.78))
     elif sp.get("pads"):
         fork = Vector((centre.x, centre.y, centre.z + ch * 0.7))       # a pine's trunk runs up through its pads
+    elif sp.get("fullbase"):                 # forks lower: two or three limbs show under the crown
+        fork = Vector((centre.x * 0.8, centre.y * 0.8, centre.z - ch * 1.05))
     else:
         fork = Vector((centre.x * 0.9, centre.y * 0.9, centre.z - ch * 0.55))
     trunk = _branch_path(rng, Vector((0, 0, 0)), fork, H * 0.03, segs=8)

@@ -206,6 +206,10 @@ def aim_sky(scene, world=None, update=True, depsgraph=None):
         tr, _br, _bl, tl = ev.data.view_frame(scene=scene)
         d = (ev.matrix_world.to_quaternion() @ tl.lerp(tr, 0.5)).normalized()
         v = min(max(d.z * 1.08 + 0.03, 0.16), 1.0)
+        back = ev.matrix_world.to_quaternion() @ Vector((0.0, 0.0, 1.0))     # towards the camera, for the clouds
+        for c, val in zip("xyz", back):
+            if abs(shading.palette_get("view_" + c) - val) > 1e-4:
+                shading.palette_set("view_" + c, float(val))
     sock = only(top.outputs)
     if abs(sock.default_value - v) > 1e-4:
         sock.default_value = v

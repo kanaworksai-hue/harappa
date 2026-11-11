@@ -112,6 +112,9 @@ PALETTE_KEYS = {
     "moon_y": ("VALUE", 0.0),
     "moon_z": ("VALUE", 1.0),
     "moon_rim": ("VALUE", 0.0),             # ... and how much the clouds' edges facing it shine (1 at night)
+    "view_x": ("VALUE", 0.0),               # towards the camera (scene.aim_sky writes it): one direction per frame
+    "view_y": ("VALUE", -1.0),
+    "view_z": ("VALUE", 0.0),
     "cirrus_mult": ("VALUE", 1.0),
     "cloud_jitter": ("VALUE", 1.0),         # how broken the painted edge between cloud tones is
     "season_sat": ("VALUE", 1.0),           # the season's share of the grade
@@ -578,9 +581,13 @@ def ground_material():
     lit, sh, dp, f = _grass_colours(g, pal, -1000, 0, g.out(has), g.out(geo, "Position"))
     cl = _clump_node(g, pal, -400, 500, g.out(geo, "Position"), g.out(geo, "Normal"))
     rel = g.maprange(-400, 750, f, 0.0, 1.0, 0.3, 1.0)
-    # further away the clump field turns into small ripples and stripes: fade it out (18..45 m), soften the split
+    # further away the clump field turns into small ripples and stripes: fade it out (0.45..1.1 of the meadow's
+    # size, 18..45 m on the default hill; hrp_size missing = 40 m), soften the split
     cdat = g.n("ShaderNodeCameraData", -600, 900)
-    far = g.maprange(-400, 900, g.out(cdat, "View Distance"), 18.0, 45.0)
+    gs0 = _attr(g, "hrp_size", "OBJECT", -900, 1000)
+    gs0 = g.math("MULTIPLY_ADD", -750, 1000, g.out(g.math("LESS_THAN", -820, 1080, g.out(gs0, "Fac"), 0.001)), 40.0,
+                 g.out(gs0, "Fac"))
+    far = g.maprange(-400, 900, g.out(g.math("DIVIDE", -500, 950, g.out(cdat, "View Distance"), g.out(gs0))), 0.45, 1.1)
     near = g.math("SUBTRACT", -250, 900, 1.0, g.out(far, "Result"))
     boost0 = _attr(g, "hrp_haze_boost", "OBJECT", -600, 1100)             # Far Hills: no clump texture at all
     nofar = g.math("SUBTRACT", -400, 1100, 1.0, g.out(g.math("MINIMUM", -500, 1150, g.out(boost0, "Fac"), 1.0)))
@@ -1061,12 +1068,19 @@ def cumulus_material():
     nn = g.vmath("NORMALIZE", -1330, 500, g.out(vt))
     # a painter's light for clouds: the sun's direction leaned up and towards the viewer, so each puff gets a lit
     # crown and a crescent of shade underneath instead of a straight cut where the sun grazes it from the side
-    geo0 = g.n("ShaderNodeNewGeometry", -1500, 700)
+    # (at night the moon is the light; the viewer's direction is the camera's, the same for the whole frame)
     sdl = g.n("ShaderNodeCombineXYZ", -1500, 850)
     for c in "xyz":
         g.link(pal, "sun_" + c, sdl, c.upper())
-    pl = g.vmath("ADD", -1330, 800, g.out(sdl), (0.0, 0.0, 0.7))
-    pl = g.vmath("ADD", -1200, 800, g.out(pl), g.out(g.vmath("SCALE", -1330, 700, g.out(geo0, "Incoming"), scale=0.4)))
+    mdl = g.n("ShaderNodeCombineXYZ", -1500, 1000)
+    for c in "xyz":
+        g.link(pal, "moon_" + c, mdl, c.upper())
+    sdl = g.mix(-1400, 900, dtype="VECTOR", fac=g.out(pal, "moon_rim"), a=g.out(sdl), b=g.out(mdl))
+    vdl = g.n("ShaderNodeCombineXYZ", -1500, 700)
+    for c in "xyz":
+        g.link(pal, "view_" + c, vdl, c.upper())
+    pl = g.vmath("ADD", -1330, 800, g.mixout(sdl), (0.0, 0.0, 0.7))
+    pl = g.vmath("ADD", -1200, 800, g.out(pl), g.out(g.vmath("SCALE", -1330, 700, g.out(vdl), scale=0.4)))
     pl = g.vmath("NORMALIZE", -1080, 800, g.out(pl))
     ndl = g.vmath("DOT_PRODUCT", -950, 650, g.out(nn), g.out(pl))
     lv = g.math("MAXIMUM", -500, 500, g.out(ndl, "Value"), 0.0)
@@ -1192,8 +1206,8 @@ def ridge_material():
     lit = g.math("ADD", -520, -800, g.out(lit), g.out(g.math("MULTIPLY", -650, -950,
                                                                g.out(g.math("SUBTRACT", -780, -1100, g.out(noi, "Fac"), 0.5)), 0.3)))
     # lower down the shade reaches further round the peak: the edge runs down the flank at a slant
-    lit = g.math("MULTIPLY_ADD", -450, -950, g.out(g.math("SUBTRACT", -520, -1050, 1.0, g.out(t, "Fac"))), 0.45,
-                 g.out(g.math("SUBTRACT", -520, -950, g.out(lit), 0.2)))
+    lit = g.math("MULTIPLY_ADD", -450, -950, g.out(g.math("SUBTRACT", -520, -1050, 1.0, g.out(t, "Fac"))), 0.7,
+                 g.out(g.math("SUBTRACT", -520, -950, g.out(lit), 0.32)))
     back = g.maprange(-380, -800, g.out(lit), 0.03, g.out(g.math("ADD", -520, -1000, g.out(pal, "ridge_soft"), 0.05)),
                       smooth=True)
     bamt = g.math("MULTIPLY", -240, -800, g.out(back, "Result"), 0.75)
