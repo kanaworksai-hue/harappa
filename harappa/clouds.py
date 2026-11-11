@@ -261,6 +261,7 @@ def far_hills(context, ground, seed=0):
     ob.visible_shadow = False
     ob["hrp_far_hills"] = True
     ob["hrp_haze_boost"] = 0.45          # some haze, but the hills keep their light, shade and colour patches
+    ob["hrp_size"] = float(size)           # same cloud shadows as the meadow they surround
     mod = ob.modifiers.get("Harappa Fringe") or ob.modifiers.new("Harappa Fringe", "NODES")   # not a meadow
     mod.node_group = scatter.grass_group()
     mod_input(mod, "Tuft", tree.tuft_object(scene))

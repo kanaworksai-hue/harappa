@@ -263,6 +263,9 @@ class HRP_PT_light(HrpSub, bpy.types.Panel):
         col = self.layout.column(align=True)
         for k in ("sky_zenith", "sky_horizon", "haze_colour", "sun_tint"):
             _prop(col, s, k)
+        col = self.layout.column(align=True)
+        for k in ("sky_curve", "cloud_shade"):
+            _prop(col, s, k)
 
 
 class HRP_PT_paint(HrpSub, bpy.types.Panel):

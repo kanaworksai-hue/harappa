@@ -459,6 +459,26 @@ check(cloud.name in sc.objects and not cloud.get("hrp_cloud_auto")
       "a cloud the user moved survives a re-roll, with its own Detail")
 made = [o for o in sc.objects if o.get("hrp_cloud_auto")]
 check(len(made) == 5, f"asked for 5 clouds, got {len(made)}")
+# three layers: one big tower rising from behind the mountains, the rest small ones
+from bpy_extras.object_utils import world_to_camera_view  # noqa: E402
+_o = cam.matrix_world.translation
+_sky = cumulus._skyline(sc, _o)
+
+
+def _screen_w(ob):
+    a = world_to_camera_view(sc, cam, ob.matrix_world @ __import__("mathutils").Vector((-0.5, 0, 0)))
+    b = world_to_camera_view(sc, cam, ob.matrix_world @ __import__("mathutils").Vector((0.5, 0, 0)))
+    return abs(b.x - a.x)
+
+
+hero = [o for o in made if o.name.startswith("Cloud Hero")]
+_v = hero[0].location - _o if hero else None
+check(len(hero) == 1 and _screen_w(hero[0]) > 1.3 * max(_screen_w(o) for o in made if o not in hero)
+      and math.degrees(math.atan2(_v.z, _v.xy.length)) < _sky(math.atan2(_v.y, _v.x), 0.0),
+      "one big cloud, its foot behind the mountains, the others small (%s %s)"
+      % ([(o.name, round(_screen_w(o), 3)) for o in made],
+         _v and (round(math.degrees(math.atan2(_v.z, _v.xy.length)), 2), round(_sky(math.atan2(_v.y, _v.x), 0.0), 2))))
+check(abs(shading.palette_get("cloud_shade") - sc.harappa.cloud_shade) < 1e-5, "cloud shadows on the ground follow the panel")
 sc.harappa.detail_level = "BEST"
 check(abs(mod_input(cloud.modifiers["Harappa Cloud"], "Detail") - 0.03) < 1e-6
       and mod_input(cloud.modifiers["Harappa Cloud"], "Quality") > 1.2,

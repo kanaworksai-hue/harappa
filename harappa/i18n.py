@@ -159,6 +159,9 @@ UI = {
     "Brushy streaks across the sky gradient": ("空のグラデーションに筆の跡を入れます", "在天空渐变上加入笔刷条纹", "하늘 그러데이션에 붓 자국을 넣습니다"),
     "Sky Bands": ("空の色分け", "天空色带", "하늘 색 띠"),
     "Flat poster bands in the sky gradient instead of a smooth blend": ("空をなめらかなグラデーションではなく、ポスターのような色の帯にします", "把天空从平滑渐变改成海报式的平涂色带", "하늘을 부드러운 그러데이션 대신 포스터 같은 색 띠로 칠합니다"),
+    "Cloud Shadows": ("雲の影", "云影", "구름 그림자"),
+    "Shadows of the clouds on the open ground in the middle distance": (
+        "中景の開けた地面に落ちる雲の影", "中景空地上的云影", "중경의 트인 땅에 드리우는 구름 그림자"),
     "Sky Depth": ("空の深さ", "天空深度", "하늘 깊이"),
     "Below 1 the deep top colour of the sky reaches further down; above 1 the pale horizon colour rises higher": (
         "1 より小さいと空の上の濃い色が下まで広がり、1 より大きいと地平線の淡い色が高くまで上がります",

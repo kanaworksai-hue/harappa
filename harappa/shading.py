@@ -107,6 +107,7 @@ PALETTE_KEYS = {
     "sky_brush": ("VALUE", 0.0),            # kept with the palette so presets carry them; the sky reads them
     "sky_bands": ("VALUE", 0.0),
     "sky_curve": ("VALUE", 1.0),
+    "cloud_shade": ("VALUE", 0.5),          # cloud shadows on the ground in the middle distance
     "cirrus_mult": ("VALUE", 1.0),
     "cloud_jitter": ("VALUE", 1.0),         # how broken the painted edge between cloud tones is
     "season_sat": ("VALUE", 1.0),           # the season's share of the grade
@@ -630,6 +631,22 @@ def ground_material():
     for c in ("Red", "Green", "Blue"):
         g.link(vj, "Result", vjc, c)
     cv = g.mix(600, 300, "MULTIPLY", fac=1.0, a=g.out(cel, "Color"), b=g.out(vjc))
+    # shadows of passing clouds on the open ground in the middle distance: broad flat patches in the shade colour.
+    # Their size follows the meadow's (hrp_size; 40 m when a ground has none), the Far Hills share the pattern.
+    gsz = _attr(g, "hrp_size", "OBJECT", 0, 1300)
+    gsz = g.math("MULTIPLY_ADD", 300, 1300, g.out(g.math("LESS_THAN", 150, 1400, g.out(gsz, "Fac"), 0.001)), 40.0,
+                 g.out(gsz, "Fac"))
+    cpos = g.vmath("DIVIDE", 450, 1300, g.out(geo, "Position"), g.out(gsz))
+    cn = g.n("ShaderNodeTexNoise", 600, 1300, noise_dimensions="2D")
+    g.links.new(g.out(cpos), cn.inputs["Vector"])
+    for k, v in (("Scale", 2.6), ("Detail", 2.0), ("Roughness", 0.5), ("Distortion", 0.3)):
+        g.set(cn, k, v)
+    cmask = g.maprange(750, 1300, g.out(cn, "Fac"), 0.535, 0.565, smooth=True)
+    dist = g.math("DIVIDE", 600, 1500, g.out(g.n("ShaderNodeCameraData", 450, 1500), "View Distance"), g.out(gsz))
+    cfar = g.maprange(750, 1500, g.out(dist), 0.35, 0.9, smooth=True)              # not on the near meadow
+    camt = g.math("MULTIPLY", 900, 1400, g.out(cmask, "Result"), g.out(cfar, "Result"))
+    camt = g.math("MULTIPLY", 1050, 1400, g.out(camt), g.out(pal, "cloud_shade"), clamp=True)
+    cv = g.mix(1100, 300, fac=g.out(camt), a=g.mixout(cv), b=sh)
     _emit_out(g, g.mixout(cv), 1300, 200, pal=pal, haze=g.out(hz))
     _done(mat, "ground")
     return mat
@@ -1046,16 +1063,24 @@ def cumulus_material():
     g.link(s2r, "Color", bw, "Color")
     lv = g.math("DIVIDE", -500, 500, g.out(g.math("MULTIPLY", -660, 500, g.out(bw), math.pi)),
                 g.out(pal, "light_scale"))
-    ch = _attr(g, "hrp_ch", "GEOMETRY", -1700, 250)
+    ch0 = _attr(g, "hrp_ch", "GEOMETRY", -1700, 250)
     # light, lifted towards the crown and broken up by a painted noise
     tc = g.n("ShaderNodeTexCoord", -1700, -300)
+    # the height that sorts light from shade wanders up and down by about a lobe: the shaded base climbs into
+    # the gaps between puffs instead of stopping on one straight line across the cloud
+    wob = g.n("ShaderNodeTexNoise", -1500, 100, noise_dimensions="3D")
+    g.link(tc, "Object", wob, "Vector")
+    for k, v in (("Scale", 3.2), ("Detail", 1.0), ("Roughness", 0.5), ("Distortion", 0.2)):
+        g.set(wob, k, v)
+    ch = g.math("MULTIPLY_ADD", -1300, 200, g.out(g.math("SUBTRACT", -1400, 200, g.out(wob, "Fac"), 0.5)), 0.6,
+                g.out(ch0, "Fac"))
     noi = g.n("ShaderNodeTexNoise", -1500, -300, noise_dimensions="3D")
     g.link(tc, "Object", noi, "Vector")
     for k, v in (("Scale", 11.0), ("Detail", 3.0), ("Roughness", 0.55), ("Distortion", 0.3)):   # per cloud width
         g.set(noi, k, v)
     jit = g.math("MULTIPLY", -1300, -300, g.out(g.math("SUBTRACT", -1400, -300, g.out(noi, "Fac"), 0.5)),
                  g.out(g.math("MULTIPLY", -1400, -450, g.out(pal, "cloud_jitter"), 0.22)))
-    v = g.math("MULTIPLY_ADD", -330, 500, g.out(ch, "Fac"), 0.28, g.out(g.math("MULTIPLY", -420, 420, g.out(lv), 0.78)))
+    v = g.math("MULTIPLY_ADD", -330, 500, g.out(ch), 0.28, g.out(g.math("MULTIPLY", -420, 420, g.out(lv), 0.78)))
     v = g.math("ADD", -180, 500, g.out(v), g.out(jit))
     # clouds keep their painted steps in every style: a soft style only softens the edge a little (a fully
     # blended cloud reads as modelling clay)
@@ -1066,8 +1091,10 @@ def cumulus_material():
     # the deepest tone: undersides low in the cloud
     sz = g.n("ShaderNodeSeparateXYZ", -1150, 150)
     g.link(nn, 0, sz, "Vector")
-    under = g.maprange(-980, 150, g.out(sz, "Z"), -0.15, -0.6, smooth=True)
-    lowc = g.maprange(-980, -50, g.out(ch, "Fac"), 0.45, 0.1, smooth=True)
+    nzw = g.math("MULTIPLY_ADD", -1060, 150, g.out(g.math("SUBTRACT", -1150, 0, g.out(wob, "Fac"), 0.5)), 0.9,
+                 g.out(sz, "Z"))
+    under = g.maprange(-980, 150, g.out(nzw), -0.15, -0.6, smooth=True)
+    lowc = g.maprange(-980, -50, g.out(ch), 0.45, 0.1, smooth=True)
     d0 = g.math("MULTIPLY", -800, 100, g.out(under, "Result"), g.out(lowc, "Result"))
     d1 = g.math("ADD", -640, 100, g.out(d0), g.out(g.math("MULTIPLY", -720, -50, g.out(jit), 1.5)))
     f2 = g.maprange(-480, 100, g.out(d1), 0.3, 0.42, smooth=True)
@@ -1089,7 +1116,7 @@ def cumulus_material():
     # ... only on the side of the cloud that faces the sun, and not along the flat base: a rim, not an outline
     sunside = g.vmath("DOT_PRODUCT", -1300, -1150, g.out(geo, "Normal"), g.out(sd))
     side = g.maprange(-1120, -1150, g.out(sunside, "Value"), -0.15, 0.6, 0.12, 1.0, smooth=True)
-    nobase = g.maprange(-1120, -1350, g.out(ch, "Fac"), 0.06, 0.3, smooth=True)
+    nobase = g.maprange(-1120, -1350, g.out(ch0, "Fac"), 0.06, 0.3, smooth=True)
     rim = g.math("MULTIPLY", -860, -1000, g.out(rim), g.out(g.math("MULTIPLY", -960, -1150, g.out(side, "Result"),
                                                                   g.out(nobase, "Result"))))
     rim = g.math("MULTIPLY", -700, -800, g.out(rim), g.out(g.math("MULTIPLY", -780, -950, g.out(pal, "cloud_rim_amount"), 2.2)),

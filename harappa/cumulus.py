@@ -16,7 +16,7 @@ from . import shading
 from .util import G, fresh_group, iface, mod_input, stamp
 
 CLOUD = "HRP Cloud"
-CLOUD_VER = 2
+CLOUD_VER = 3
 MOD = "Harappa Cloud"
 TAG = "hrp_cloud"                       # on every cloud object
 RADIUS = "hrp_r"
@@ -63,17 +63,27 @@ def cloud_group():
     g.link(sdf, "SDF Grid", mesh, "Grid")
 
     # shading normal: each vertex looks away from the centre of the lobe it belongs to, mixed with the surface
-    # normal and blurred -> every puff gets its own lit top and shaded underside, in broad painted shapes
+    # normal and blurred -> every puff gets its own lit top and shaded underside, in broad painted shapes.
+    # The lobe a vertex belongs to is the sphere whose surface is nearest (not the nearest centre: between a big
+    # lobe and a small one on top of it the nearest centre splits along a flat plane, a straight-edged shadow).
+    # Smooth unit spheres on the lobes, sampled for their normal = the direction from that lobe's centre.
     pos = g.n("GeometryNodeInputPosition", -550, -300)
-    near = g.n("GeometryNodeSampleNearest", -350, -300, domain="POINT")
-    g.link(pts, "Points", near, "Geometry")
+    ico = g.n("GeometryNodeMeshIcoSphere", -750, -650)
+    g.set(ico, "Radius", 1.0)
+    g.set(ico, "Subdivisions", 2)
+    smo = g.n("GeometryNodeSetShadeSmooth", -600, -650)
+    g.link(ico, "Mesh", smo, "Mesh" if "Mesh" in smo.inputs else "Geometry")
+    inst = g.n("GeometryNodeInstanceOnPoints", -450, -500)
+    g.link(pts, "Points", inst, "Points")
+    g.link(smo, 0, inst, "Instance")
+    g.links.new(_named(g, -650, -800, RADIUS), g.inp(inst, "Scale"))
+    real = g.n("GeometryNodeRealizeInstances", -300, -500)
+    g.link(inst, "Instances", real, "Geometry")
+    near = g.n("GeometryNodeSampleNearestSurface", -150, -300, data_type="FLOAT_VECTOR")
+    g.link(real, "Geometry", near, "Mesh")
+    g.links.new(g.out(g.n("GeometryNodeInputNormal", -300, -700), "Normal"), g.inp(near, "Value", "VECTOR"))
     g.link(pos, "Position", near, "Sample Position")
-    cen = g.n("GeometryNodeSampleIndex", -150, -300, data_type="FLOAT_VECTOR", domain="POINT")
-    g.link(pts, "Points", cen, "Geometry")
-    g.links.new(g.out(g.n("GeometryNodeInputPosition", -350, -480), "Position"), g.inp(cen, "Value", "VECTOR"))
-    g.link(near, "Index", cen, "Index")
-    away = g.vmath("NORMALIZE", 200, -300, g.out(g.vmath("SUBTRACT", 50, -300, g.out(pos, "Position"),
-                                                         g.out(cen, "Value", "VECTOR"))))
+    away = g.vmath("NORMALIZE", 200, -300, g.out(near, "Value", "VECTOR"))
     nrm = g.n("GeometryNodeInputNormal", 50, -500)
     mixn = g.mix(350, -350, dtype="VECTOR", fac=0.72, a=g.out(nrm, "Normal"), b=g.out(away))
     blur = g.n("GeometryNodeBlurAttribute", 520, -350, data_type="FLOAT_VECTOR")
@@ -127,7 +137,7 @@ def lobes(width, seed=0, tower=0.0):
         t = (i + 0.5) / n_big * 2 - 1                     # -1 .. 1 along the cloud
         shape = max(0.0, 1.0 - (t - lean) ** 2) ** 0.6
         r = width * (0.085 + 0.115 * shape) * rng.uniform(0.85, 1.15)
-        c = Vector((t * width * 0.4, rng.uniform(-0.05, 0.05) * width, r * rng.uniform(0.55, 0.8)))
+        c = Vector((t * width * 0.4, rng.uniform(-0.05, 0.05) * width, r * rng.uniform(0.4, 0.95)))
         big.append((c, r))
     out += big
 
@@ -262,9 +272,35 @@ def _frame(scene, cam):
     return direction
 
 
+def _skyline(scene, origin):
+    """elev(az, half): the mean height in degrees of the mountain ridge line seen from 'origin', over the
+    azimuths az +- half (radians); 0 with no mountains there."""
+    bins = {}
+    step = math.radians(0.5)
+    for ob in scene.objects:
+        if not ob.get("hrp_ridge") or ob.type != "MESH":
+            continue
+        mw = ob.matrix_world
+        for v in ob.data.vertices:
+            p = mw @ v.co - origin
+            flat = p.xy.length
+            if flat < 1e-6:
+                continue
+            k = int(math.floor(math.atan2(p.y, p.x) / step))
+            e = math.degrees(math.atan2(p.z, flat))
+            if e > bins.get(k, -90.0):
+                bins[k] = e
+
+    def elev(az, half):
+        ks = range(int(math.floor((az - half) / step)), int(math.floor((az + half) / step)) + 1)
+        es = [bins[k] for k in ks if k in bins]
+        return sum(es) / len(es) if es else 0.0
+    return elev
+
+
 def layout(context, count=5, seed=0, distance=320.0):
-    """(Re)build the clouds in front of the scene camera: one hero cumulus, a couple of medium ones and small
-    ones, inside the frame and clear of the tree crowns. Returns the cloud objects it made.
+    """(Re)build the clouds in front of the scene camera: one big tower, small clouds high up and a band of small
+    far ones on the mountain tops, inside the frame and clear of the tree crowns. Returns the cloud objects it made.
 
     With no sky in the frame (a camera looking down) or no camera, the clouds go above the horizon ahead."""
     from . import clouds as old
@@ -276,7 +312,6 @@ def layout(context, count=5, seed=0, distance=320.0):
     rng = random.Random(seed * 131 + 7)
     context.view_layer.update()
     cam = scene.camera if scene.camera is not None and scene.camera.type == "CAMERA" else None
-    ridge_top = max((float(o.get("hrp_ridge_top", 0.0)) for o in scene.objects if o.get("hrp_ridge")), default=0.0)
     if cam is not None and cam.data.type != "ORTHO":
         origin = cam.matrix_world.translation.copy()
         direction = _frame(scene, cam)
@@ -300,50 +335,65 @@ def layout(context, count=5, seed=0, distance=320.0):
             e = math.radians(1.0 + sy * 30.0)
             return Vector((math.cos(a) * math.cos(e), math.sin(a) * math.cos(e), math.sin(e)))
     boxes = old._tree_boxes(scene, cam) if cam is not None else []
+    skyline = _skyline(scene, origin)
+    # three layers, as a painter would place them: one big tower rising from behind the mountains (about a third
+    # of the frame wide), one or two small clouds high up, and the rest a band of small far clouds sitting low on
+    # the mountain tops, partly hidden behind them
+    n_high = 0 if count < 3 else (1 if count < 6 else 2)
+    roles = ["hero"] + ["high"] * n_high + ["band"] * (count - 1 - n_high)
     placed, made = [], []
-    for i in range(count):
-        hero = i == 0
-        medium = 1 <= i <= 2
+    for i, role in enumerate(roles):
         cseed = seed * 17 + i
         for attempt in range(90):
             shrink = 1.0 if attempt < 12 else (0.8 if attempt < 30 else (0.62 if attempt < 55 else 0.45))
-            d = distance * (rng.uniform(1.0, 1.3) if hero else rng.uniform(1.0, 1.9))
-            rel = (rng.uniform(0.42, 0.54) if hero else rng.uniform(0.15, 0.24) if medium
-                   else rng.uniform(0.06, 0.12)) * shrink
+            if role == "hero":
+                d = distance * rng.uniform(1.0, 1.15)
+                frac, tower = rng.uniform(0.3, 0.36), rng.uniform(0.55, 0.85)
+            elif role == "high":
+                d = distance * rng.uniform(1.0, 1.5)
+                frac, tower = rng.uniform(0.05, 0.09), 0.0
+            else:
+                d = distance * rng.uniform(1.35, 1.9)
+                frac, tower = rng.uniform(0.05, 0.11), rng.uniform(0.0, 0.25)
+            rel = frac * hfov * shrink                  # width / distance
             w = d * rel
-            tower = rng.uniform(0.3, 0.6) if hero else (rng.uniform(0.0, 0.4) if medium else 0.0)
             height_deg = math.degrees(math.atan(max(c.z + r for c, r in lobes(1.0, cseed, tower)) * rel))
-            sx = rng.uniform(0.1, 0.9)
+            sx = rng.uniform(0.12, 0.88) if role != "band" else rng.uniform(0.04, 0.96)
             top = math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 1.0).z)))) - height_deg - 1.0
             low = max(0.8, math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 0.0).z)))) + 2.0)
-            if hero:                                    # sits right on the mountain tops
-                low = max(low, ridge_top + 0.2)
-                span = 1.5
-            elif medium:                                # float clear of the mountain tops
-                low = max(low, ridge_top + 0.5)
-                span = 9.0
-            else:                                       # small ones: a band low over the tops, or high up
-                low = max(low, ridge_top + 0.3)
-                span = 3.0 if i % 2 else 30.0
-            if top < low:
-                if attempt < 80:
-                    continue                            # does not fit the frame: try another place or smaller
-                top = low
-            el = rng.uniform(low if span < 20 else max(low, top - 6.0), min(top, low + span))
             flat = direction(sx, 0.5)
             az = math.atan2(flat.y, flat.x)
+            ridge = skyline(az, 0.5 * rel)
+            if role == "hero":                          # its foot hidden behind the mountain tops
+                if ridge > 0.0:
+                    low = max(low, ridge - 0.25 * height_deg)
+                lo_el, hi_el = low, low + 0.1 * height_deg
+            elif role == "band":                        # sitting on the tops, partly behind them
+                if ridge > 0.0:
+                    low = max(low, ridge - 0.4 * height_deg)
+                lo_el, hi_el = low, low + 0.35 * height_deg
+            else:                                       # high up in the frame
+                lo_el, hi_el = max(low, top - 7.0), top
+            if top < lo_el:
+                if attempt < 80:
+                    continue                            # does not fit the frame: try another place or smaller
+                top = lo_el
+            el = rng.uniform(lo_el, max(lo_el, min(top, hi_el)))
             c = origin + Vector((math.cos(az) * d, math.sin(az) * d, math.tan(math.radians(el)) * d))
-            gap = 0.5 * rel / hfov + 0.025
-            if attempt >= 50:
-                gap *= 0.6                              # rather a little close than a cloud short
-            if attempt < 80 and any(abs(sx - qx) < gap + qg for qx, qg in placed):
+            gap = 0.5 * rel / hfov + (0.025 if role != "band" else 0.0)
+            if role == "band" or attempt >= 50:
+                gap *= 0.6                              # the band may crowd; and rather close than a cloud short
+            if attempt < 80 and any(abs(sx - qx) < gap + qg and (role != "band" or qr != "band")
+                                    for qx, qg, qr in placed if qr == role or "hero" in (qr, role)):
                 continue                                # the last tries take any free-ish spot: never a cloud short
-            if cam is not None and attempt < 65 and old._overlaps(scene, cam, c + Vector((0, 0, w * 0.2)),
-                                                                  w * 0.62, boxes):
+            hw = max(c_.z + r for c_, r in lobes(1.0, cseed, tower)) * w          # its height in metres
+            if cam is not None and attempt < 65 and any(
+                    old._overlaps(scene, cam, c + Vector((0, 0, z)), w * 0.62, boxes)
+                    for z in (w * 0.2, max(w * 0.2, hw - w * 0.42))):            # a tall tower: its top too
                 continue
-            placed.append((sx, gap))
+            placed.append((sx, gap, role))
             ob = add_cloud(context, c, w, seed=cseed, tower=tower, yaw=az - math.pi / 2,
-                           name="Cloud" if not hero else "Cloud Hero")
+                           name="Cloud Hero" if role == "hero" else "Cloud")
             ob["hrp_cloud_auto"] = True
             ob["hrp_cloud_home"] = _home(ob)
             made.append(ob)

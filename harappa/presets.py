@@ -23,7 +23,7 @@ SEASONS = {
             "flower_centre": "#FFC531", "flower_shade": "#B7B9E8", "sun_tint": "#FFFFFF", "rim_colour": "#FFF4C8",
             "haze_colour": "#B4DDF2", "cloud_lit": "#FFFFFF", "cloud_shadow": "#94B4E5", "cloud_deep": "#6790CF", "cloud_rim": "#FFF6D6", "ever_lit": "#8FCB46", "ever_mid": "#3F9440", "ever_shadow": "#19624A", "ever_deep": "#08313A", "mountain_1": "#3F9A6A", "mountain_2": "#5AA0B4", "mountain_3": "#8FBFE0", "bloom_deep": "#B58AB0",
         },
-        "tone": {"cloud_threshold": 0.4, "season_sat": 1.04, "season_contrast": 1.18, "cloud_rim_amount": 0.35, "threshold": 0.44, "deep_threshold": 0.2, "patch_amount": 0.5, "wind_sheen": 0.35, "haze_amount": 0.22, "flower_dim": 1.0, "leaf_deep_threshold": 0.26, "rim_amount": 0.2},
+        "tone": {"cloud_shade": 0.8, "cloud_threshold": 0.4, "season_sat": 1.04, "season_contrast": 1.18, "cloud_rim_amount": 0.35, "threshold": 0.44, "deep_threshold": 0.2, "patch_amount": 0.5, "wind_sheen": 0.35, "haze_amount": 0.22, "flower_dim": 1.0, "leaf_deep_threshold": 0.26, "rim_amount": 0.2},
         "sky": ("#1F6FD8", "#A8DBF5", "#B4DDF2"),
         "sky_more": {"mid": "#4E9BEA", "glow": "#FFF8E0", "sun": 0.6, "cirrus": 0.6, "cirrus_colour": "#E8F4FF"},
         "sun": {"elevation": 48.0, "side": -55.0, "colour": "#FFF4D6", "strength": 4.5},
@@ -43,7 +43,7 @@ SEASONS = {
             "flower_centre": "#FFD24A", "flower_shade": "#C9C4EC", "sun_tint": "#FFFDF6", "rim_colour": "#FFF6D8",
             "haze_colour": "#D0E8F6", "cloud_lit": "#FFFFFF", "cloud_shadow": "#B1C4EB", "cloud_deep": "#8AA2D9", "cloud_rim": "#FFE9F0", "ever_lit": "#9AD452", "ever_mid": "#4AA046", "ever_shadow": "#236E4F", "ever_deep": "#09343D", "mountain_1": "#5FAE78", "mountain_2": "#86BFC4", "mountain_3": "#A6C8EA", "bloom_deep": "#C2588E",
         },
-        "tone": {"cloud_threshold": 0.4, "season_sat": 1.12, "season_contrast": 1.3, "cloud_rim_amount": 0.35, "threshold": 0.42, "deep_threshold": 0.2, "patch_amount": 0.55, "wind_sheen": 0.4, "haze_amount": 0.22, "flower_dim": 1.0, "leaf_deep_threshold": 0.26, "rim_amount": 0.12},
+        "tone": {"cloud_shade": 0.75, "cloud_threshold": 0.4, "season_sat": 1.12, "season_contrast": 1.3, "cloud_rim_amount": 0.35, "threshold": 0.42, "deep_threshold": 0.2, "patch_amount": 0.55, "wind_sheen": 0.4, "haze_amount": 0.22, "flower_dim": 1.0, "leaf_deep_threshold": 0.26, "rim_amount": 0.12},
         "sky": ("#3E8EEA", "#FFD6E4", "#D0E8F6"),
         "sky_more": {"mid": "#62AEF0", "glow": "#FFF6E8", "sun": 0.6, "cirrus": 0.35, "cirrus_colour": "#F4F8FF"},
         "blossom": 0.85,
@@ -64,7 +64,7 @@ SEASONS = {
             "flower_centre": "#FF9F2E", "flower_shade": "#A99AD8", "sun_tint": "#FFE9C8", "rim_colour": "#FFD36A",
             "haze_colour": "#FFC48A", "cloud_lit": "#FFCC88", "cloud_shadow": "#E16F5C", "cloud_deep": "#AF4A68", "cloud_rim": "#FFF2B0", "ever_lit": "#D8A840", "ever_mid": "#5E8A3E", "ever_shadow": "#43475E", "ever_deep": "#251B4B", "mountain_1": "#3E3C80", "mountain_2": "#7A6AA8", "mountain_3": "#F09A86", "bloom_deep": "#9A6E92",
         },
-        "tone": {"cloud_threshold": 0.22, "season_sat": 1.25, "season_contrast": 1.15, "cloud_rim_amount": 0.4, "threshold": 0.34, "deep_threshold": 0.16, "patch_amount": 0.45, "wind_sheen": 0.6, "haze_amount": 0.3, "flower_dim": 0.95, "leaf_deep_threshold": 0.182, "rim_amount": 0.85},
+        "tone": {"cloud_shade": 0.7, "cloud_threshold": 0.22, "season_sat": 1.25, "season_contrast": 1.15, "cloud_rim_amount": 0.4, "threshold": 0.34, "deep_threshold": 0.16, "patch_amount": 0.45, "wind_sheen": 0.6, "haze_amount": 0.3, "flower_dim": 0.95, "leaf_deep_threshold": 0.182, "rim_amount": 0.85},
         "sky": ("#2E4CB0", "#FFB25A", "#FFC48A"),
         "sky_more": {"mid": "#7E68CC", "glow": "#FFD060", "sun": 1.0, "cirrus": 0.7, "cirrus_colour": "#FF9E8A"},
         "sun": {"elevation": 14.0, "side": 158.0, "colour": "#FFB45E", "strength": 5.0},
@@ -84,7 +84,7 @@ SEASONS = {
             "flower_centre": "#FF9A30", "flower_shade": "#B39AC8", "sun_tint": "#FFF3DE", "rim_colour": "#FFD08A",
             "haze_colour": "#D2E2EC", "cloud_lit": "#FFFAF0", "cloud_shadow": "#A9B8DF", "cloud_deep": "#8095C9", "cloud_rim": "#FFE6B0", "ever_lit": "#7FB04A", "ever_mid": "#2F6B4A", "ever_shadow": "#1A4F42", "ever_deep": "#0C3136", "mountain_1": "#C8843A", "mountain_2": "#5E86B0", "mountain_3": "#9EC0E0", "bloom_deep": "#A8703A",
         },
-        "tone": {"cloud_threshold": 0.4, "season_sat": 1.1, "season_contrast": 1.15, "cloud_rim_amount": 0.45, "threshold": 0.44, "deep_threshold": 0.13, "patch_amount": 0.35, "wind_sheen": 0.3, "haze_amount": 0.2, "flower_dim": 1.0, "leaf_deep_threshold": 0.18, "rim_amount": 0.4},
+        "tone": {"cloud_shade": 0.75, "cloud_threshold": 0.4, "season_sat": 1.1, "season_contrast": 1.15, "cloud_rim_amount": 0.45, "threshold": 0.44, "deep_threshold": 0.13, "patch_amount": 0.35, "wind_sheen": 0.3, "haze_amount": 0.2, "flower_dim": 1.0, "leaf_deep_threshold": 0.18, "rim_amount": 0.4},
         "sky": ("#2466C8", "#CDE6F2", "#D2E2EC"),
         "sky_more": {"mid": "#5A9BE0", "glow": "#FFF2D8", "sun": 0.6, "cirrus": 0.9, "cirrus_colour": "#FFFFFF"},
         "sun": {"elevation": 28.0, "side": -60.0, "colour": "#FFE8BE", "strength": 4.5},
@@ -104,7 +104,7 @@ SEASONS = {
             "flower_centre": "#FFE08A", "flower_shade": "#6E78B8", "sun_tint": "#DCE8FF", "rim_colour": "#B8C8F0",
             "haze_colour": "#244E90", "cloud_lit": "#8FA6E8", "cloud_shadow": "#2E3F86", "cloud_deep": "#1A2560", "cloud_rim": "#E6F0FF", "ever_lit": "#5AA0A0", "ever_mid": "#2F6A80", "ever_shadow": "#1A4068", "ever_deep": "#0A1638", "mountain_1": "#16305E", "mountain_2": "#1F4480", "mountain_3": "#2C5A9C", "bloom_deep": "#4E4A80",
         },
-        "tone": {"cloud_threshold": 0.4, "season_sat": 1.0, "season_contrast": 1.15, "cloud_rim_amount": 0.5, "threshold": 0.46, "deep_threshold": 0.14, "patch_amount": 0.25, "wind_sheen": 0.5, "haze_amount": 0.45, "flower_dim": 0.8, "leaf_deep_threshold": 0.18, "rim_amount": 0.25},
+        "tone": {"cloud_shade": 0.5, "cloud_threshold": 0.4, "season_sat": 1.0, "season_contrast": 1.15, "cloud_rim_amount": 0.5, "threshold": 0.46, "deep_threshold": 0.14, "patch_amount": 0.25, "wind_sheen": 0.5, "haze_amount": 0.45, "flower_dim": 0.8, "leaf_deep_threshold": 0.18, "rim_amount": 0.25},
         "sky": ("#060F3A", "#2F62B0", "#244E90"),
         "sky_more": {"mid": "#14307A", "glow": "#7FA8FF", "sun": 0.0, "cirrus": 0.15, "cirrus_colour": "#5C78C8"},
         "sun": {"elevation": 34.0, "side": -40.0, "colour": "#DCE8FF", "strength": 3.6},
@@ -124,7 +124,7 @@ SEASONS = {
             "flower_centre": "#F2D27A", "flower_shade": "#C8CCE0", "sun_tint": "#FAFCFF", "rim_colour": "#FFE6B0",
             "haze_colour": "#D6EAF2", "cloud_lit": "#FFF6EC", "cloud_shadow": "#B5C2E1", "cloud_deep": "#93A6D1", "cloud_rim": "#FFE0B0", "ever_lit": "#8ED070", "ever_mid": "#4A9E60", "ever_shadow": "#236B59", "ever_deep": "#0E3E47", "mountain_1": "#4E9A86", "mountain_2": "#6EB2BE", "mountain_3": "#A8D4E6", "bloom_deep": "#B89AAE",
         },
-        "tone": {"cloud_threshold": 0.4, "season_sat": 1.18, "season_contrast": 1.25, "cloud_rim_amount": 0.6, "threshold": 0.42, "deep_threshold": 0.12, "patch_amount": 0.5, "wind_sheen": 0.25, "haze_amount": 0.3, "flower_dim": 1.0, "leaf_deep_threshold": 0.1, "rim_amount": 0.45},
+        "tone": {"cloud_shade": 0.55, "cloud_threshold": 0.4, "season_sat": 1.18, "season_contrast": 1.25, "cloud_rim_amount": 0.6, "threshold": 0.42, "deep_threshold": 0.12, "patch_amount": 0.5, "wind_sheen": 0.25, "haze_amount": 0.3, "flower_dim": 1.0, "leaf_deep_threshold": 0.1, "rim_amount": 0.45},
         "sky": ("#4A96E4", "#FFD8B0", "#D6EAF2"),
         "sky_more": {"mid": "#86C0EE", "glow": "#FFF0C8", "sun": 0.8, "cirrus": 0.3, "cirrus_colour": "#FFF4E6"},
         "sun": {"elevation": 14.0, "side": -120.0, "colour": "#FFE6C0", "strength": 3.8},
@@ -165,7 +165,7 @@ STYLES = {
 STYLE_KEYS = tuple(STYLES["ANIME"]["keys"].keys())
 TONE_KEYS = ("threshold", "deep_threshold", "patch_amount", "wind_sheen", "haze_amount", "flower_dim",
              "cloud_rim_amount", "cloud_threshold", "season_sat", "season_contrast",
-             "leaf_deep_threshold", "rim_amount")
+             "leaf_deep_threshold", "rim_amount", "cloud_shade")
 assert not set(STYLE_KEYS) & set(TONE_KEYS)
 
 # Shuffle picks flower colours from these (curated: always reads as wildflowers)

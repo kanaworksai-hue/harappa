@@ -67,4 +67,5 @@ def make_meadow(context, ob, density=40.0, height=0.35, flowers=True, max_tufts=
     # the ground (and its grass instances) receive shadows but don't cast them: faster, cleaner
     ob.visible_shadow = False
     ob["hrp_ground"] = True
+    ob["hrp_size"] = float(max(ob.dimensions.x, ob.dimensions.y, 1.0))     # the cloud shadows' scale
     return mod
