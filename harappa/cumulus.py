@@ -316,8 +316,8 @@ def layout(context, count=5, seed=0, distance=320.0):
             sx = rng.uniform(0.1, 0.9)
             top = math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 1.0).z)))) - height_deg - 1.0
             low = max(0.8, math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 0.0).z)))) + 2.0)
-            if hero:                                    # rises from behind the mountains, base just hidden
-                low = max(low, ridge_top - 5.0)
+            if hero:                                    # sits right on the mountain tops
+                low = max(low, ridge_top + 0.2)
                 span = 1.5
             elif medium:                                # float clear of the mountain tops
                 low = max(low, ridge_top + 0.5)

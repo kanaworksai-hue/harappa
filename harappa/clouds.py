@@ -260,7 +260,7 @@ def far_hills(context, ground, seed=0):
     me.materials.append(shading.ground_material())
     ob.visible_shadow = False
     ob["hrp_far_hills"] = True
-    ob["hrp_haze_boost"] = 1.0
+    ob["hrp_haze_boost"] = 0.45          # some haze, but the hills keep their light, shade and colour patches
     mod = ob.modifiers.get("Harappa Fringe") or ob.modifiers.new("Harappa Fringe", "NODES")   # not a meadow
     mod.node_group = scatter.grass_group()
     mod_input(mod, "Tuft", tree.tuft_object(scene))

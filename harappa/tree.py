@@ -328,6 +328,7 @@ def add_tree(context, shape="ROUND", height=5.0, seed=0, location=(0, 0, 0), lea
     style = leaf_style or sp["style"]
     card = card_object(scene, "leaf", style)
     canopy["hrp_hue"] = 0.0
+    canopy["hrp_evergreen"] = 1.0 if (sp.get("conifer") or sp.get("pads")) else 0.0
     canopy["hrp_value"] = sp.get("value", 0.0)
     canopy["hrp_value_base"] = sp.get("value", 0.0)
     mod = canopy.modifiers.new("Harappa Foliage", "NODES")

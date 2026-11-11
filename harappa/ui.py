@@ -294,6 +294,7 @@ class HRP_PT_colours(HrpSub, bpy.types.Panel):
             ("Grass", ("grass_lit", "grass_lit2", "grass_shadow", "grass_deep", "grass_tip")),
             ("Path", ("dirt_lit", "dirt_shadow", "dirt_deep")),
             ("Leaves", ("leaf_lit", "leaf_mid", "leaf_shadow", "leaf_deep", "leaf_hi")),
+            ("Evergreens", ("ever_lit", "ever_mid", "ever_shadow", "ever_deep")),
             ("Blossoms & Bark", ("bloom_lit", "bloom_shadow", "bloom_deep", "bark_lit", "bark_shadow")),
             ("Clouds", ("cloud_lit", "cloud_shadow", "cloud_deep", "cloud_rim")),
             ("Mountains", ("mountain_1", "mountain_2", "mountain_3")),

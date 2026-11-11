@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 31
+SHADER_VER = 33
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -51,6 +51,10 @@ PALETTE_KEYS = {
     "leaf_shadow": ("RGB", "#3F7F66"),
     "leaf_deep": ("RGB", "#183C46"),
     "leaf_hi": ("RGB", "#DDF08F"),
+    "ever_lit": ("RGB", "#8FCB46"),         # evergreens (conifer, pine): they keep their green in autumn
+    "ever_mid": ("RGB", "#3F9440"),
+    "ever_shadow": ("RGB", "#1F6B52"),
+    "ever_deep": ("RGB", "#0C3A44"),
     "bloom_lit": ("RGB", "#FFD3E2"),
     "bloom_shadow": ("RGB", "#D58FB6"),
     "bloom_deep": ("RGB", "#B58AB0"),
@@ -809,10 +813,14 @@ def leaves_material(style="ROUND"):
     off = g.math("MULTIPLY_ADD", -300, -200, g.out(aol), 0.5, -0.5)
     off2 = g.math("ADD", -100, -200, g.out(off), g.out(dpt, "Result"))
     # colours: leaves 4-tone (deep, shadow, mid, lit) / blossoms 2-tone
-    lit = g.mix(-300, 300, fac=g.out(isb), a=g.out(pal, "leaf_lit"), b=g.out(pal, "bloom_lit"))
-    mid = g.mix(-300, 150, fac=g.out(isb), a=g.out(pal, "leaf_mid"), b=g.out(pal, "bloom_lit"))
-    shd = g.mix(-300, 0, fac=g.out(isb), a=g.out(pal, "leaf_shadow"), b=g.out(pal, "bloom_shadow"))
-    dp = g.mix(-300, -150, fac=g.out(isb), a=g.out(pal, "leaf_deep"), b=g.out(pal, "bloom_deep"))
+    ever = _attr(g, "hrp_evergreen", "OBJECT", -700, 500)
+    leaf = {k: g.mixout(g.mix(-500, 300 - 150 * i, fac=g.out(ever, "Fac"), a=g.out(pal, "leaf_" + k),
+                              b=g.out(pal, "ever_" + k)))
+            for i, k in enumerate(("lit", "mid", "shadow", "deep"))}
+    lit = g.mix(-300, 300, fac=g.out(isb), a=leaf["lit"], b=g.out(pal, "bloom_lit"))
+    mid = g.mix(-300, 150, fac=g.out(isb), a=leaf["mid"], b=g.out(pal, "bloom_lit"))
+    shd = g.mix(-300, 0, fac=g.out(isb), a=leaf["shadow"], b=g.out(pal, "bloom_shadow"))
+    dp = g.mix(-300, -150, fac=g.out(isb), a=leaf["deep"], b=g.out(pal, "bloom_deep"))
     # per-dab tone from the atlas (R): darker dabs read as separate brush marks
     litd = g.mix(-100, 300, "MULTIPLY", fac=0.6, a=g.mixout(lit), b=g.mixout(shade))
     midd = g.mix(-100, 150, "MULTIPLY", fac=0.6, a=g.mixout(mid), b=g.mixout(shade))
@@ -843,7 +851,15 @@ def leaves_material(style="ROUND"):
     rimf = g.maprange(950, -400, g.out(lw, "Facing"), 0.55, 0.8, smooth=True)
     outer = g.maprange(950, -550, g.out(depth, "Fac"), 0.62, 0.8, smooth=True)
     rl0 = g.math("MULTIPLY", 1050, -450, g.out(rimf, "Result"), g.out(outer, "Result"))
-    rl = g.math("MULTIPLY", 1100, -400, g.out(rl0), litm)
+    # the rim sits on lit edges - and, against the light, on every edge that leans towards the sun, where the cel
+    # light is zero: a backlit crown gets its glowing outline instead of being a plain dark shape
+    sdir = g.n("ShaderNodeCombineXYZ", 800, -700)
+    for c in "xyz":
+        g.link(pal, "sun_" + c, sdir, c.upper())
+    lean = g.vmath("DOT_PRODUCT", 950, -700, g.out(nn), g.out(sdir))
+    toward = g.maprange(1050, -700, g.out(lean, "Value"), -0.1, 0.4, smooth=True)
+    gate = g.math("MAXIMUM", 1100, -550, litm, g.out(toward, "Result"))
+    rl = g.math("MULTIPLY", 1100, -400, g.out(rl0), g.out(gate))
     ra = g.math("MULTIPLY", 1200, -450, g.out(rl), g.out(pal, "rim_amount"))
     col2 = g.mix(1250, 250, fac=g.out(ra), a=g.mixout(col2a), b=g.out(pal, "rim_colour"))
     # per-tree variation (object custom properties; 0 when missing = no change)
@@ -890,8 +906,10 @@ def fill_material():
     pal = g.n("ShaderNodeGroup", -600, 0)
     pal.node_tree = palette_group()
     geo = g.n("ShaderNodeNewGeometry", -600, 300)
-    cel = _cel_node(g, pal, -200, 100, g.out(geo, "Normal"), g.out(pal, "leaf_shadow"), g.out(pal, "leaf_deep"),
-                    g.out(pal, "leaf_deep"))
+    ever = _attr(g, "hrp_evergreen", "OBJECT", -700, 400)
+    fsh = g.mixout(g.mix(-450, 300, fac=g.out(ever, "Fac"), a=g.out(pal, "leaf_shadow"), b=g.out(pal, "ever_shadow")))
+    fdp = g.mixout(g.mix(-450, 150, fac=g.out(ever, "Fac"), a=g.out(pal, "leaf_deep"), b=g.out(pal, "ever_deep")))
+    cel = _cel_node(g, pal, -200, 100, g.out(geo, "Normal"), fsh, fdp, fdp)
     _emit_out(g, g.out(cel, "Color"), 700, 100, pal=pal)
     _done(mat, "fill")
     return mat

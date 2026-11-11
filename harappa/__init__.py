@@ -24,6 +24,8 @@ COLOUR_PROPS = [
     ("dirt_lit", "Path Lit"), ("dirt_shadow", "Path Shadow"), ("dirt_deep", "Path Deep Shadow"),
     ("leaf_lit", "Leaves Lit"), ("leaf_mid", "Leaves Mid"), ("leaf_shadow", "Leaves Shadow"),
     ("leaf_deep", "Leaves Deep Shadow"), ("leaf_hi", "Leaves Highlight"),
+    ("ever_lit", "Evergreen Lit"), ("ever_mid", "Evergreen Mid"), ("ever_shadow", "Evergreen Shadow"),
+    ("ever_deep", "Evergreen Deep Shadow"),
     ("bloom_lit", "Blossom Lit"), ("bloom_shadow", "Blossom Shadow"), ("bloom_deep", "Blossom Deep Shadow"),
     ("bark_lit", "Bark Lit"), ("bark_shadow", "Bark Shadow"),
     ("flower_a", "Flower 1"), ("flower_b", "Flower 2"), ("flower_c", "Flower 3"), ("flower_d", "Flower 4"),
