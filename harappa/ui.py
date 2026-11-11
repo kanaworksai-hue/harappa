@@ -128,6 +128,7 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         col = layout.column(align=True)
         _enum(col, s, "season")
         _enum(col, s, "style")
+        _prop(layout, s, "detail_level")
         row = layout.row(align=True)
         _prop(row, s, "variation")
         _op(row, "harappa.shuffle", "Shuffle", icon="FILE_REFRESH")

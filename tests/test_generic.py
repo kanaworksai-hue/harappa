@@ -389,5 +389,23 @@ cherry = next(o for o in sc.objects if o.get("hrp_canopy") and o.parent is not N
 check(mod_input(cherry.modifiers["Harappa Foliage"], "Blossom") > 0.8, "a cherry tree is in blossom")
 labels = {i[0] for i in H.TREE_SHAPES}
 check(labels == set(htree.SHAPES), "every tree shape is offered in the panel")
+
+# --- 11. detail levels: less or more of the same picture, never a change to the user's own values ----------
+def _instances():
+    bpy.context.view_layer.update()
+    return sum(1 for i in bpy.context.evaluated_depsgraph_get().object_instances if i.is_instance)
+
+
+mod_input(gmod, "Density", 21.0)
+ground.update_tag()
+n_bal = _instances()
+sc.harappa.detail_level = "FAST"
+n_fast = _instances()
+sc.harappa.detail_level = "BEST"
+n_best = _instances()
+check(n_fast < n_bal * 0.8 and n_best > n_bal * 1.15, f"detail levels draw less / more ({n_fast} < {n_bal} < {n_best})")
+check(abs(mod_input(gmod, "Density") - 21.0) < 1e-5, "a detail level leaves the user's density alone")
+sc.harappa.detail_level = "BALANCED"
+check(_instances() == n_bal and sc.eevee.taa_render_samples == 16, "back to Balanced gives the same scene back")
 H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")

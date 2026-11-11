@@ -14,7 +14,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 27
+GN_VER = 28
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -243,6 +243,8 @@ def grass_group():
     iface(ng, "LOD Distance", "INPUT", "NodeSocketFloat", 25.0, 0.0, 100000.0,
           desc="Beyond this camera distance grass thins out and grows wider to stay fast", subtype="DISTANCE")
     iface(ng, "Seed", "INPUT", "NodeSocketInt", 0)
+    iface(ng, "Detail", "INPUT", "NodeSocketFloat", 1.0, 0.05, 4.0,
+          desc="Set by the Detail Level: fewer, wider tufts below 1, more and finer ones above")
     iface(ng, "Show Ground", "INPUT", "NodeSocketBool", True)
     _avoid_inputs(ng)
     iface(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
@@ -280,6 +282,7 @@ def grass_group():
     g.link(gi, "Geometry", dp, "Mesh")
     g.link(sel, 0, dp, "Selection")
     dens = g.math("MULTIPLY", -1300, -150, g.out(gi, "Density"), g.out(dfac))
+    dens = g.math("MULTIPLY", -1150, -150, g.out(dens), g.out(gi, "Detail"))
     g.link(dens, 0, dp, "Density")      # Random mode ignores Density Factor: multiply instead
     g.link(gi, "Seed", dp, "Seed")
     pts = g.out(dp, "Points")
@@ -331,7 +334,8 @@ def grass_group():
     s3a = g.math("MULTIPLY", 50, -1850, g.out(s2), g.out(lods))
     s3b = g.math("MULTIPLY", 120, -1950, g.out(s3a), avf)
     s3 = g.math("MINIMUM", 300, -2000, g.out(s3b), avcone)
-    sw = g.math("MULTIPLY", 200, -1750, g.out(s3), g.out(gi, "Width"))
+    wider = g.math("POWER", 60, -1650, g.out(gi, "Detail"), -0.5)        # fewer tufts cover the same ground
+    sw = g.math("MULTIPLY", 200, -1750, g.out(s3), g.out(g.math("MULTIPLY", 130, -1650, g.out(gi, "Width"), g.out(wider))))
     sv = g.n("ShaderNodeCombineXYZ", 350, -1750)
     g.link(sw, 0, sv, "X")
     g.link(sw, 0, sv, "Y")
@@ -391,6 +395,7 @@ def flowers_group():
     iface(ng, "Mask Attribute", "INPUT", "NodeSocketString", "hrp_grass")
     _wind_inputs(ng, 0.22)
     iface(ng, "Seed", "INPUT", "NodeSocketInt", 0)
+    iface(ng, "Detail", "INPUT", "NodeSocketFloat", 1.0, 0.05, 4.0, desc="Set by the Detail Level: fewer or more flowers")
     _avoid_inputs(ng)
     iface(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
     gi = g.n("NodeGroupInput", -2000, 0)
@@ -415,6 +420,7 @@ def flowers_group():
     dp = g.n("GeometryNodeDistributePointsOnFaces", -800, 0, distribute_method="RANDOM")
     g.link(gi, "Geometry", dp, "Mesh")
     dens = g.math("MULTIPLY", -900, -150, g.out(gi, "Density"), g.out(dfac))
+    dens = g.math("MULTIPLY", -750, -150, g.out(dens), g.out(gi, "Detail"))
     g.link(dens, 0, dp, "Density")
     sd = g.math("ADD", -1000, -200, g.out(gi, "Seed"), 101)
     g.link(sd, 0, dp, "Seed")

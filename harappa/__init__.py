@@ -13,7 +13,7 @@ import bmesh
 import bpy
 from mathutils import Vector, noise
 
-from . import build, clouds, cumulus, i18n, presets, ridges, scatter, scene as hscene, shading, tree, ui
+from . import build, clouds, cumulus, i18n, presets, quality, ridges, scatter, scene as hscene, shading, tree, ui
 from .i18n import report
 from .util import mod_input, srgb, to_hex
 
@@ -337,6 +337,13 @@ def _enum_items(d):
 
 def _settings_annotations():
     ann = {
+        "detail_level": bpy.props.EnumProperty(
+            name="Detail Level", default="BALANCED", update=quality.update,
+            description="Richness against speed. It never changes your own settings, only how much is drawn",
+            items=[("FAST", "Fast", "Less grass and fewer flowers, coarser clouds, quick renders: for slower "
+                                    "computers and for working in the viewport"),
+                   ("BALANCED", "Balanced", "The default: looks complete and renders in a few seconds"),
+                   ("BEST", "Best", "More and finer grass, smoother clouds, more samples: for final renders")]),
         "season": bpy.props.EnumProperty(name="Season", items=_enum_items(presets.SEASONS), default="SUMMER",
                                          description="Colours, sunlight and sky", update=apply_season),
         "style": bpy.props.EnumProperty(name="Paint Style", items=_enum_items(presets.STYLES), default="ANIME",
@@ -539,6 +546,7 @@ class HRP_OT_make_meadow(bpy.types.Operator):
             ridges.build(context, targets[0], seed=s.variation)
         if created and not cumulus.clouds_of(sc):                 # behind the farthest ridge
             cumulus.layout(context, s.cloud_count, seed=s.variation, distance=max(160.0, size * 12))
+        quality.apply(sc)
         if created:
             for o in context.selected_objects:
                 o.select_set(False)
@@ -856,6 +864,7 @@ class HRP_OT_add_clouds(bpy.types.Operator):
             return {"FINISHED"}
         seed = self.seed if self.seed >= 0 else random.randint(0, 99999)
         cumulus.layout(context, self.count, seed, self.distance)
+        quality.apply(context.scene)
         if not _scene_ready(context.scene):
             setup_scene(context)
         self.report({"INFO"}, report(f"{self.count} cloud(s) added"))
