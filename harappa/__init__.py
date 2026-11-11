@@ -383,12 +383,67 @@ def _enum_items(d):
     return [(k, v["name"], v["desc"]) for k, v in d.items()]
 
 
+def _active_cloud(context=None):
+    ob = (context or bpy.context).active_object
+    return ob if ob is not None and ob.get(cumulus.TAG) else None
+
+
+def _cloud_args(ob):
+    a = list(ob.get("hrp_cloud_args", [0, 0.0]))
+    return int(a[0]), float(a[1])
+
+
+def _reshape(ob, seed, tower):
+    cumulus.shape_cloud(ob, seed, tower)
+    if "hrp_cloud_auto" in ob:                 # a cloud the user shaped is theirs: a re-roll keeps it
+        del ob["hrp_cloud_auto"]
+
+
+def _cloud_props():
+    def g_seed(self):
+        ob = _active_cloud()
+        return _cloud_args(ob)[0] if ob else 0
+
+    def s_seed(self, v):
+        ob = _active_cloud()
+        if ob:
+            _reshape(ob, v, _cloud_args(ob)[1])
+
+    def g_tower(self):
+        ob = _active_cloud()
+        return _cloud_args(ob)[1] if ob else 0.0
+
+    def s_tower(self, v):
+        ob = _active_cloud()
+        if ob:
+            _reshape(ob, _cloud_args(ob)[0], v)
+
+    def g_width(self):
+        ob = _active_cloud()
+        return ob.scale.x if ob else 1.0
+
+    def s_width(self, v):
+        ob = _active_cloud()
+        if ob:
+            ob.scale = (v, v, v)
+    return {
+        "cloud_seed": bpy.props.IntProperty(name="Cloud Shape", min=0, max=99999, get=g_seed, set=s_seed,
+                                            description="Pick another shape for this cloud (it stays where it is)"),
+        "cloud_tower": bpy.props.FloatProperty(name="Tower", min=0.0, max=1.0, get=g_tower, set=s_tower,
+                                               description="How high the cloud piles up: flat cumulus at 0, a "
+                                                           "towering summer cloud at 1"),
+        "cloud_width": bpy.props.FloatProperty(name="Cloud Width", min=0.01, max=1e6, get=g_width, set=s_width,
+                                               subtype="DISTANCE", description="Width of this cloud"),
+    }
+
+
 def _settings_annotations():
     ann = {
         "detail_level": bpy.props.EnumProperty(
             name="Detail Level", default="BALANCED", update=quality.update,
-            description="Richness against speed: how much grass and how many flowers are drawn, how fine the "
-                        "clouds are, and the render samples. Your own densities and sizes are never changed",
+            description="Richness against speed: how much grass and how many flowers are drawn and how fine the "
+                        "clouds are. Switching it also sets the render samples. Your own densities and sizes are "
+                        "never changed",
             items=[("FAST", "Fast", "Less grass and fewer flowers, coarser clouds, quick renders: for slower "
                                     "computers and for working in the viewport"),
                    ("BALANCED", "Balanced", "The default: looks complete and renders in a few seconds"),
@@ -424,6 +479,7 @@ def _settings_annotations():
                                                                   ("PATH", "Path", "Paint a bare path")],
                                              default="PATH", description="What the brush paints"),
     }
+    ann.update(_cloud_props())
     defaults = presets.SEASONS["SUMMER"]["palette"]
     for k, label in COLOUR_PROPS:
         ann[k] = bpy.props.FloatVectorProperty(name=label, subtype="COLOR", size=3, min=0.0, max=1.0,
@@ -1072,6 +1128,55 @@ class HRP_OT_revert(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HRP_OT_set_detail(bpy.types.Operator):
+    bl_idname = "harappa.set_detail"
+    bl_label = "Set Detail Level"
+    bl_description = "Switch the detail level; it also sets the render samples"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+    level: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    @classmethod
+    def description(cls, context, props):
+        try:
+            prop = context.scene.harappa.bl_rna.properties["detail_level"]
+            it = next(i for i in prop.enum_items if i.identifier == props.level)
+            return i18n.t(it.description) + " " + i18n.t("It also sets the render samples")
+        except (KeyError, StopIteration, AttributeError):
+            return ""
+
+    def execute(self, context):
+        if self.level not in quality.LEVELS:
+            return {"CANCELLED"}
+        context.scene.harappa.detail_level = self.level
+        lv = quality.LEVELS[self.level]
+        name = next(i.name for i in context.scene.harappa.bl_rna.properties["detail_level"].enum_items
+                    if i.identifier == self.level)
+        self.report({"INFO"}, report(f"{name}: grass {round(lv['grass'] * 100)}%, flowers "
+                                     f"{round(lv['flowers'] * 100)}%, render samples {lv['samples']}"))
+        return {"FINISHED"}
+
+
+class HRP_OT_cloud_give_back(bpy.types.Operator):
+    bl_idname = "harappa.cloud_give_back"
+    bl_label = "Give Back to Auto Layout"
+    bl_description = "Let Make Clouds manage this cloud again: the next re-roll may move, replace or remove it"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return _active_cloud(context) is not None
+
+    def execute(self, context):
+        n = 0
+        for ob in context.selected_objects or [_active_cloud(context)]:
+            if ob is not None and ob.get(cumulus.TAG):
+                ob["hrp_cloud_auto"] = True
+                ob["hrp_cloud_home"] = cumulus._home(ob)
+                n += 1
+        self.report({"INFO"}, report(f"{n} cloud(s) given back to the auto layout"))
+        return {"FINISHED"}
+
+
 class HRP_OT_set_enum(bpy.types.Operator):
     bl_idname = "harappa.set_enum"
     bl_label = "Set"
@@ -1098,7 +1203,7 @@ CLASSES = (
     HRP_Settings, HRP_TreeSettings, HRP_OT_make_meadow, HRP_OT_add_tree, HRP_OT_plant_trees,
     HRP_OT_rebuild_tree, HRP_OT_set_tree_enum, HRP_OT_edit_canopy,
     HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_add_ridges, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
-    HRP_OT_revert, HRP_OT_set_enum,
+    HRP_OT_revert, HRP_OT_set_enum, HRP_OT_set_detail, HRP_OT_cloud_give_back,
 )
 
 

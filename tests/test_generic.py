@@ -384,6 +384,19 @@ check(all(kept) and mod_input(gmod, "Tuft") == tuft_before,
 ok, msg = wiring.compare()
 check(ok and not wiring.problems(), f"rebuilt geometry nodes are wired as recorded ({msg})")
 
+# a rename can name its side: only the input of that name changes
+_ng = bpy.data.node_groups.new("HRP Rename Probe", "GeometryNodeTree")
+util.iface(_ng, "A", "INPUT", "NodeSocketFloat")
+util.iface(_ng, "A", "OUTPUT", "NodeSocketFloat")
+_ng[util.VERSION_KEY] = 1
+_ng, _ = util.fresh_group("HRP Rename Probe", "GeometryNodeTree", 2, renames={("INPUT", "A"): "B"})
+util.iface(_ng, "B", "INPUT", "NodeSocketFloat")
+util.iface(_ng, "A", "OUTPUT", "NodeSocketFloat")
+util.stamp(_ng, 2)
+check(sorted((i.in_out, i.name) for i in _ng.interface.items_tree) == [("INPUT", "B"), ("OUTPUT", "A")],
+      "a rename of an input leaves the output of the same name alone")
+bpy.data.node_groups.remove(_ng)
+
 # --- 10. every tree shape builds; a cherry is in blossom whatever the panel says ---------------------------
 from harappa import tree as htree  # noqa: E402
 n_before = len([o for o in sc.objects if "hrp_tree" in o])
@@ -507,6 +520,37 @@ sc.harappa.detail_level = "BALANCED"
 bpy.ops.harappa.add_clouds(count=5, seed=3)
 check(len([o for o in sc.objects if o.get("hrp_cloud_auto")]) == 5 and len([o for o in sc.objects if o.get("hrp_cloud")]) == 6,
       "re-rolling twice does not pile clouds up")
+# the Active Cloud panel: another shape or tower keeps the cloud where it is and makes it the user's; giving it back
+# hands it to the next re-roll
+from harappa import ui as hui  # noqa: E402
+ac = next(o for o in sc.objects if o.get("hrp_cloud_auto"))
+for o in sc.objects:
+    o.select_set(False)
+ac.select_set(True)
+bpy.context.view_layer.objects.active = ac
+check(hui.HRP_PT_cloud.poll(bpy.context), "selecting a cloud shows the Active Cloud panel")
+_loc, _n = ac.location.copy(), len(ac.data.vertices)
+sc.harappa.cloud_seed = sc.harappa.cloud_seed + 1
+sc.harappa.cloud_tower = 0.9
+check((ac.location - _loc).length < 1e-6 and len(ac.data.vertices) != _n and not ac.get("hrp_cloud_auto")
+      and abs(sc.harappa.cloud_tower - 0.9) < 1e-6, "a new shape keeps the cloud in place and makes it the user's")
+sc.harappa.cloud_width = 77.0
+check(all(abs(v - 77.0) < 1e-4 for v in ac.scale), "Cloud Width scales the cloud evenly")
+bpy.ops.harappa.cloud_give_back()
+check(ac.get("hrp_cloud_auto"), "a cloud can be given back to the auto layout")
+_acn = ac.name
+bpy.ops.harappa.add_clouds(count=5, seed=3)
+check(len([o for o in sc.objects if o.get("hrp_cloud")]) == 6 and _acn not in [o.name for o in sc.objects
+                                                                             if o.get("hrp_cloud") and not o.get("hrp_cloud_auto")],
+      "the re-roll takes a given-back cloud")
+# Detail Level as three buttons: the button switches the level and the render samples
+bpy.ops.harappa.set_detail(level="FAST")
+check(sc.harappa.detail_level == "FAST" and sc.eevee.taa_render_samples == 8, "the Fast button switches the level and samples")
+bpy.ops.harappa.set_detail(level="BALANCED")
+check(sc.harappa.detail_level == "BALANCED" and sc.eevee.taa_render_samples == 16, "and Balanced brings them back")
+check(all(i18n.REPORTS and any(__import__("re").fullmatch(pat, msg) for pat, _ in i18n.REPORTS)
+          for msg in ("Fast: grass 45%, flowers 50%, render samples 8", "2 cloud(s) given back to the auto layout")),
+      "the new reports are translated")
 cam.rotation_euler[0] = math.radians(60.0)                 # looking down: no sky in the frame
 bpy.context.view_layer.update()
 bpy.ops.harappa.add_clouds(count=4, seed=1)

@@ -175,9 +175,10 @@ _stale = {"busy": False}
 def _rebuild_stale():
     """Rebuild every Harappa material an older version left in the file, in one go.
 
-    All materials read HRP Palette, HRP Cel and HRP Clump Normal. Rebuilding one of those groups gives its
-    sockets new identifiers, and a material that still holds the old ones loses those links without any error
-    (it renders grey). So when the version changes, nothing may be left behind for 'the next time it is used'."""
+    All materials read HRP Palette, HRP Cel and HRP Clump Normal. Their sockets keep their identifiers through a
+    rebuild now (util.iface), but a material built for an older version may read a socket that is gone or
+    renamed, or miss one it needs, and would then render grey without any error. So when the version changes,
+    every material is rebuilt at once, nothing is left for 'the next time it is used'."""
     if _stale["busy"]:
         return
     builders = {MAT_GROUND: ground_material, MAT_GRASS: grass_material, MAT_FLOWER: flower_material,

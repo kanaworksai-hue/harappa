@@ -131,7 +131,12 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         col = layout.column(align=True)
         _prop(col, s, "grade_sat")
         _prop(col, s, "grade_contrast")
-        _prop(layout, s, "detail_level")
+        row = layout.row(align=True)
+        row.label(text=t("Detail Level"), translate=False)
+        for it in s.bl_rna.properties["detail_level"].enum_items:
+            op = row.operator("harappa.set_detail", text=t(it.name), translate=False,
+                              depress=s.detail_level == it.identifier)
+            op.level = it.identifier
         row = layout.row(align=True)
         _prop(row, s, "variation")
         _op(row, "harappa.shuffle", "Shuffle", icon="FILE_REFRESH")
@@ -187,6 +192,35 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
             col = layout.column(align=True)
             col.label(text=t("Flowers"), translate=False)
             _mod_inputs(col, fm, ("Density", "Patch Size", "Patch Amount", "Size", "Height", "Seed"))
+
+
+class HRP_PT_cloud(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_cloud"
+    title = "Active Cloud"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        from . import _active_cloud
+        return _active_cloud(context) is not None
+
+    def draw(self, context):
+        from . import cumulus
+        s = context.scene.harappa
+        ob = context.active_object
+        layout = self.layout
+        col = layout.column(align=True)
+        for k in ("cloud_seed", "cloud_tower", "cloud_width"):
+            _prop(col, s, k)
+        mod = ob.modifiers.get(cumulus.MOD)
+        if mod is not None:
+            col = layout.column(align=True)
+            _mod_inputs(col, mod, ("Detail", "Flat Base"))
+        if ob.get("hrp_cloud_auto"):
+            layout.label(text=t("Managed by Make Clouds"), icon="INFO", translate=False)
+        else:
+            _op(layout, "harappa.cloud_give_back", "Give Back to Auto Layout", icon="LOOP_BACK")
 
 
 class HRP_PT_tree(HrpSub, bpy.types.Panel):
@@ -326,7 +360,7 @@ class HRP_PT_links(HrpSub, bpy.types.Panel):
 
 
 MENUS = [_enum_menu(n) for n in ENUMS] + [_tree_enum_menu(n) for n in ("shape", "leaf_style")]
-PANELS = (HRP_PT_main, HRP_PT_meadow, HRP_PT_tree, HRP_PT_light, HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
+PANELS = (HRP_PT_main, HRP_PT_meadow, HRP_PT_cloud, HRP_PT_tree, HRP_PT_light, HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
 
 
 def register():

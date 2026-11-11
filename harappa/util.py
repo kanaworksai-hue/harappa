@@ -162,7 +162,8 @@ def iface(ng, name, in_out, stype, default=None, lo=None, hi=None, desc=None, su
 
     While a group is being rebuilt (fresh_group) a socket that already has this name and direction is kept, not
     replaced: its identifier stays, and with it every value a user set on a modifier, every driver on it and
-    every link to it from the user's own node trees."""
+    every link to it from the user's own node trees. Sockets of the same name and direction are claimed in the
+    order they are declared, so a new one of that name goes after the old ones, never between them."""
     kept = _KEPT.get(ng.name)
     s = None
     if kept is not None:
@@ -226,7 +227,8 @@ def fresh_group(name, kind, version, renames=None):
     """Return (group, rebuilt?) - the node group is emptied for a rebuild when its version tag differs.
 
     Only the nodes are cleared. The interface is reconciled by iface() and stamp(), so sockets that still exist
-    keep their identifier; renames maps an old socket name to its new one.
+    keep their identifier; renames maps an old socket name to its new one - {"Old": "New"} renames inputs and
+    outputs of that name, {("INPUT", "Old"): "New"} only the input.
 
     The caller stamps the version with stamp() after it has built the group, so a build that stopped half-way
     (an error on a new Blender) is not mistaken for a finished one and is rebuilt next time."""
@@ -238,8 +240,9 @@ def fresh_group(name, kind, version, renames=None):
     else:
         ng.nodes.clear()
         for old, new in (renames or {}).items():            # a socket that changed its name keeps its values
+            side, old = old if isinstance(old, tuple) else (None, old)
             for i in _sockets(ng):
-                if i.name == old:
+                if i.name == old and side in (None, i.in_out):
                     i.name = new
         _KEPT[ng.name] = []                                  # iface() keeps what is still declared ...
     ng[VERSION_KEY] = BUILDING
@@ -257,7 +260,11 @@ def stamp(idblock, version):
 
 
 def _reorder(ng, order):
-    """Put the interface sockets in the order they were declared (outputs first, as Blender keeps them)."""
+    """Put the interface sockets in the order they were declared (outputs first, as Blender keeps them).
+
+    Positions count panels too, so a group with panels is left as it is (Harappa's groups have none)."""
+    if any(getattr(i, "item_type", "") == "PANEL" for i in ng.interface.items_tree):
+        return
     by_id = {i.identifier: i for i in _sockets(ng)}
     want = ([k for k in order if by_id[k].in_out == "OUTPUT"] + [k for k in order if by_id[k].in_out == "INPUT"])
     for pos, ident in enumerate(want):
