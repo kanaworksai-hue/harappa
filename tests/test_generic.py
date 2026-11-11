@@ -371,5 +371,23 @@ check(all(kept) and mod_input(gmod, "Tuft") == tuft_before,
       f"the rebuild keeps the values set on the modifiers ({sum(kept)}/{len(kept)})")
 ok, msg = wiring.compare()
 check(ok and not wiring.problems(), f"rebuilt geometry nodes are wired as recorded ({msg})")
+
+# --- 10. every tree shape builds; a cherry is in blossom whatever the panel says ---------------------------
+from harappa import tree as htree  # noqa: E402
+n_before = len([o for o in sc.objects if "hrp_tree" in o])
+for i, shape in enumerate(htree.SHAPES):
+    sc.cursor.location = (i * 3.0 - 12.0, 6.0, 0.0)
+    bpy.ops.harappa.add_tree(shape=shape, height=4.0, seed=i)
+roots = [o for o in sc.objects if "hrp_tree" in o]
+check(len(roots) - n_before == len(htree.SHAPES), f"all {len(htree.SHAPES)} tree shapes build")
+dg = bpy.context.evaluated_depsgraph_get()
+thin = [o.parent["hrp_tree"] for o in sc.objects if o.get("hrp_canopy") and o.parent in roots
+        and len(o.data.polygons) < 40]
+check(not thin, f"every tree shape has a crown ({thin})")
+cherry = next(o for o in sc.objects if o.get("hrp_canopy") and o.parent is not None
+              and o.parent.get("hrp_tree") == "SAKURA")
+check(mod_input(cherry.modifiers["Harappa Foliage"], "Blossom") > 0.8, "a cherry tree is in blossom")
+labels = {i[0] for i in H.TREE_SHAPES}
+check(labels == set(htree.SHAPES), "every tree shape is offered in the panel")
 H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")

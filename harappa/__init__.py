@@ -65,6 +65,10 @@ TREE_SHAPES = [
     ("WIDE", "Wide Tree", "A wide umbrella-shaped tree (cherry style)"),
     ("BUSH", "Bush", "A rounded bush without a visible trunk"),
     ("CONIFER", "Conifer", "A pointed evergreen"),
+    ("SAKURA", "Cherry Blossom", "A wide cherry tree in full blossom"),
+    ("PINE", "Japanese Pine", "A leaning pine with flat pads of needles"),
+    ("WILLOW", "Willow", "A willow with hanging curtains of leaves"),
+    ("COLUMN", "Poplar", "A tall, slim column of a tree"),
 ]
 LEAF_STYLES = [
     ("ROUND", "Round Leaves", "Broad rounded leaf dabs"),
@@ -188,7 +192,7 @@ def _season_blossom(sc, amount):
         if mod is None:
             continue
         root = ob.parent if ob.parent is not None and "hrp_tree" in ob.parent else None
-        if root is not None and root.get("hrp_tree") == "CONIFER":
+        if root is not None and root.get("hrp_tree") in ("CONIFER", "PINE"):
             continue
         if "hrp_blossom_base" not in ob:
             ob["hrp_blossom_base"] = float(mod_input(mod, "Blossom"))
@@ -567,7 +571,7 @@ class HRP_OT_add_tree(bpy.types.Operator):
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
         seed = self.seed if self.seed >= 0 else random.randint(0, 99999)
-        bl = self.blossom if self.blossom >= 0 else sc.harappa.new_blossom
+        bl = self.blossom if self.blossom >= 0 else max(sc.harappa.new_blossom, tree.SHAPES[self.shape]["bloom"])
         loc = sc.cursor.location.copy()
         hit = _ground_hit(context, loc)
         if hit is not None:
@@ -648,7 +652,7 @@ class HRP_OT_plant_trees(bpy.types.Operator):
             shape = rng.choice(shapes)
             if shape == "BUSH":
                 h *= 0.4
-            bl = sc.harappa.new_blossom
+            bl = max(sc.harappa.new_blossom, tree.SHAPES[shape]["bloom"])     # a cherry is always in blossom
             sd = rng.randint(0, 99999)
             root = tree.add_tree(context, shape, h, sd, co - Vector((0, 0, 0.02 * h)), blossom=bl)
             init_tree_settings(root, shape, h, sd, tree.SHAPES[shape]["style"])
