@@ -37,7 +37,7 @@ SETTINGS = ("operation", "blend_type", "data_type", "use_clamp", "clamp", "clamp
             "input_type", "distribute_method", "attribute_name", "attribute_type", "transform_space",
             "rotation_space", "axis", "pivot_axis", "target_element", "component", "mode", "samples",
             "extension", "projection", "vector")
-VOLATILE = {"moon dir"}        # nodes whose input values follow the scene (the moon follows the camera)
+VOLATILE = {"moon dir", "sun dir"}        # nodes whose input values follow the scene (camera, sun)
 NUMERIC = {"VALUE", "INT", "BOOLEAN", "VECTOR", "RGBA", "STRING", "ROTATION"}
 
 

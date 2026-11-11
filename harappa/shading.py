@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 25
+SHADER_VER = 26
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -29,6 +29,7 @@ MAT_BARK = "HRP Bark"
 MAT_FILL = "HRP Canopy Fill"
 MAT_CLOUD = "HRP Cloud"
 MAT_CLOUD_FILL = "HRP Cloud Fill"
+MAT_CUMULUS = "HRP Cumulus"
 SUN = "HRP Sun"
 
 # key -> (kind, default). Colours are sRGB hex here, stored linear.
@@ -87,6 +88,13 @@ PALETTE_KEYS = {
     "flower_dim": ("VALUE", 1.0),
     "rim_amount": ("VALUE", 0.0),
     "leaf_hi_amount": ("VALUE", 0.5),
+    # sky and clouds (1.1)
+    "cloud_rim": ("RGB", "#FFF6D6"),        # the bright edge of a cloud with the sun behind it
+    "cloud_rim_amount": ("VALUE", 0.35),
+    "cloud_threshold": ("VALUE", 0.4),      # where a cloud turns from lit to shaded
+    "sun_x": ("VALUE", 0.0),                # direction to the sun (world), written with the sun
+    "sun_y": ("VALUE", 0.0),
+    "sun_z": ("VALUE", 1.0),
 }
 
 
@@ -152,7 +160,7 @@ def _rebuild_stale():
         return
     builders = {MAT_GROUND: ground_material, MAT_GRASS: grass_material, MAT_FLOWER: flower_material,
                 MAT_BARK: bark_material, MAT_FILL: fill_material, MAT_CLOUD: cloud_material,
-                MAT_CLOUD_FILL: cloud_fill_material}
+                MAT_CLOUD_FILL: cloud_fill_material, MAT_CUMULUS: cumulus_material}
     for style in LEAF_STYLES:
         builders[leaves_name(style)] = lambda style=style: leaves_material(style)
     old = [name for name in builders
@@ -900,11 +908,79 @@ def cloud_material(fill=False):
     return mat
 
 
+def cumulus_material():
+    """Solid cumulus (cumulus.py): three painted tones per puff, a broken hand-drawn edge between them and a
+    bright rim when the sun is behind the cloud. Opaque: no cards, no alpha, nothing to sort."""
+    mat, rebuilt = _fresh_mat(MAT_CUMULUS)
+    if not rebuilt:
+        return mat
+    g = G(mat.node_tree)
+    pal = g.n("ShaderNodeGroup", -1700, 0)
+    pal.node_tree = palette_group()
+    nat = _attr(g, "hrp_n", "GEOMETRY", -1700, 500)
+    vt = g.n("ShaderNodeVectorTransform", -1500, 500, vector_type="NORMAL", convert_from="OBJECT",
+             convert_to="WORLD")
+    g.link(nat, "Vector", vt, "Vector")
+    nn = g.vmath("NORMALIZE", -1330, 500, g.out(vt))
+    dif = g.n("ShaderNodeBsdfDiffuse", -1150, 500)
+    dif.inputs["Color"].default_value = (1, 1, 1, 1)
+    g.links.new(g.out(nn), dif.inputs["Normal"])
+    s2r = g.n("ShaderNodeShaderToRGB", -980, 500)
+    g.link(dif, 0, s2r, "Shader")
+    bw = g.n("ShaderNodeRGBToBW", -820, 500)
+    g.link(s2r, "Color", bw, "Color")
+    lv = g.math("DIVIDE", -500, 500, g.out(g.math("MULTIPLY", -660, 500, g.out(bw), math.pi)),
+                g.out(pal, "light_scale"))
+    ch = _attr(g, "hrp_ch", "GEOMETRY", -1700, 250)
+    # light, lifted towards the crown and broken up by a painted noise
+    tc = g.n("ShaderNodeTexCoord", -1700, -300)
+    noi = g.n("ShaderNodeTexNoise", -1500, -300, noise_dimensions="3D")
+    g.link(tc, "Object", noi, "Vector")
+    for k, v in (("Scale", 0.09), ("Detail", 3.0), ("Roughness", 0.55), ("Distortion", 0.3)):
+        g.set(noi, k, v)
+    jit = g.math("MULTIPLY", -1300, -300, g.out(g.math("SUBTRACT", -1400, -300, g.out(noi, "Fac"), 0.5)), 0.22)
+    v = g.math("MULTIPLY_ADD", -330, 500, g.out(ch, "Fac"), 0.28, g.out(g.math("MULTIPLY", -420, 420, g.out(lv), 0.78)))
+    v = g.math("ADD", -180, 500, g.out(v), g.out(jit))
+    soft = g.math("ADD", -330, 250, g.out(pal, "softness"), 0.012)
+    thr = g.out(pal, "cloud_threshold")
+    f1 = g.maprange(0, 500, g.out(v), g.out(g.math("SUBTRACT", -180, 300, thr, g.out(soft))),
+                    g.out(g.math("ADD", -180, 180, thr, g.out(soft))), smooth=True)
+    # the deepest tone: undersides low in the cloud
+    sz = g.n("ShaderNodeSeparateXYZ", -1150, 150)
+    g.link(nn, 0, sz, "Vector")
+    under = g.maprange(-980, 150, g.out(sz, "Z"), -0.15, -0.6, smooth=True)
+    lowc = g.maprange(-980, -50, g.out(ch, "Fac"), 0.45, 0.1, smooth=True)
+    d0 = g.math("MULTIPLY", -800, 100, g.out(under, "Result"), g.out(lowc, "Result"))
+    d1 = g.math("ADD", -640, 100, g.out(d0), g.out(g.math("MULTIPLY", -720, -50, g.out(jit), 1.5)))
+    f2 = g.maprange(-480, 100, g.out(d1), 0.3, 0.42, smooth=True)
+    sh = g.mix(200, 200, fac=g.out(f2, "Result"), a=g.out(pal, "cloud_shadow"), b=g.out(pal, "cloud_deep"))
+    lit = g.mix(200, 500, "MULTIPLY", fac=1.0, a=g.out(pal, "cloud_lit"), b=g.out(pal, "sun_tint"))
+    col = g.mix(400, 350, fac=g.out(f1, "Result"), a=g.mixout(sh), b=g.mixout(lit))
+    # rim: grazing surfaces glow when the camera looks towards the sun through the cloud
+    geo = g.n("ShaderNodeNewGeometry", -1700, -700)
+    facing = g.vmath("DOT_PRODUCT", -1500, -700, g.out(geo, "Normal"), g.out(geo, "Incoming"))
+    fres = g.math("SUBTRACT", -1180, -700, 1.0, g.out(g.math("ABSOLUTE", -1340, -700, g.out(facing, "Value"))))
+    fres = g.math("POWER", -1020, -700, g.out(fres), 3.6)
+    sd = g.n("ShaderNodeCombineXYZ", -1500, -950)
+    for c in "xyz":
+        g.link(pal, "sun_" + c, sd, c.upper())
+    tow = g.vmath("DOT_PRODUCT", -1300, -950, g.out(g.vmath("SCALE", -1500, -820, g.out(geo, "Incoming"), scale=-1.0)),
+                  g.out(sd))
+    back = g.maprange(-1120, -950, g.out(tow, "Value"), 0.05, 0.85, smooth=True)
+    rim = g.math("MULTIPLY", -860, -800, g.out(fres), g.out(back, "Result"))
+    rim = g.math("MULTIPLY", -700, -800, g.out(rim), g.out(g.math("MULTIPLY", -780, -950, g.out(pal, "cloud_rim_amount"), 2.2)),
+                 clamp=True)
+    col = g.mix(600, 350, fac=g.out(rim), a=g.mixout(col), b=g.out(pal, "cloud_rim"))
+    _emit_out(g, g.mixout(col), 1000, 200, pal=pal, haze=0.25)
+    _done(mat, "cumulus")
+    return mat
+
+
 def cloud_fill_material():
     return cloud_material(fill=True)
 
 
 def all_materials():
     return [ground_material(), grass_material(), flower_material(), bark_material(), fill_material(),
-            cloud_material(), cloud_fill_material()] + \
+            cloud_material(), cloud_fill_material(), cumulus_material()] + \
         [leaves_material(st) for st in LEAF_STYLES]

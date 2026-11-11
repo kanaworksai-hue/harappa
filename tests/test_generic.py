@@ -19,7 +19,7 @@ UPDATE = os.environ.get("HARAPPA_UPDATE_BASELINE") == "1"
 import numpy as np  # noqa: E402
 
 import harappa as H  # noqa: E402
-from harappa import build, i18n, presets, scatter, shading, util  # noqa: E402
+from harappa import build, cumulus, i18n, presets, scatter, shading, util  # noqa: E402
 from harappa.util import mod_input  # noqa: E402
 import seasons  # noqa: E402
 import wiring  # noqa: E402
@@ -204,6 +204,7 @@ check(all(all(abs(a - b) < 1e-5 for a, b in zip(getattr(s, k), base[k])) for k, 
 
 # --- 3b. node wiring: every link joins the sockets it was written for, on this Blender version ------------
 shading.all_materials()
+cumulus.cloud_group()
 for build_group in (scatter.wind_group, scatter.grass_group, scatter.flowers_group, scatter.foliage_group):
     build_group()
 bad = wiring.problems()
@@ -300,14 +301,16 @@ check(not hasattr(bpy.types.Scene, "harappa"), "unregister clean")
 bpy.ops.wm.read_factory_settings()
 H.register()
 sc = seasons.run(OUT, list(presets.SEASONS), check, update=UPDATE)
-clouds_ob = bpy.data.objects.get("Anime Clouds")
-check(clouds_ob is not None and len(clouds_ob.data.vertices) > 0, "the default landscape has clouds")
+clouds_ob = next((o for o in sc.objects if o.get("hrp_cloud")), None)
+check(clouds_ob is not None and len(clouds_ob.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.polygons) > 100, "the default landscape has clouds")
 hills = bpy.data.objects["Far Hills"]
 check(min(p.normal.z for p in hills.data.polygons) > 0.0, "far hills face up (their fringe stands on the face normal)")
 
 # --- 8. a scene made with an older version: the first action brings every material up to date -------------
 # The materials share HRP Palette / HRP Cel / HRP Clump Normal. Rebuilding one of those for a new version drops
 # the links of every material that is not rebuilt with it, and the scene turns grey without any error.
+shading.all_materials()               # also the ones this scene does not use (1.0 card clouds)
+cumulus.cloud_group()
 s = sc.harappa
 s.season = "AUTUMN"
 autumn_lit = shading.palette_get("grass_lit")

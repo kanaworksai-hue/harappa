@@ -11,7 +11,7 @@ from .util import BUILDING, G, only, srgb, stamp
 
 WORLD = "HRP Sky"
 SUN = shading.SUN
-SKY_VER = 8
+SKY_VER = 9
 
 
 def setup_render(scene):
@@ -55,9 +55,14 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         nt.nodes.clear()
         g = G(nt)
         tc = g.n("ShaderNodeTexCoord", -900, 0)
+        nd = g.vmath("NORMALIZE", -700, -300, g.out(tc, "Generated"))
         sep = g.n("ShaderNodeSeparateXYZ", -700, 0)
-        g.link(tc, "Generated", sep, "Vector")
-        mr = g.maprange(-600, 0, g.out(sep, "Z"), -0.03, 0.5, 0.0, 1.0)
+        g.links.new(g.out(nd), sep.inputs["Vector"])
+        # the gradient spans what the camera sees: 'sky top' is the height (z of the view direction) of the
+        # top edge of the frame, so the zenith colour reaches the picture instead of staying overhead
+        top = g.n("ShaderNodeValue", -800, 150, label="sky top")
+        g.out(top).default_value = 0.5
+        mr = g.maprange(-600, 0, g.out(sep, "Z"), -0.03, g.out(top), 0.0, 1.0)
         ramp = g.n("ShaderNodeValToRGB", -400, 0, label="sky ramp")
         g.link(mr, "Result", ramp, "Fac")
         cr = ramp.color_ramp
@@ -65,8 +70,8 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         cr.elements[0].position = 0.0
         cr.elements[1].position = 1.0
         cr.elements.new(0.06)
+        cr.elements.new(0.5)
         # night: stars + moon, scaled by two values the season sets
-        nd = g.vmath("NORMALIZE", -700, -300, g.out(tc, "Generated"))
         vs = g.n("ShaderNodeTexVoronoi", -500, -300, voronoi_dimensions="3D")
         g.set(vs, "Scale", 160.0)
         g.link(nd, 0, vs, "Vector")
@@ -89,7 +94,8 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         lights = g.math("ADD", 450, -500, g.out(s3), g.out(md2))
         hal = g.math("MULTIPLY", 300, -950, g.out(g.math("MULTIPLY", 150, -950, g.out(gl2), 0.35)),
                      g.out(mv))
-        sky0 = g.mix(-200, 450, "ADD", fac=g.out(hal), a=g.out(ramp, "Color"), b=(0.35, 0.44, 0.66, 1.0))
+        base = _sky_day(g, nd, sep, g.out(ramp, "Color"))
+        sky0 = g.mix(-200, 450, "ADD", fac=g.out(hal), a=base, b=(0.35, 0.44, 0.66, 1.0))
         sky = g.mix(-200, 300, "ADD", fac=g.out(lights), a=g.mixout(sky0), b=(1.0, 0.97, 0.88, 1.0))
         bg = g.n("ShaderNodeBackground", -200, 100)
         g.links.new(g.mixout(sky), bg.inputs["Color"])
@@ -106,6 +112,106 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
     set_sky_colours(world, zenith, horizon, ground)
     scene.world = world
     return world
+
+
+def _sky_day(g, nd, sep, sky):
+    """High cirrus, the sun's glow and its disc, painted into the sky colour. No geometry: nothing to sort,
+    nothing to clip, and they cost nothing to render."""
+    x, y = -900, 900
+    # cirrus: the view direction projected on a plane overhead (so the streaks converge towards the horizon),
+    # a stretched, warped noise cut into wisps, in patches
+    z = g.math("MAXIMUM", x, y, g.out(sep, "Z"), 0.05)
+    uv = g.vmath("DIVIDE", x + 160, y, g.out(nd), g.out(z))
+    ang = g.n("ShaderNodeVectorRotate", x + 320, y, label="cirrus angle", rotation_type="Z_AXIS")
+    g.links.new(g.out(uv), g.inp(ang, "Vector"))
+    g.set(ang, "Angle", 0.5)
+    st = g.vmath("MULTIPLY", x + 480, y, g.out(ang), (0.16, 1.5, 0.0))
+    n1 = g.n("ShaderNodeTexNoise", x + 640, y, noise_dimensions="3D")
+    g.links.new(g.out(st), g.inp(n1, "Vector"))
+    for k, v in (("Scale", 1.6), ("Detail", 5.0), ("Roughness", 0.62), ("Distortion", 1.4)):
+        g.set(n1, k, v)
+    wisps = g.maprange(x + 800, y, g.out(n1, "Fac"), 0.5, 0.74, smooth=True)
+    n2 = g.n("ShaderNodeTexNoise", x + 640, y - 260, noise_dimensions="3D")
+    g.links.new(g.out(ang), g.inp(n2, "Vector"))
+    for k, v in (("Scale", 0.55), ("Detail", 1.0), ("Roughness", 0.5), ("Distortion", 0.0)):
+        g.set(n2, k, v)
+    patch = g.maprange(x + 800, y - 260, g.out(n2, "Fac"), 0.42, 0.62, smooth=True)
+    low = g.maprange(x + 800, y - 520, g.out(sep, "Z"), 0.03, 0.22, smooth=True)     # none on the horizon
+    amt = g.n("ShaderNodeValue", x + 800, y + 160, label="sky cirrus")
+    g.out(amt).default_value = 0.0
+    m = g.math("MULTIPLY", x + 960, y, g.out(wisps, "Result"), g.out(patch, "Result"))
+    m = g.math("MULTIPLY", x + 1100, y, g.out(m), g.out(low, "Result"))
+    m = g.math("MULTIPLY", x + 1240, y, g.out(m), g.out(amt), clamp=True)
+    ccol = g.n("ShaderNodeRGB", x + 1100, y + 200, label="cirrus colour")
+    g.out(ccol).default_value = (0.9, 0.95, 1.0, 1.0)
+    sky = g.mixout(g.mix(x + 1400, y, "MIX", fac=g.out(m), a=sky, b=g.out(ccol)))
+    # sun: a wide tinted glow, a tight bright one and the disc
+    sd = g.n("ShaderNodeCombineXYZ", x, y - 800, label="sun dir")
+    g.set(sd, "Z", 1.0)
+    dt = g.vmath("DOT_PRODUCT", x + 160, y - 800, g.out(nd), g.out(sd))
+    samt = g.n("ShaderNodeValue", x + 160, y - 1000, label="sky sun")
+    g.out(samt).default_value = 0.0
+    gcol = g.n("ShaderNodeRGB", x + 160, y - 1150, label="sun glow")
+    g.out(gcol).default_value = (1.0, 0.95, 0.8, 1.0)
+    wide = g.math("POWER", x + 480, y - 800, g.out(g.maprange(x + 320, y - 800, g.out(dt, "Value"), 0.55, 1.0),
+                                                   "Result"), 2.5)
+    tight = g.math("POWER", x + 480, y - 950, g.out(g.maprange(x + 320, y - 950, g.out(dt, "Value"), 0.94, 1.0),
+                                                    "Result"), 5.0)
+    glow = g.math("ADD", x + 640, y - 850, g.out(g.math("MULTIPLY", x + 560, y - 800, g.out(wide), 0.45)),
+                  g.out(tight))
+    glow = g.math("MULTIPLY", x + 800, y - 850, g.out(glow), g.out(samt), clamp=True)
+    sky = g.mixout(g.mix(x + 1400, y - 400, "SCREEN", fac=g.out(glow), a=sky, b=g.out(gcol)))
+    disc = g.maprange(x + 320, y - 1100, g.out(dt, "Value"), 0.99955, 0.9998)
+    disc = g.math("MULTIPLY", x + 800, y - 1100, g.out(disc, "Result"),
+                  g.out(g.math("MINIMUM", x + 640, y - 1100, g.out(samt), 1.0)))
+    return g.mixout(g.mix(x + 1560, y - 400, "MIX", fac=g.out(disc), a=sky, b=(1.0, 0.98, 0.9, 1.0)))
+
+
+def aim_sky(scene, world=None):
+    """Fit the sky to the camera and the sun: the gradient to the height of the frame's top edge, the glow to
+    where the sun is. Call after moving the camera or the sun."""
+    world = world or scene.world
+    if world is None or world.node_tree is None:
+        return
+    nt = world.node_tree
+    cam = scene.camera
+    top = nt.nodes.get("sky top")
+    if top is not None:
+        v = 0.5
+        if cam is not None and cam.type == "CAMERA":
+            bpy.context.view_layer.update()
+            tr, _br, _bl, tl = cam.data.view_frame(scene=scene)
+            d = (cam.matrix_world.to_quaternion() @ tl.lerp(tr, 0.5)).normalized()
+            v = min(max(d.z * 1.08 + 0.03, 0.16), 1.0)
+        only(top.outputs).default_value = v
+    sd = nt.nodes.get("sun dir")
+    sun = bpy.data.objects.get(SUN)
+    if sd is not None and sun is not None:
+        d = sun.matrix_world.to_quaternion() @ Vector((0.0, 0.0, 1.0))
+        for c, v in zip("XYZ", d):
+            sd.inputs[c].default_value = v
+        for c, v in zip("xyz", d):                        # the materials read it from the palette (cloud rims)
+            shading.palette_set("sun_" + c, v)
+
+
+def set_sky_extras(world, mid=None, glow="#FFF6DC", sun=0.6, cirrus=0.0, cirrus_colour="#EEF6FF"):
+    """Mid-sky colour (None = between horizon and zenith), sun glow and cirrus of a season."""
+    nt = world.node_tree
+    ramp = nt.nodes.get("sky ramp")
+    if ramp is not None and len(ramp.color_ramp.elements) == 4:
+        els = sorted(ramp.color_ramp.elements, key=lambda e: e.position)
+        if mid is None:
+            els[2].color = [a * 0.45 + b * 0.55 for a, b in zip(els[1].color, els[3].color)]
+        else:
+            els[2].color = (*srgb(mid), 1.0)
+    for key, val in (("sky sun", sun), ("sky cirrus", cirrus)):
+        n = nt.nodes.get(key)
+        if n is not None:
+            only(n.outputs).default_value = val
+    for key, hx in (("sun glow", glow), ("cirrus colour", cirrus_colour)):
+        n = nt.nodes.get(key)
+        if n is not None:
+            only(n.outputs).default_value = (*srgb(hx), 1.0)
 
 
 def set_night(world, stars=0.0, moon=0.0, camera=None):
@@ -134,12 +240,12 @@ def _moon_direction(camera):
     best = None
     from bpy_extras.object_utils import world_to_camera_view
     cloud_pts = []
-    cl = bpy.data.objects.get("Anime Clouds")
-    if cl is not None:
+    for cl in scene.objects:                              # keep the moon out of the clouds
+        if not cl.get("hrp_cloud"):
+            continue
         mw = cl.matrix_world
-        vs = cl.data.vertices
-        for i in range(0, len(vs), 7):
-            q = world_to_camera_view(scene, camera, mw @ vs[i].co)
+        for v in cl.data.vertices:
+            q = world_to_camera_view(scene, camera, mw @ v.co)
             if q.z > 0:
                 cloud_pts.append((q.x, q.y))
     for sy in (0.84, 0.74, 0.92):
@@ -165,8 +271,10 @@ def set_sky_colours(world, zenith, horizon, ground):
     if ramp is None:
         return
     els = sorted(ramp.color_ramp.elements, key=lambda e: e.position)
-    for el, hx in zip(els, (ground, horizon, zenith)):
-        el.color = (*srgb(hx), 1.0)
+    cols = [(*srgb(hx), 1.0) for hx in (ground, horizon, zenith)]
+    els[0].color, els[1].color, els[-1].color = cols
+    if len(els) == 4:                                    # mid sky follows until a season sets its own
+        els[2].color = [a * 0.45 + b * 0.55 for a, b in zip(cols[1], cols[2])]
 
 
 def key_sun(scene, camera=None, elevation=42.0, side=-55.0, colour="#FFF6E6", strength=4.0):
@@ -192,4 +300,6 @@ def key_sun(scene, camera=None, elevation=42.0, side=-55.0, colour="#FFF6E6", st
     to_light = Vector((math.cos(yaw) * math.cos(el), math.sin(yaw) * math.cos(el), math.sin(el)))
     sun.rotation_euler = to_light.to_track_quat("Z", "Y").to_euler()
     shading.drive_light_scale(sun)
+    bpy.context.view_layer.update()
+    aim_sky(scene)
     return sun
