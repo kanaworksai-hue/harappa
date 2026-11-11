@@ -128,13 +128,19 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         col = layout.column(align=True)
         _enum(col, s, "season")
         _enum(col, s, "style")
+        col = layout.column(align=True)
+        _prop(col, s, "grade_sat")
+        _prop(col, s, "grade_contrast")
         _prop(layout, s, "detail_level")
         row = layout.row(align=True)
         _prop(row, s, "variation")
         _op(row, "harappa.shuffle", "Shuffle", icon="FILE_REFRESH")
         row = layout.row(align=True)
-        _op(row, "harappa.add_clouds", "Add Clouds", icon="OUTLINER_DATA_VOLUME")
+        _op(row, "harappa.add_clouds", "Make Clouds", icon="OUTLINER_DATA_VOLUME")
         _prop(row, s, "cloud_count")
+        row = layout.row(align=True)
+        _op(row, "harappa.add_ridges", "Distant Mountains", icon="IPO_ELASTIC")
+        _prop(row, s, "ridge_layers")
         row = layout.row(align=True)
         _op(row, "harappa.make_foliage", "Make Foliage", icon="MOD_PARTICLE_INSTANCE")
         _op(row, "harappa.setup_scene", "Anime Sky & Sun", icon="LIGHT_SUN")
@@ -249,9 +255,6 @@ class HRP_PT_light(HrpSub, bpy.types.Panel):
         for k in ("threshold", "deep_threshold", "softness"):
             _prop(col, s, k)
         col = self.layout.column(align=True)
-        for k in ("grade_sat", "grade_contrast"):
-            _prop(col, s, k)
-        col = self.layout.column(align=True)
         for k in ("haze_amount", "haze_start", "haze_end"):
             _prop(col, s, k)
         col = self.layout.column(align=True)
@@ -292,7 +295,8 @@ class HRP_PT_colours(HrpSub, bpy.types.Panel):
             ("Path", ("dirt_lit", "dirt_shadow", "dirt_deep")),
             ("Leaves", ("leaf_lit", "leaf_mid", "leaf_shadow", "leaf_deep", "leaf_hi")),
             ("Blossoms & Bark", ("bloom_lit", "bloom_shadow", "bloom_deep", "bark_lit", "bark_shadow")),
-            ("Clouds", ("cloud_lit", "cloud_shadow", "cloud_deep")),
+            ("Clouds", ("cloud_lit", "cloud_shadow", "cloud_deep", "cloud_rim")),
+            ("Mountains", ("mountain_1", "mountain_2", "mountain_3")),
             ("Flowers", ("flower_a", "flower_b", "flower_c", "flower_d", "flower_centre", "flower_shade")),
         )
         for title, keys in groups:

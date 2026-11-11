@@ -326,7 +326,8 @@ check(ok and not wiring.problems(), f"an older scene: no link is lost in the reb
 check(all(abs(a - b) < 1e-5 for a, b in zip(shading.palette_get("grass_lit"), autumn_lit)),
       "an older scene keeps its colours")
 pal = bpy.data.node_groups[shading.PALETTE]
-check(pal.animation_data is not None and len(pal.animation_data.drivers) == 1, "an older scene keeps the sun driver")
+check(pal.animation_data is not None and len(pal.animation_data.drivers) == 4,
+      "an older scene keeps the sun drivers (strength and direction)")
 if not UPDATE:
     ok, msg = seasons.compare(sc, "AUTUMN", os.path.join(OUT, "upgrade_autumn.png"))
     check(ok, f"an older scene renders like a new one ({msg})")
@@ -407,5 +408,87 @@ check(n_fast < n_bal * 0.8 and n_best > n_bal * 1.15, f"detail levels draw less 
 check(abs(mod_input(gmod, "Density") - 21.0) < 1e-5, "a detail level leaves the user's density alone")
 sc.harappa.detail_level = "BALANCED"
 check(_instances() == n_bal and sc.eevee.taa_render_samples == 16, "back to Balanced gives the same scene back")
+
+# --- 12. the scene stays in step with what the user does afterwards ----------------------------------------
+from harappa import ridges as hridges, scene as hscene  # noqa: E402
+sun = bpy.data.objects[shading.SUN]
+world = sc.world
+sun.rotation_euler = (math.radians(70.0), 0.0, math.radians(20.0))
+bpy.context.view_layer.update()
+want = sun.matrix_world.to_quaternion() @ __import__("mathutils").Vector((0.0, 0.0, 1.0))
+got = [shading.palette_get("sun_" + a) for a in "xyz"]
+sky_sun = [world.node_tree.nodes["sun dir"].inputs[a].default_value for a in "XYZ"]
+check(all(abs(a - b) < 1e-3 for a, b in zip(got, want)), "turning the sun by hand moves the cloud rims with it")
+check(all(abs(a - b) < 1e-3 for a, b in zip(sky_sun, want)), "turning the sun by hand moves its glow in the sky")
+cam = sc.camera
+top_node = world.node_tree.nodes["sky top"].outputs[0]
+before = top_node.default_value
+cam.rotation_euler[0] += math.radians(12.0)
+bpy.context.view_layer.update()
+H._follow_camera(sc)
+after_tilt = top_node.default_value
+check(after_tilt > before + 0.05, "tilting the camera up refits the sky gradient")
+sc.render.resolution_y = int(sc.render.resolution_y * 2)
+bpy.context.view_layer.update()
+H._follow_camera(sc)
+check(top_node.default_value > after_tilt + 0.02, "a taller picture format refits the sky gradient")
+sc.render.resolution_y //= 2
+cam.rotation_euler[0] -= math.radians(12.0)
+check(H._follow_camera in bpy.app.handlers.depsgraph_update_post, "the sky follows the camera by itself")
+
+sc.eevee.taa_render_samples = 64
+cloud = next(o for o in sc.objects if o.get("hrp_cloud"))
+mod_input(cloud.modifiers["Harappa Cloud"], "Detail", 0.03)
+keep_loc = cloud.location.copy()
+cloud.location.x += 25.0                                   # the user moves one cloud: it is theirs now
+bpy.ops.harappa.add_clouds(count=5, seed=3)
+check(sc.eevee.taa_render_samples == 64, "making clouds leaves the user's render samples alone")
+check(cloud.name in sc.objects and not cloud.get("hrp_cloud_auto")
+      and abs(mod_input(cloud.modifiers["Harappa Cloud"], "Detail") - 0.03) < 1e-6,
+      "a cloud the user moved survives a re-roll, with its own Detail")
+made = [o for o in sc.objects if o.get("hrp_cloud_auto")]
+check(len(made) == 5, f"asked for 5 clouds, got {len(made)}")
+sc.harappa.detail_level = "BEST"
+check(abs(mod_input(cloud.modifiers["Harappa Cloud"], "Detail") - 0.03) < 1e-6
+      and mod_input(cloud.modifiers["Harappa Cloud"], "Quality") > 1.2,
+      "a detail level raises a cloud's Quality and leaves its Detail alone")
+sc.harappa.detail_level = "BALANCED"
+bpy.ops.harappa.add_clouds(count=5, seed=3)
+check(len([o for o in sc.objects if o.get("hrp_cloud_auto")]) == 5 and len([o for o in sc.objects if o.get("hrp_cloud")]) == 6,
+      "re-rolling twice does not pile clouds up")
+cam.rotation_euler[0] = math.radians(60.0)                 # looking down: no sky in the frame
+bpy.context.view_layer.update()
+bpy.ops.harappa.add_clouds(count=4, seed=1)
+check(len([o for o in sc.objects if o.get("hrp_cloud_auto")]) == 4, "a camera that looks down still gets its clouds")
+sc.render.resolution_x, sc.render.resolution_y = sc.render.resolution_y, sc.render.resolution_x     # portrait
+cam.rotation_euler[0] = math.radians(93.5)
+bpy.context.view_layer.update()
+bpy.ops.harappa.add_clouds(count=4, seed=1)
+check(len([o for o in sc.objects if o.get("hrp_cloud_auto")]) == 4, "a portrait frame gets its clouds too")
+sc.render.resolution_x, sc.render.resolution_y = sc.render.resolution_y, sc.render.resolution_x
+
+n_r = len(hridges.ridges_of(sc))
+bpy.ops.harappa.add_ridges(layers=3, seed=4)
+check(n_r == 3 and len(hridges.ridges_of(sc)) == 3, "Distant Mountains rebuilds its three layers, no more")
+bpy.ops.harappa.add_ridges(layers=0)
+check(not hridges.ridges_of(sc), "0 mountain layers removes them")
+bpy.ops.harappa.add_ridges(layers=2, seed=4)
+check(len(hridges.ridges_of(sc)) == 2, "and they come back")
+
+# the user's own, large ground far from the origin: it gets mountains and clouds, the camera can still see near
+H.unregister()
+bpy.ops.wm.read_factory_settings()
+H.register()
+sc = bpy.context.scene
+bpy.ops.mesh.primitive_plane_add(size=2000.0, location=(5000.0, -3000.0, 12.0))
+big = bpy.context.active_object
+bpy.ops.harappa.make_meadow()
+rid = hridges.ridges_of(sc)
+check(len(rid) == 3 and all((o.location - big.location).length < 1.0 and abs(o.scale.x - 2000.0) < 1.0 for o in rid),
+      "the user's own ground gets mountains, centred on it and sized to it")
+check(len([o for o in sc.objects if o.get("hrp_cloud")]) >= 3, "the user's own ground gets clouds")
+cd = sc.camera.data
+check(cd.clip_end / cd.clip_start <= 1e5 and cd.clip_end > 2000.0 * 10.0,
+      f"a 2 km ground keeps a sane clip range ({cd.clip_start:.2f} .. {cd.clip_end:.0f})")
 H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")

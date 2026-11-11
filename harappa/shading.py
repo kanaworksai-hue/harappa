@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 29
+SHADER_VER = 31
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -100,6 +100,8 @@ PALETTE_KEYS = {
     "style_sat": ("VALUE", 1.0),            # the paint style's share of the grade (the season sets grade_*)
     "style_contrast": ("VALUE", 1.0),
     "cloud_jitter": ("VALUE", 1.0),         # how broken the painted edge between cloud tones is
+    "season_sat": ("VALUE", 1.0),           # the season's share of the grade
+    "season_contrast": ("VALUE", 1.0),
     "grade_sat": ("VALUE", 1.0),            # overall colour strength of everything Harappa paints
     "grade_contrast": ("VALUE", 1.0),       # overall contrast (around mid grey)
     "sun_x": ("VALUE", 0.0),                # direction to the sun (world), written with the sun
@@ -185,7 +187,8 @@ def _rebuild_stale():
             builders[name]()
         sun = bpy.data.objects.get(SUN)
         if sun is not None and sun.type == "LIGHT":
-            drive_light_scale(sun)             # the driver sat on the old 'light_scale' node
+            drive_light_scale(sun)             # the drivers sat on the old palette nodes
+            drive_sun_dir(sun)
     finally:
         _stale["busy"] = False
 
@@ -228,6 +231,40 @@ def drive_light_scale(sun):
         v.targets[0].id = sun.data
         v.targets[0].data_path = path
     d.expression = "max(e * max(r, g, b), 0.001)"
+
+
+SUN_AXES = (("x", "cos(rz)*sin(ry)*cos(rx) + sin(rz)*sin(rx)"),
+            ("y", "sin(rz)*sin(ry)*cos(rx) - cos(rz)*sin(rx)"),
+            ("z", "cos(ry)*cos(rx)"))
+
+
+def drive_direction(sock, sun, expression):
+    """Drive one component of 'the direction to the sun' from the sun object's rotation (simple expressions, so
+    it works with auto-run scripts off)."""
+    try:
+        sock.driver_remove("default_value")
+    except TypeError:
+        pass
+    if sun is None:
+        return
+    d = sock.driver_add("default_value").driver
+    d.type = "SCRIPTED"
+    for name, kind in (("rx", "ROT_X"), ("ry", "ROT_Y"), ("rz", "ROT_Z")):
+        v = d.variables.new()
+        v.name = name
+        v.type = "TRANSFORMS"
+        v.targets[0].id = sun
+        v.targets[0].transform_type = kind
+        v.targets[0].rotation_mode = "XYZ"
+        v.targets[0].transform_space = "WORLD_SPACE"
+    d.expression = expression
+
+
+def drive_sun_dir(sun):
+    """sun_x / sun_y / sun_z follow the sun object, so cloud rims stay right when the user turns the sun."""
+    ng = palette_group()
+    for axis, expr in SUN_AXES:
+        drive_direction(only(ng.nodes["sun_" + axis].outputs), sun, expr)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -374,7 +411,9 @@ def grade_group():
     for ch in ("Red", "Green", "Blue"):
         g.links.new(g.out(bw), grey.inputs[ch])
     amount = g.math("MULTIPLY", -700, -150, g.out(pal, "grade_sat"), g.out(pal, "style_sat"))
+    amount = g.math("MULTIPLY", -600, -150, g.out(amount), g.out(pal, "season_sat"))
     power = g.math("MULTIPLY", -100, -500, g.out(pal, "grade_contrast"), g.out(pal, "style_contrast"))
+    power = g.math("MULTIPLY", 0, -500, g.out(power), g.out(pal, "season_contrast"))
     sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(amount), a=g.out(grey), b=g.out(gi, "Color"))
     sat.clamp_factor = False                       # above 1 = stronger than the palette colour
     sep = g.n("ShaderNodeSeparateColor", -300, 0)
@@ -989,7 +1028,7 @@ def cumulus_material():
     tc = g.n("ShaderNodeTexCoord", -1700, -300)
     noi = g.n("ShaderNodeTexNoise", -1500, -300, noise_dimensions="3D")
     g.link(tc, "Object", noi, "Vector")
-    for k, v in (("Scale", 0.09), ("Detail", 3.0), ("Roughness", 0.55), ("Distortion", 0.3)):
+    for k, v in (("Scale", 11.0), ("Detail", 3.0), ("Roughness", 0.55), ("Distortion", 0.3)):   # per cloud width
         g.set(noi, k, v)
     jit = g.math("MULTIPLY", -1300, -300, g.out(g.math("SUBTRACT", -1400, -300, g.out(noi, "Fac"), 0.5)),
                  g.out(g.math("MULTIPLY", -1400, -450, g.out(pal, "cloud_jitter"), 0.22)))
@@ -1022,6 +1061,12 @@ def cumulus_material():
                   g.out(sd))
     back = g.maprange(-1120, -950, g.out(tow, "Value"), 0.05, 0.85, smooth=True)
     rim = g.math("MULTIPLY", -860, -800, g.out(fres), g.out(back, "Result"))
+    # ... only on the side of the cloud that faces the sun, and not along the flat base: a rim, not an outline
+    sunside = g.vmath("DOT_PRODUCT", -1300, -1150, g.out(geo, "Normal"), g.out(sd))
+    side = g.maprange(-1120, -1150, g.out(sunside, "Value"), -0.15, 0.6, 0.12, 1.0, smooth=True)
+    nobase = g.maprange(-1120, -1350, g.out(ch, "Fac"), 0.06, 0.3, smooth=True)
+    rim = g.math("MULTIPLY", -860, -1000, g.out(rim), g.out(g.math("MULTIPLY", -960, -1150, g.out(side, "Result"),
+                                                                  g.out(nobase, "Result"))))
     rim = g.math("MULTIPLY", -700, -800, g.out(rim), g.out(g.math("MULTIPLY", -780, -950, g.out(pal, "cloud_rim_amount"), 2.2)),
                  clamp=True)
     col = g.mix(600, 350, fac=g.out(rim), a=g.mixout(col), b=g.out(pal, "cloud_rim"))
@@ -1047,14 +1092,14 @@ def ridge_material():
     col = g.mix(-650, 350, fac=g.out(f23, "Result"), a=g.mixout(c12), b=g.out(pal, "mountain_3"))
     # broad shaded shapes, strongest on the nearest layer and gone on the farthest
     tc = g.n("ShaderNodeTexCoord", -1300, -300)
-    sc = g.vmath("MULTIPLY", -1120, -300, g.out(tc, "Object"), (0.012, 0.012, 0.05))
+    sc = g.vmath("MULTIPLY", -1120, -300, g.out(tc, "Object"), (0.48, 0.48, 2.0))      # per ground width
     noi = g.n("ShaderNodeTexNoise", -950, -300, noise_dimensions="3D")
     g.links.new(g.out(sc), g.inp(noi, "Vector"))
     for k, v in (("Scale", 1.0), ("Detail", 2.0), ("Roughness", 0.5), ("Distortion", 0.6)):
         g.set(noi, k, v)
     shape = g.math("SUBTRACT", -780, -300, g.out(noi, "Fac"), g.out(g.math("MULTIPLY", -880, -450, g.out(t, "Fac"), 0.3)))
     cut = g.maprange(-620, -300, g.out(shape), 0.36, 0.4, smooth=True)
-    amt = g.maprange(-620, -500, g.out(lay, "Fac"), 0.0, 2.0, 0.26, 0.0)
+    amt = g.maprange(-620, -500, g.out(lay, "Fac"), 0.0, 2.0, 0.26, 0.1)
     dk = g.math("MULTIPLY", -450, -350, g.out(cut, "Result"), g.out(amt, "Result"))
     shade = g.mix(-250, 200, "MULTIPLY", fac=g.out(dk), a=g.mixout(col), b=(0.55, 0.62, 0.9, 1.0))
     # air at the foot

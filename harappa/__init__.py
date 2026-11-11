@@ -30,7 +30,7 @@ COLOUR_PROPS = [
     ("flower_centre", "Flower Centre"), ("flower_shade", "Flower Shade"), ("sun_tint", "Sunlight Tint"),
     ("cloud_lit", "Cloud Lit"), ("cloud_shadow", "Cloud Shadow"), ("cloud_deep", "Cloud Deep Shadow"),
     ("haze_colour", "Haze"), ("rim_colour", "Rim Light"), ("cloud_rim", "Cloud Rim"),
-    ("mountain_1", "Near Ridge"), ("mountain_2", "Middle Ridge"), ("mountain_3", "Far Ridge"),
+    ("mountain_1", "Near Mountains"), ("mountain_2", "Middle Mountains"), ("mountain_3", "Far Mountains"),
 ]
 VALUE_PROPS = [
     # key, label, min, max, description
@@ -53,8 +53,13 @@ VALUE_PROPS = [
     ("haze_end", "Haze End", 0.0, 100000.0, "Camera distance in metres where the haze is full"),
     ("flower_dim", "Flower Brightness", 0.0, 2.0, "Brightness of the meadow flowers (lower at night)"),
     ("rim_amount", "Rim Light", 0.0, 1.0, "Warm light along the sun-facing edges of trees"),
-    ("grade_sat", "Colour Strength", 0.0, 2.0, "Overall strength of every colour Harappa paints (1 = as set)"),
-    ("grade_contrast", "Picture Contrast", 0.5, 2.0, "Overall contrast of everything Harappa paints (1 = as set)"),
+    ("grade_sat", "Vividness", 0.0, 2.0, "Makes every colour stronger or weaker, on top of the season and the paint "
+                                         "style (saturation). Changing the season does not reset it"),
+    ("grade_contrast", "Picture Contrast", 0.5, 2.0, "More or less contrast in the whole picture, on top of the "
+                                                     "season and the paint style. Changing the season does not "
+                                                     "reset it"),
+    ("season_sat", "Season Vividness", 0.0, 2.0, "Colour strength the season adds"),
+    ("season_contrast", "Season Contrast", 0.5, 2.0, "Contrast the season adds"),
     ("style_sat", "Style Colour Strength", 0.0, 2.0, "Colour strength the paint style adds on top of the season"),
     ("style_contrast", "Style Contrast", 0.5, 2.0, "Contrast the paint style adds on top of the season"),
     ("cloud_jitter", "Cloud Brushiness", 0.0, 4.0, "How broken and brushy the edge between a cloud's light and shade is"),
@@ -65,7 +70,7 @@ SKY_PROPS = [("sky_zenith", "Sky Top"), ("sky_horizon", "Sky Horizon")]
 TREE_SHAPES = [
     ("ROUND", "Round Tree", "A classic round broadleaf tree"),
     ("TALL", "Tall Tree", "A tall, narrow tree"),
-    ("WIDE", "Wide Tree", "A wide umbrella-shaped tree (cherry style)"),
+    ("WIDE", "Wide Tree", "A wide umbrella-shaped tree"),
     ("BUSH", "Bush", "A rounded bush without a visible trunk"),
     ("CONIFER", "Conifer", "A pointed evergreen"),
     ("SAKURA", "Cherry Blossom", "A wide cherry tree in full blossom"),
@@ -100,6 +105,13 @@ def _upd_sky(self, context):
     w = bpy.data.worlds.get(hscene.WORLD)
     if w is not None:
         ground = to_hex([c * 0.9 + 0.1 * h for c, h in zip(self.sky_horizon, (0.4, 0.5, 0.4))])
+        if w.get("hrp_ver") != hscene.SKY_VER:             # a sky from an older version: rebuild it in place
+            st, mo = presets.SEASONS[self.season].get("night", (0.0, 0.0))
+            sc = context.scene
+            was = sc.world
+            hscene.sky_world(sc, to_hex(self.sky_zenith), to_hex(self.sky_horizon), ground)
+            sc.world = was
+            hscene.set_night(w, st, mo, sc.camera)
         hscene.set_sky_colours(w, to_hex(self.sky_zenith), to_hex(self.sky_horizon), ground)
         _sky_extras(self, w)
 
@@ -303,6 +315,20 @@ def _reseed(sc, rng):
                 mod_input(m, "Seed", rng.randint(0, 9999) if rng else int(base))
                 if rng is None:
                     del ob[f"hrp_seed_{m.name}"]
+    rl = sc.get("hrp_ridge_layout")
+    if rl is not None and ridges.ridges_of(sc):                      # new mountain shapes with every shuffle
+        layers, rseed = list(rl)
+        base = sc.get("hrp_ridge_seed_base")
+        if base is None:
+            base = int(rseed)
+        new = rng.randint(0, 99999) if rng else int(base)
+        if new != int(rseed):
+            ridges.build(bpy.context, _main_ground(sc), new, int(layers))
+        if rng is None:
+            if "hrp_ridge_seed_base" in sc:
+                del sc["hrp_ridge_seed_base"]
+        else:
+            sc["hrp_ridge_seed_base"] = int(base)
     lay = sc.get("hrp_cloud_layout")
     if lay is not None and (cumulus.clouds_of(sc) or lay[0] == 0):
         cnt, cseed, dist_ = list(lay)
@@ -317,6 +343,12 @@ def _reseed(sc, rng):
                 del sc["hrp_cloud_seed_base"]
         else:
             sc["hrp_cloud_seed_base"] = int(base)
+
+
+def _main_ground(sc):
+    """The meadow the scenery is built around: the biggest ground in the scene."""
+    grounds = [o for o in sc.objects if o.get("hrp_ground") and not o.get("hrp_far_hills")]
+    return max(grounds, key=lambda o: max(o.dimensions.x, o.dimensions.y), default=None)
 
 
 def _refresh_all(s, context):
@@ -365,6 +397,9 @@ def _settings_annotations():
                                                description="Share of blossom dabs on the next tree"),
         "plant_count": bpy.props.IntProperty(name="Trees", default=8, min=1, max=500,
                                              description="How many trees Plant Trees adds"),
+        "ridge_layers": bpy.props.IntProperty(name="Mountain Layers", default=3, min=0, max=3,
+                                              description="How many layers of mountains Distant Mountains builds "
+                                                          "(0 removes them)"),
         "cloud_count": bpy.props.IntProperty(name="Clouds", default=6, min=0, max=60,
                                              description="How many clouds Add Clouds builds (0 removes them)"),
         "mask_paint": bpy.props.EnumProperty(name="Paint", items=[("GRASS", "Grass", "Paint grass back in"),
@@ -543,8 +578,9 @@ class HRP_OT_make_meadow(bpy.types.Operator):
         shading.palette_set("haze_end", s.haze_end)
         if created:
             clouds.far_hills(context, targets[0], seed=s.variation)
+        if sc.get("hrp_ridge_layout") is None:                    # also around the user's own ground, once
             ridges.build(context, targets[0], seed=s.variation)
-        if created and not cumulus.clouds_of(sc):                 # behind the farthest ridge
+        if sc.get("hrp_cloud_layout") is None and not cumulus.clouds_of(sc):     # behind the farthest ridge
             cumulus.layout(context, s.cloud_count, seed=s.variation, distance=max(160.0, size * 12))
         quality.apply(sc)
         if created:
@@ -845,8 +881,9 @@ class HRP_OT_make_foliage(bpy.types.Operator):
 
 class HRP_OT_add_clouds(bpy.types.Operator):
     bl_idname = "harappa.add_clouds"
-    bl_label = "Add Clouds"
-    bl_description = "Build painted cumulus clouds in front of the scene camera (again to re-roll them)"
+    bl_label = "Make Clouds"
+    bl_description = ("Lay out new clouds in front of the camera (again to re-roll them). Each cloud is a normal "
+                      "object: move, scale or delete it. Clouds you have moved are kept")
     bl_options = {"REGISTER", "UNDO"}
 
     count: bpy.props.IntProperty(name="Clouds", default=4, min=0, max=60, description="How many clouds")
@@ -863,11 +900,35 @@ class HRP_OT_add_clouds(bpy.types.Operator):
             cumulus.layout(context, 0)
             return {"FINISHED"}
         seed = self.seed if self.seed >= 0 else random.randint(0, 99999)
-        cumulus.layout(context, self.count, seed, self.distance)
-        quality.apply(context.scene)
+        made = cumulus.layout(context, self.count, seed, self.distance)
         if not _scene_ready(context.scene):
             setup_scene(context)
-        self.report({"INFO"}, report(f"{self.count} cloud(s) added"))
+        self.report({"INFO"}, report(f"{len(made)} cloud(s) added"))
+        return {"FINISHED"}
+
+
+class HRP_OT_add_ridges(bpy.types.Operator):
+    bl_idname = "harappa.add_ridges"
+    bl_label = "Distant Mountains"
+    bl_description = ("Build layers of distant mountains around the meadow (again for new shapes, 0 layers removes "
+                      "them). Each layer is a normal object: move, scale or delete it")
+    bl_options = {"REGISTER", "UNDO"}
+
+    layers: bpy.props.IntProperty(name="Mountain Layers", default=3, min=0, max=3,
+                                  description="How many layers of mountains (0 removes them)")
+    seed: bpy.props.IntProperty(name="Seed", default=-1, min=-1, max=99999, description="Shape seed (-1 = random)")
+
+    def invoke(self, context, event):
+        self.layers = context.scene.harappa.ridge_layers
+        return self.execute(context)
+
+    def execute(self, context):
+        sc = context.scene
+        seed = self.seed if self.seed >= 0 else random.randint(0, 99999)
+        made = ridges.build(context, _main_ground(sc), seed, self.layers)
+        if made and not _scene_ready(sc):
+            setup_scene(context)
+        self.report({"INFO"}, report(f"{len(made)} mountain layer(s)"))
         return {"FINISHED"}
 
 
@@ -1017,12 +1078,33 @@ class HRP_OT_set_enum(bpy.types.Operator):
 CLASSES = (
     HRP_Settings, HRP_TreeSettings, HRP_OT_make_meadow, HRP_OT_add_tree, HRP_OT_plant_trees,
     HRP_OT_rebuild_tree, HRP_OT_set_tree_enum, HRP_OT_edit_canopy,
-    HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
+    HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_add_ridges, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
     HRP_OT_revert, HRP_OT_set_enum,
 )
 
 
+_sky_seen = {}
+
+
+@bpy.app.handlers.persistent
+def _follow_camera(scene, _depsgraph=None):
+    """Keep the sky gradient fitted to the camera when the user moves it, changes the lens or the format."""
+    try:
+        w = scene.world
+        if w is None or w.name != hscene.WORLD or w.get("hrp_ver") != hscene.SKY_VER:
+            return
+        sig = hscene.camera_signature(scene)
+        if _sky_seen.get(scene.name) != sig:
+            _sky_seen[scene.name] = sig
+            hscene.aim_sky(scene, w, update=False)
+    except (AttributeError, ReferenceError):
+        pass
+
+
 def register():
+    for h in (bpy.app.handlers.depsgraph_update_post, bpy.app.handlers.frame_change_post):
+        if _follow_camera not in h:
+            h.append(_follow_camera)
     i18n.register()
     for c in CLASSES:
         bpy.utils.register_class(c)
@@ -1032,6 +1114,9 @@ def register():
 
 
 def unregister():
+    for h in (bpy.app.handlers.depsgraph_update_post, bpy.app.handlers.frame_change_post):
+        if _follow_camera in h:
+            h.remove(_follow_camera)
     ui.unregister()
     del bpy.types.Object.harappa_tree
     del bpy.types.Scene.harappa

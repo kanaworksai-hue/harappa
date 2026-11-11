@@ -44,30 +44,49 @@ def _profile(a, layer, seed, rough, sharp):
     return max(0.0, min(1.0, 0.1 + 0.9 * h * (0.45 + 0.55 * big)))
 
 
-def build(context, ground, seed=0, layers=3):
-    """(Re)build the ridge layers around the ground object."""
+def collection(scene):
+    """Scenery (ridges) lives in its own collection, next to the clouds."""
+    for c in scene.collection.children_recursive:
+        if c.get("hrp_scenery_coll"):
+            return c
+    c = bpy.data.collections.new("Harappa Scenery")
+    c["hrp_scenery_coll"] = True
+    scene.collection.children.link(c)
+    return c
+
+
+def build(context, ground=None, seed=0, layers=3):
+    """(Re)build the ridge layers around the ground object (or around the world origin, 40 m wide).
+
+    The meshes are built for a ground one unit wide; the objects sit at the ground's centre and carry the
+    ground's size as their scale. So they turn and scale about the middle of the scene, and their painted
+    shapes look the same around a small garden and a huge landscape."""
     scene = context.scene
     remove(scene)
-    size = max(ground.dimensions.x, ground.dimensions.y, 1.0)
-    c = ground.matrix_world.translation
+    scene["hrp_ridge_layout"] = [int(layers), int(seed)]
+    if ground is not None:
+        size = max(ground.dimensions.x, ground.dimensions.y, 1.0)
+        c = ground.matrix_world.translation.copy()
+    else:
+        size, c = 40.0, Vector((0.0, 0.0, 0.0))
     made = []
-    seg = 360
-    for k, (dist, elev, rough, sharp) in enumerate(LAYERS[:max(0, layers)]):
-        rad = size * dist
-        peak = rad * math.tan(math.radians(elev))
-        foot = -size * 0.2
+    seg = 720
+    for k, (dist, elev, rough, sharp) in enumerate(LAYERS[:max(0, min(layers, len(LAYERS)))]):
+        peak = dist * math.tan(math.radians(elev))
+        foot = -0.2
         me = bpy.data.meshes.new(f"Ridge {k + 1}")
         bm = bmesh.new()
         lo, mid, hi = [], [], []
-        hs = []
         for i in range(seg):
             a = i / seg * math.tau
             h = _profile(a, k, seed, rough, sharp)
-            x, y = c.x + math.cos(a) * rad, c.y + math.sin(a) * rad
-            lo.append(bm.verts.new((x, y, c.z + foot)))
-            mid.append(bm.verts.new((x, y, c.z + peak * h * 0.35)))
-            hi.append(bm.verts.new((x, y, c.z + peak * h)))
-            hs.append(h)
+            if sharp > 0.0:                                  # fine breaks along the crest of the far layers
+                p = Vector((math.cos(a), math.sin(a), 0.0)) * (rough * 9.0)
+                h = max(0.0, h + noise.noise(p + Vector((seed * 1.3, k * 7.7, 0.0))) * 0.035 * sharp)
+            x, y = math.cos(a) * dist, math.sin(a) * dist
+            lo.append(bm.verts.new((x, y, foot)))
+            mid.append(bm.verts.new((x, y, peak * h * 0.35)))
+            hi.append(bm.verts.new((x, y, peak * h)))
         for i in range(seg):
             j = (i + 1) % seg
             bm.faces.new((lo[i], lo[j], mid[j], mid[i]))        # facing the middle
@@ -79,14 +98,16 @@ def build(context, ground, seed=0, layers=3):
             t.data[i * 3].value, t.data[i * 3 + 1].value, t.data[i * 3 + 2].value = 0.0, 0.35, 1.0
         me.materials.append(shading.ridge_material())
         ob = bpy.data.objects.new(me.name, me)
-        scene.collection.objects.link(ob)
+        collection(scene).objects.link(ob)
+        ob.location = c
+        ob.scale = (size, size, size)
         ob[TAG] = True
         ob["hrp_layer"] = float(k)
         ob["hrp_ridge_top"] = float(elev)
         ob.visible_shadow = False
-        ob.hide_select = False
         made.append(ob)
     cam = scene.camera
-    if cam is not None and made:
-        cam.data.clip_end = max(cam.data.clip_end, size * LAYERS[len(made) - 1][0] * 1.3)
+    if cam is not None and cam.type == "CAMERA" and made:
+        from .cumulus import fit_clip
+        fit_clip(cam, size * LAYERS[len(made) - 1][0] * 1.3)
     return made

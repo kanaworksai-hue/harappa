@@ -16,7 +16,7 @@ from . import shading
 from .util import G, fresh_group, iface, mod_input, stamp
 
 CLOUD = "HRP Cloud"
-CLOUD_VER = 1
+CLOUD_VER = 2
 MOD = "Harappa Cloud"
 TAG = "hrp_cloud"                       # on every cloud object
 RADIUS = "hrp_r"
@@ -39,10 +39,12 @@ def cloud_group():
         return ng
     g = G(ng)
     iface(ng, "Geometry", "INPUT", "NodeSocketGeometry")
-    iface(ng, "Detail", "INPUT", "NodeSocketFloat", 2.0, 0.05, 1000.0,
-          "Size of the smallest bump the cloud keeps, in metres. Smaller is finer and slower", "DISTANCE")
-    iface(ng, "Height", "INPUT", "NodeSocketFloat", 30.0, 0.01, 100000.0, "Height of the cloud, for its shading",
-          "DISTANCE")
+    iface(ng, "Detail", "INPUT", "NodeSocketFloat", 0.018, 0.002, 0.2,
+          "Size of the smallest bump the cloud keeps, as a share of its width. Smaller is finer and slower")
+    iface(ng, "Quality", "INPUT", "NodeSocketFloat", 1.0, 0.25, 4.0,
+          "Set by the Detail Level: multiplies the cloud's resolution without changing its Detail")
+    iface(ng, "Height", "INPUT", "NodeSocketFloat", 0.45, 0.001, 100.0,
+          "Height of the cloud as a share of its width, for its shading")
     iface(ng, "Flat Base", "INPUT", "NodeSocketFloat", 0.88, 0.0, 1.0, "How flat the underside is", "FACTOR")
     iface(ng, "Material", "INPUT", "NodeSocketMaterial")
     iface(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
@@ -55,7 +57,8 @@ def cloud_group():
     sdf = g.n("GeometryNodePointsToSDFGrid", -950, 0)
     g.link(pts, "Points", sdf, "Points")
     g.links.new(_named(g, -1150, -250, RADIUS), g.inp(sdf, "Radius"))
-    g.link(gi, "Detail", sdf, "Voxel Size")
+    voxel = g.math("DIVIDE", -1150, 200, g.out(gi, "Detail"), g.out(gi, "Quality"))
+    g.links.new(g.out(voxel), g.inp(sdf, "Voxel Size"))
     mesh = g.n("GeometryNodeGridToMesh", -550, 0)
     g.link(sdf, "SDF Grid", mesh, "Grid")
 
@@ -75,7 +78,8 @@ def cloud_group():
     mixn = g.mix(350, -350, dtype="VECTOR", fac=0.72, a=g.out(nrm, "Normal"), b=g.out(away))
     blur = g.n("GeometryNodeBlurAttribute", 520, -350, data_type="FLOAT_VECTOR")
     g.links.new(g.mixout(mixn), g.inp(blur, "Value", "VECTOR"))
-    g.set(blur, "Iterations", 3)
+    its = g.math("MULTIPLY", 350, -550, g.out(gi, "Quality"), 3.0)      # same shapes of light at every resolution
+    g.links.new(g.out(g.math("ROUND", 450, -550, g.out(its))), g.inp(blur, "Iterations"))
     soft = g.vmath("NORMALIZE", 700, -350, g.out(blur, "Value", "VECTOR"))
     st = g.n("GeometryNodeStoreNamedAttribute", 900, 0, data_type="FLOAT_VECTOR", domain="POINT")
     g.link(mesh, "Mesh", st, "Geometry")
@@ -184,32 +188,38 @@ def collection(scene):
     return c
 
 
-def shape_cloud(ob, width, seed=0, tower=0.0, detail=None):
-    """(Re)build one cloud's lobes; its position, rotation and scale stay as the user left them."""
-    pts = lobes(width, seed, tower)
+def shape_cloud(ob, seed=0, tower=0.0):
+    """(Re)build one cloud's lobes. The lobes are one unit wide: the cloud's size is the object's scale, so its
+    position, rotation and size stay as the user left them, and Detail means the same for a small and a big one."""
+    pts = lobes(1.0, seed, tower)
     old = ob.data
     ob.data = _points_mesh(ob.name, pts)
     if old is not None and old.users == 0:
         bpy.data.meshes.remove(old)
-    height = max(c.z + r for c, r in pts)
     ob[TAG] = True
-    ob["hrp_cloud_args"] = [float(width), int(seed), float(tower)]
+    ob["hrp_cloud_args"] = [int(seed), float(tower)]
     ob.visible_shadow = False
-    mod = ob.modifiers.get(MOD) or ob.modifiers.new(MOD, "NODES")
+    mod = ob.modifiers.get(MOD)
+    fresh = mod is None
+    if fresh:
+        mod = ob.modifiers.new(MOD, "NODES")
     mod.node_group = cloud_group()
-    mod_input(mod, "Detail", detail if detail is not None else width / 56.0)
-    mod_input(mod, "Height", height)
+    mod_input(mod, "Height", max(c.z + r for c, r in pts))
     mod_input(mod, "Material", shading.cumulus_material())
+    if fresh:
+        from . import quality
+        mod_input(mod, "Quality", quality.cloud_quality(bpy.context.scene))
     return ob
 
 
-def add_cloud(context, location, width=120.0, seed=0, tower=0.0, yaw=0.0, name="Cloud", detail=None):
+def add_cloud(context, location, width=120.0, seed=0, tower=0.0, yaw=0.0, name="Cloud"):
     scene = context.scene
     ob = bpy.data.objects.new(name, bpy.data.meshes.new(name))
     collection(scene).objects.link(ob)
     ob.location = location
     ob.rotation_euler = (0.0, 0.0, yaw)
-    return shape_cloud(ob, width, seed, tower, detail)
+    ob.scale = (width, width, width)
+    return shape_cloud(ob, seed, tower)
 
 
 def clouds_of(scene):
@@ -219,10 +229,21 @@ def clouds_of(scene):
 # ---------------------------------------------------------------------------------------------
 # a sky full of them
 # ---------------------------------------------------------------------------------------------
+def _home(ob):
+    return [round(v, 4) for v in (*ob.location, *ob.rotation_euler, *ob.scale)]
+
+
 def remove_layout(scene):
-    """Delete the clouds the layout made (and the single card-cloud object of 1.0). Clouds the user added by
-    hand, or took over by moving them, stay."""
+    """Delete the clouds the layout made (and the single card-cloud object of 1.0).
+
+    A cloud the user has moved, turned, scaled or copied is theirs from then on: it loses its 'auto' mark and
+    stays. Clouds added by hand never had the mark."""
     for ob in list(scene.objects):
+        if ob.get("hrp_cloud_auto"):
+            home = ob.get("hrp_cloud_home")
+            if home is not None and any(abs(a - b) > 1e-3 for a, b in zip(_home(ob), home)):
+                del ob["hrp_cloud_auto"]
+                continue
         if ob.get("hrp_cloud_auto") or ob.get("hrp_clouds"):
             me = ob.data
             bpy.data.objects.remove(ob)
@@ -230,9 +251,22 @@ def remove_layout(scene):
                 bpy.data.meshes.remove(me)
 
 
+def _frame(scene, cam):
+    """dir(sx, sy): world direction through a point of the camera frame (0..1), for any lens, shift or aspect."""
+    tr, br, bl, tl = cam.data.view_frame(scene=scene)
+    q = cam.matrix_world.to_quaternion()
+
+    def direction(sx, sy):
+        p = bl.lerp(br, sx).lerp(tl.lerp(tr, sx), sy)
+        return (q @ p).normalized()
+    return direction
+
+
 def layout(context, count=5, seed=0, distance=320.0):
     """(Re)build the clouds in front of the scene camera: one hero cumulus, a couple of medium ones and small
-    ones low over the horizon, all inside the frame and clear of the tree crowns. Returns the cloud objects."""
+    ones, inside the frame and clear of the tree crowns. Returns the cloud objects it made.
+
+    With no sky in the frame (a camera looking down) or no camera, the clouds go above the horizon ahead."""
     from . import clouds as old
     scene = context.scene
     remove_layout(scene)
@@ -241,65 +275,87 @@ def layout(context, count=5, seed=0, distance=320.0):
         return []
     rng = random.Random(seed * 131 + 7)
     context.view_layer.update()
-    cam = scene.camera
-    if cam is not None:
-        origin = cam.matrix_world.translation.copy()
-        fwd = cam.matrix_world.to_quaternion() @ Vector((0, 0, -1))
-        yaw = math.atan2(fwd.y, fwd.x)
-        pitch = math.degrees(math.asin(max(-1.0, min(1.0, fwd.z))))
-        ren = scene.render
-        aspect = (ren.resolution_y * ren.pixel_aspect_y) / max(1.0, ren.resolution_x * ren.pixel_aspect_x)
-        hfov = math.degrees(cam.data.angle)
-        vfov = hfov * (aspect if cam.data.sensor_fit != "VERTICAL" else 1.0)
-    else:
-        origin, yaw, pitch, hfov, vfov = Vector((0, 0, 0)), math.pi / 2, 0.0, 80.0, 45.0
-    boxes = old._tree_boxes(scene, cam)
+    cam = scene.camera if scene.camera is not None and scene.camera.type == "CAMERA" else None
     ridge_top = max((float(o.get("hrp_ridge_top", 0.0)) for o in scene.objects if o.get("hrp_ridge")), default=0.0)
+    if cam is not None and cam.data.type != "ORTHO":
+        origin = cam.matrix_world.translation.copy()
+        direction = _frame(scene, cam)
+        hfov = max(1e-3, direction(0.0, 0.5).angle(direction(1.0, 0.5)))
+    else:
+        origin = cam.matrix_world.translation.copy() if cam is not None else Vector((0, 0, 0))
+        fwd = (cam.matrix_world.to_quaternion() @ Vector((0, 0, -1))) if cam is not None else Vector((0, 1, 0))
+        yaw0 = math.atan2(fwd.y, fwd.x)
+        hfov = math.radians(60.0)
+
+        def direction(sx, sy):                          # a plain 60 x 34 degree window on the horizon ahead
+            a = yaw0 - (sx - 0.5) * hfov
+            e = math.radians(1.0 + sy * 33.0)
+            return Vector((math.cos(a) * math.cos(e), math.sin(a) * math.cos(e), math.sin(e)))
+    if math.degrees(math.asin(direction(0.5, 1.0).z)) < 6.0:        # hardly any sky in the frame
+        fwd = direction(0.5, 0.5)
+        yaw0 = math.atan2(fwd.y, fwd.x)
+
+        def direction(sx, sy):                          # noqa: F811
+            a = yaw0 - (sx - 0.5) * hfov
+            e = math.radians(1.0 + sy * 30.0)
+            return Vector((math.cos(a) * math.cos(e), math.sin(a) * math.cos(e), math.sin(e)))
+    boxes = old._tree_boxes(scene, cam) if cam is not None else []
     placed, made = [], []
     for i in range(count):
         hero = i == 0
         medium = 1 <= i <= 2
-        for attempt in range(80):
+        cseed = seed * 17 + i
+        for attempt in range(90):
             shrink = 1.0 if attempt < 12 else (0.8 if attempt < 30 else (0.62 if attempt < 55 else 0.45))
             d = distance * (rng.uniform(1.0, 1.3) if hero else rng.uniform(1.0, 1.9))
-            rel = (rng.uniform(0.34, 0.46) if hero else rng.uniform(0.17, 0.27) if medium
-                   else rng.uniform(0.07, 0.14)) * shrink
+            rel = (rng.uniform(0.42, 0.54) if hero else rng.uniform(0.15, 0.24) if medium
+                   else rng.uniform(0.06, 0.12)) * shrink
             w = d * rel
-            tower = rng.uniform(0.6, 1.0) if hero else (rng.uniform(0.0, 0.4) if medium else 0.0)
-            cseed = seed * 17 + i
-            height_deg = math.degrees(math.atan(max(c.z + r for c, r in lobes(w, cseed, tower)) / d))
-            top = pitch + vfov * 0.5 - height_deg - 1.0              # the crown stays in the frame
-            low = max(0.8, pitch - vfov * 0.5 + 2.0)
+            tower = rng.uniform(0.3, 0.6) if hero else (rng.uniform(0.0, 0.4) if medium else 0.0)
+            height_deg = math.degrees(math.atan(max(c.z + r for c, r in lobes(1.0, cseed, tower)) * rel))
+            sx = rng.uniform(0.1, 0.9)
+            top = math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 1.0).z)))) - height_deg - 1.0
+            low = max(0.8, math.degrees(math.asin(max(-1.0, min(1.0, direction(sx, 0.0).z)))) + 2.0)
+            if hero:                                    # rises from behind the mountains, base just hidden
+                low = max(low, ridge_top - 5.0)
+                span = 1.5
+            elif medium:                                # float clear of the mountain tops
+                low = max(low, ridge_top + 0.5)
+                span = 9.0
+            else:                                       # small ones: a band low over the tops, or high up
+                low = max(low, ridge_top + 0.3)
+                span = 3.0 if i % 2 else 30.0
             if top < low:
+                if attempt < 80:
+                    continue                            # does not fit the frame: try another place or smaller
+                top = low
+            el = rng.uniform(low if span < 20 else max(low, top - 6.0), min(top, low + span))
+            flat = direction(sx, 0.5)
+            az = math.atan2(flat.y, flat.x)
+            c = origin + Vector((math.cos(az) * d, math.sin(az) * d, math.tan(math.radians(el)) * d))
+            gap = 0.5 * rel / hfov + 0.025
+            if attempt >= 50:
+                gap *= 0.6                              # rather a little close than a cloud short
+            if attempt < 80 and any(abs(sx - qx) < gap + qg for qx, qg in placed):
+                continue                                # the last tries take any free-ish spot: never a cloud short
+            if cam is not None and attempt < 65 and old._overlaps(scene, cam, c + Vector((0, 0, w * 0.2)),
+                                                                  w * 0.62, boxes):
                 continue
-            if not hero and ridge_top > low:                       # the others float clear of the mountain tops
-                low = min(ridge_top + 0.5, max(low, top))
-            if hero:                                               # the big one rises from behind the mountains,
-                base = max(low, ridge_top - 2.0)                   # its flat base just hidden by their tops
-                if top < base and attempt < 79:
-                    continue                                       # too tall for the frame: try a smaller one
-                el = rng.uniform(base, max(base, min(top, base + 2.0)))
-            elif medium:
-                el = rng.uniform(low + 1.0, max(low + 1.0, min(top, low + 9.0)))
-            else:
-                el = rng.uniform(low, max(low, min(top, low + 5.0)))  # small ones sit over the horizon
-            a = yaw + math.radians(rng.uniform(-0.42, 0.42) * hfov)
-            c = origin + Vector((math.cos(a) * d, math.sin(a) * d, math.tan(math.radians(el)) * d))
-            if cam is not None:
-                from bpy_extras.object_utils import world_to_camera_view
-                sx = world_to_camera_view(scene, cam, c).x
-                gap = 0.5 * rel / math.radians(hfov) + 0.03
-                if any(abs(sx - qx) < gap + qg for qx, qg in placed):
-                    continue
-                if old._overlaps(scene, cam, c + Vector((0, 0, w * 0.2)), w * 0.62, boxes):
-                    continue
-                placed.append((sx, gap))
-            ob = add_cloud(context, c, w, seed=cseed, tower=tower, yaw=a - math.pi / 2,
+            placed.append((sx, gap))
+            ob = add_cloud(context, c, w, seed=cseed, tower=tower, yaw=az - math.pi / 2,
                            name="Cloud" if not hero else "Cloud Hero")
             ob["hrp_cloud_auto"] = True
+            ob["hrp_cloud_home"] = _home(ob)
             made.append(ob)
             break
     if cam is not None and made:
-        far = max((o.location - origin).length + o["hrp_cloud_args"][0] for o in made)
-        cam.data.clip_end = max(cam.data.clip_end, far * 1.2)
+        far = max((o.location - origin).length + o.scale.x for o in made)
+        fit_clip(cam, far * 1.2)
     return made
+
+
+def fit_clip(cam, far):
+    """Let the camera see as far as 'far' without wrecking depth precision for what is near."""
+    cd = cam.data
+    cd.clip_end = max(cd.clip_end, far)
+    cd.clip_start = max(cd.clip_start, cd.clip_end / 50000.0)

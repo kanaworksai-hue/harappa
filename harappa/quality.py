@@ -18,8 +18,15 @@ LEVELS = {
 }
 
 
-def apply(scene, level=None):
-    """Bring everything Harappa made in the scene to the level (default: the scene's own)."""
+def cloud_quality(scene):
+    return LEVELS[scene.harappa.detail_level]["cloud"] / 56.0
+
+
+def apply(scene, level=None, render=False):
+    """Bring what Harappa made in the scene to the level (default: the scene's own).
+
+    Only inputs that belong to the Detail Level are written ('Detail' on grass and flowers, 'Quality' on clouds).
+    The render samples are the user's: they are set only when the user switches the level (render=True)."""
     lv = LEVELS[level or scene.harappa.detail_level]
     for ob in scene.objects:
         for mod in ob.modifiers:
@@ -30,11 +37,15 @@ def apply(scene, level=None):
                     mod_input(mod, "Detail", lv["grass"])
                 elif mod.name == build.FLOWER_MOD:
                     mod_input(mod, "Detail", lv["flowers"])
-                elif mod.name == cumulus.MOD and ob.get("hrp_cloud_args") is not None:
-                    mod_input(mod, "Detail", float(ob["hrp_cloud_args"][0]) / lv["cloud"])
+                elif mod.name == cumulus.MOD:
+                    mod_input(mod, "Quality", lv["cloud"] / 56.0)
+                else:
+                    continue
             except KeyError:
                 continue                               # a modifier from before this input existed
             ob.update_tag()                            # a value set from Python does not re-evaluate by itself
+    if not render:
+        return
     ee = scene.eevee
     for attr, val in (("taa_render_samples", lv["samples"]), ("shadow_ray_count", lv["rays"])):
         if hasattr(ee, attr):
@@ -45,4 +56,4 @@ def apply(scene, level=None):
 
 
 def update(self, context):
-    apply(context.scene, self.detail_level)
+    apply(context.scene, self.detail_level, render=True)

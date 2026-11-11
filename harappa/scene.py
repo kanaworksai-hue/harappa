@@ -111,6 +111,9 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         stamp(world, SKY_VER)
     set_sky_colours(world, zenith, horizon, ground)
     scene.world = world
+    sun = bpy.data.objects.get(SUN)
+    if sun is not None:
+        drive_sun(world, sun)
     return world
 
 
@@ -167,31 +170,46 @@ def _sky_day(g, nd, sep, sky):
     return g.mixout(g.mix(x + 1560, y - 400, "MIX", fac=g.out(disc), a=sky, b=(1.0, 0.98, 0.9, 1.0)))
 
 
-def aim_sky(scene, world=None):
-    """Fit the sky to the camera and the sun: the gradient to the height of the frame's top edge, the glow to
-    where the sun is. Call after moving the camera or the sun."""
+def aim_sky(scene, world=None, update=True):
+    """Fit the sky gradient to the camera: its top to the height of the frame's top edge. Called when the camera,
+    the lens or the picture format changes (the add-on watches for that)."""
     world = world or scene.world
     if world is None or world.node_tree is None:
         return
-    nt = world.node_tree
     cam = scene.camera
-    top = nt.nodes.get("sky top")
-    if top is not None:
-        v = 0.5
-        if cam is not None and cam.type == "CAMERA":
+    top = world.node_tree.nodes.get("sky top")
+    if top is None:
+        return
+    v = 0.5
+    if cam is not None and cam.type == "CAMERA":
+        if update:
             bpy.context.view_layer.update()
-            tr, _br, _bl, tl = cam.data.view_frame(scene=scene)
-            d = (cam.matrix_world.to_quaternion() @ tl.lerp(tr, 0.5)).normalized()
-            v = min(max(d.z * 1.08 + 0.03, 0.16), 1.0)
-        only(top.outputs).default_value = v
-    sd = nt.nodes.get("sun dir")
-    sun = bpy.data.objects.get(SUN)
-    if sd is not None and sun is not None:
-        d = sun.matrix_world.to_quaternion() @ Vector((0.0, 0.0, 1.0))
-        for c, v in zip("XYZ", d):
-            sd.inputs[c].default_value = v
-        for c, v in zip("xyz", d):                        # the materials read it from the palette (cloud rims)
-            shading.palette_set("sun_" + c, v)
+        tr, _br, _bl, tl = cam.data.view_frame(scene=scene)
+        d = (cam.matrix_world.to_quaternion() @ tl.lerp(tr, 0.5)).normalized()
+        v = min(max(d.z * 1.08 + 0.03, 0.16), 1.0)
+    sock = only(top.outputs)
+    if abs(sock.default_value - v) > 1e-4:
+        sock.default_value = v
+
+
+def camera_signature(scene):
+    """Everything the sky's fit depends on; when it changes the sky is fitted again."""
+    cam = scene.camera
+    if cam is None or cam.type != "CAMERA":
+        return None
+    r = scene.render
+    cd = cam.data
+    return (tuple(round(x, 4) for row in cam.matrix_world for x in row), round(cd.lens, 3), round(cd.sensor_width, 3),
+            round(cd.shift_x, 4), round(cd.shift_y, 4), cd.sensor_fit, r.resolution_x, r.resolution_y)
+
+
+def drive_sun(world, sun):
+    """The sky's sun glow and the palette's sun direction follow the sun object by drivers."""
+    sd = world.node_tree.nodes.get("sun dir") if world is not None and world.node_tree is not None else None
+    if sd is not None:
+        for axis, expr in shading.SUN_AXES:
+            shading.drive_direction(sd.inputs[axis.upper()], sun, expr)
+    shading.drive_sun_dir(sun)
 
 
 def set_sky_extras(world, mid=None, glow="#FFF6DC", sun=0.6, cirrus=0.0, cirrus_colour="#EEF6FF"):
@@ -299,7 +317,8 @@ def key_sun(scene, camera=None, elevation=42.0, side=-55.0, colour="#FFF6E6", st
     el = math.radians(elevation)
     to_light = Vector((math.cos(yaw) * math.cos(el), math.sin(yaw) * math.cos(el), math.sin(el)))
     sun.rotation_euler = to_light.to_track_quat("Z", "Y").to_euler()
+    sun.rotation_mode = "XYZ"
     shading.drive_light_scale(sun)
-    bpy.context.view_layer.update()
+    drive_sun(scene.world if scene.world is not None and scene.world.name == WORLD else None, sun)
     aim_sky(scene)
     return sun
