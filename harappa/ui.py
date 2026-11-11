@@ -131,8 +131,9 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         col = layout.column(align=True)
         _prop(col, s, "grade_sat")
         _prop(col, s, "grade_contrast")
-        row = layout.row(align=True)
-        row.label(text=t("Detail Level"), translate=False)
+        col = layout.column(align=True)
+        col.label(text=t("Detail Level"), translate=False)
+        row = col.row(align=True)
         for it in s.bl_rna.properties["detail_level"].enum_items:
             op = row.operator("harappa.set_detail", text=t(it.name), translate=False,
                               depress=s.detail_level == it.identifier)
