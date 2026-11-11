@@ -11,7 +11,7 @@ from .util import BUILDING, G, only, srgb, stamp
 
 WORLD = "HRP Sky"
 SUN = shading.SUN
-SKY_VER = 9
+SKY_VER = 10
 
 
 def setup_render(scene):
@@ -87,12 +87,12 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         md = g.n("ShaderNodeCombineXYZ", -500, -750, label="moon dir")
         dt = g.vmath("DOT_PRODUCT", -300, -700, g.out(nd), g.out(md))
         disc = g.maprange(-150, -700, g.out(dt, "Value"), 0.99935, 0.99955)
-        glow = g.maprange(-150, -850, g.out(dt, "Value"), 0.982, 1.0)
+        glow = g.maprange(-150, -850, g.out(dt, "Value"), 0.955, 1.0)          # a wide, soft halo round the moon
         gl2 = g.math("POWER", 0, -850, g.out(glow, "Result"), 3.0)
         mv = g.n("ShaderNodeValue", 0, -1000, label="sky moon")
         md2 = g.math("MULTIPLY", 300, -800, g.out(disc, "Result"), g.out(mv))
         lights = g.math("ADD", 450, -500, g.out(s3), g.out(md2))
-        hal = g.math("MULTIPLY", 300, -950, g.out(g.math("MULTIPLY", 150, -950, g.out(gl2), 0.35)),
+        hal = g.math("MULTIPLY", 300, -950, g.out(g.math("MULTIPLY", 150, -950, g.out(gl2), 0.55)),
                      g.out(mv))
         base = _sky_day(g, nd, sep, g.out(ramp, "Color"))
         sky0 = g.mix(-200, 450, "ADD", fac=g.out(hal), a=base, b=(0.35, 0.44, 0.66, 1.0))

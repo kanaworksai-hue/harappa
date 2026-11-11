@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 33
+SHADER_VER = 34
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -1052,7 +1052,9 @@ def cumulus_material():
                  g.out(g.math("MULTIPLY", -1400, -450, g.out(pal, "cloud_jitter"), 0.22)))
     v = g.math("MULTIPLY_ADD", -330, 500, g.out(ch, "Fac"), 0.28, g.out(g.math("MULTIPLY", -420, 420, g.out(lv), 0.78)))
     v = g.math("ADD", -180, 500, g.out(v), g.out(jit))
-    soft = g.math("ADD", -330, 250, g.out(pal, "softness"), 0.012)
+    # clouds keep their painted steps in every style: a soft style only softens the edge a little (a fully
+    # blended cloud reads as modelling clay)
+    soft = g.math("ADD", -330, 250, g.out(g.math("MINIMUM", -480, 250, g.out(pal, "softness"), 0.07)), 0.012)
     thr = g.out(pal, "cloud_threshold")
     f1 = g.maprange(0, 500, g.out(v), g.out(g.math("SUBTRACT", -180, 300, thr, g.out(soft))),
                     g.out(g.math("ADD", -180, 180, thr, g.out(soft))), smooth=True)

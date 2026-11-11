@@ -373,11 +373,13 @@ def _settings_annotations():
     ann = {
         "detail_level": bpy.props.EnumProperty(
             name="Detail Level", default="BALANCED", update=quality.update,
-            description="Richness against speed. It never changes your own settings, only how much is drawn",
+            description="Richness against speed: how much grass and how many flowers are drawn, how fine the "
+                        "clouds are, and the render samples. Your own densities and sizes are never changed",
             items=[("FAST", "Fast", "Less grass and fewer flowers, coarser clouds, quick renders: for slower "
                                     "computers and for working in the viewport"),
                    ("BALANCED", "Balanced", "The default: looks complete and renders in a few seconds"),
-                   ("BEST", "Best", "More and finer grass, smoother clouds, more samples: for final renders")]),
+                   ("BEST", "Best", "More and finer grass, smoother clouds, more samples: for final renders "
+                                    "(about twice as slow as Balanced)")]),
         "season": bpy.props.EnumProperty(name="Season", items=_enum_items(presets.SEASONS), default="SUMMER",
                                          description="Colours, sunlight and sky", update=apply_season),
         "style": bpy.props.EnumProperty(name="Paint Style", items=_enum_items(presets.STYLES), default="ANIME",
@@ -674,7 +676,8 @@ class HRP_OT_plant_trees(bpy.types.Operator):
         placed = []
         tries = 0
         cam = sc.camera
-        shapes = ["ROUND", "ROUND", "TALL", "WIDE", "BUSH", "CONIFER"] if self.mixed else [sc.harappa.new_shape]
+        shapes = (["ROUND", "ROUND", "TALL", "WIDE", "BUSH", "CONIFER", "PINE", "WILLOW", "COLUMN"]
+                  if self.mixed else [sc.harappa.new_shape])
         while len(placed) < self.count and tries < self.count * 60:
             tries += 1
             r = rng.uniform(0, tot)
