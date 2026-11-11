@@ -64,6 +64,12 @@ VALUE_PROPS = [
     ("season_contrast", "Season Contrast", 0.5, 2.0, "Contrast the season adds"),
     ("style_sat", "Style Colour Strength", 0.0, 2.0, "Colour strength the paint style adds on top of the season"),
     ("style_contrast", "Style Contrast", 0.5, 2.0, "Contrast the paint style adds on top of the season"),
+    ("sky_brush", "Sky Brushiness", 0.0, 1.0, "Brushy streaks across the sky gradient"),
+    ("sky_bands", "Sky Bands", 0.0, 1.0, "Flat poster bands in the sky gradient instead of a smooth blend"),
+    ("sky_curve", "Sky Depth", 0.3, 3.0, "Below 1 the deep top colour of the sky reaches further down; above 1 the "
+                                         "pale horizon colour rises higher"),
+    ("cirrus_mult", "Cirrus Amount", 0.0, 3.0, "How much of the season's high cirrus the paint style shows"),
+    ("ridge_soft", "Mountain Softness", 0.0, 0.5, "How soft the painted shapes on the distant mountains are"),
     ("cloud_jitter", "Cloud Brushiness", 0.0, 4.0, "How broken and brushy the edge between a cloud's light and shade is"),
     ("cloud_rim_amount", "Cloud Rim Glow", 0.0, 1.0, "Bright edge on clouds that have the sun behind them"),
     ("cloud_threshold", "Cloud Light / Shadow Split", 0.0, 1.0, "How much of each cloud is in shade"),
@@ -97,9 +103,14 @@ def _upd_colour(key):
     return f
 
 
+SKY_VALUE_KEYS = ("sky_brush", "sky_bands", "sky_curve", "cirrus_mult")
+
+
 def _upd_value(key):
     def f(self, context):
         shading.palette_set(key, getattr(self, key))
+        if key in SKY_VALUE_KEYS and not _busy["on"]:
+            _upd_sky(self, context)
     return f
 
 
@@ -123,7 +134,8 @@ def _sky_extras(s, world):
     sk = presets.SEASONS[s.season].get("sky_more", {})
     custom = (to_hex(s.sky_zenith), to_hex(s.sky_horizon)) != tuple(presets.SEASONS[s.season]["sky"][:2])
     hscene.set_sky_extras(world, None if custom else sk.get("mid"), sk.get("glow", "#FFF6DC"),
-                          sk.get("sun", 0.6), sk.get("cirrus", 0.0), sk.get("cirrus_colour", "#EEF6FF"))
+                          sk.get("sun", 0.6), min(1.0, sk.get("cirrus", 0.0) * s.cirrus_mult),
+                          sk.get("cirrus_colour", "#EEF6FF"), s.sky_brush, s.sky_bands, s.sky_curve)
     hscene.aim_sky(bpy.context.scene, world)
 
 
@@ -223,6 +235,7 @@ def apply_style(self, context):
     if _busy["on"]:
         return
     _apply_values(self, None, presets.STYLES[self.style]["keys"])
+    _upd_sky(self, context)                               # the style also paints the sky
     _rebase(self, context)
 
 

@@ -182,6 +182,17 @@ for st in presets.STYLES:
     check(abs(shading.palette_get("brush_jitter") - presets.STYLES[st]["keys"]["brush_jitter"]) < 1e-5,
           f"style {st} writes its keys")
 s.style = "ANIME"
+# the paint style reaches the sky: its curve, bands and brush land on the world's nodes, and the panel values follow
+_wn = sc.world.node_tree.nodes
+for st in presets.STYLES:
+    s.style = st
+    k = presets.STYLES[st]["keys"]
+    check(all(abs(util.only(_wn[n].outputs).default_value - k[key]) < 1e-5
+              for n, key in (("sky curve", "sky_curve"), ("sky bands", "sky_bands"), ("sky brush", "sky_brush"))),
+          f"style {st} paints the sky")
+s.sky_curve = 1.3
+check(abs(util.only(_wn["sky curve"].outputs).default_value - 1.3) < 1e-5, "Sky Depth reaches the sky at once")
+s.style = "ANIME"
 s.season = "GOLDEN"
 s.style = "CRISP"
 check(abs(s.threshold - presets.SEASONS["GOLDEN"]["tone"]["threshold"]) < 1e-5, "style keeps season keys")

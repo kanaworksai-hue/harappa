@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 34
+SHADER_VER = 35
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -103,6 +103,11 @@ PALETTE_KEYS = {
     "mountain_3": ("RGB", "#8FBFE0"),
     "style_sat": ("VALUE", 1.0),            # the paint style's share of the grade (the season sets grade_*)
     "style_contrast": ("VALUE", 1.0),
+    "ridge_soft": ("VALUE", 0.02),          # softness of the painted shapes on the distant ridges
+    "sky_brush": ("VALUE", 0.0),            # kept with the palette so presets carry them; the sky reads them
+    "sky_bands": ("VALUE", 0.0),
+    "sky_curve": ("VALUE", 1.0),
+    "cirrus_mult": ("VALUE", 1.0),
     "cloud_jitter": ("VALUE", 1.0),         # how broken the painted edge between cloud tones is
     "season_sat": ("VALUE", 1.0),           # the season's share of the grade
     "season_contrast": ("VALUE", 1.0),
@@ -1118,7 +1123,8 @@ def ridge_material():
     for k, v in (("Scale", 1.0), ("Detail", 2.0), ("Roughness", 0.5), ("Distortion", 0.6)):
         g.set(noi, k, v)
     shape = g.math("SUBTRACT", -780, -300, g.out(noi, "Fac"), g.out(g.math("MULTIPLY", -880, -450, g.out(t, "Fac"), 0.3)))
-    cut = g.maprange(-620, -300, g.out(shape), 0.36, 0.4, smooth=True)
+    cut = g.maprange(-620, -300, g.out(shape), 0.36, g.out(g.math("ADD", -780, -450, g.out(pal, "ridge_soft"), 0.36)),
+                     smooth=True)
     amt = g.maprange(-620, -500, g.out(lay, "Fac"), 0.0, 2.0, 0.26, 0.1)
     dk = g.math("MULTIPLY", -450, -350, g.out(cut, "Result"), g.out(amt, "Result"))
     shade = g.mix(-250, 200, "MULTIPLY", fac=g.out(dk), a=g.mixout(col), b=(0.55, 0.62, 0.9, 1.0))

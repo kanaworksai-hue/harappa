@@ -11,7 +11,7 @@ from .util import BUILDING, G, only, srgb, stamp
 
 WORLD = "HRP Sky"
 SUN = shading.SUN
-SKY_VER = 10
+SKY_VER = 12
 
 
 def setup_render(scene):
@@ -63,8 +63,25 @@ def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
         top = g.n("ShaderNodeValue", -800, 150, label="sky top")
         g.out(top).default_value = 0.5
         mr = g.maprange(-600, 0, g.out(sep, "Z"), -0.03, g.out(top), 0.0, 1.0)
+        # the paint style reaches the sky too: brushy streaks across the gradient, or flat poster bands
+        bn = g.n("ShaderNodeTexNoise", -760, 420, noise_dimensions="3D")
+        g.links.new(g.out(g.vmath("MULTIPLY", -900, 420, g.out(nd), (2.5, 2.5, 16.0))), g.inp(bn, "Vector"))
+        for k, v in (("Scale", 1.0), ("Detail", 3.0), ("Roughness", 0.6), ("Distortion", 0.5)):
+            g.set(bn, k, v)
+        brush = g.n("ShaderNodeValue", -760, 560, label="sky brush")
+        g.out(brush).default_value = 0.0
+        streak = g.math("MULTIPLY", -600, 420, g.out(g.math("SUBTRACT", -680, 420, g.out(bn, "Fac"), 0.5)), g.out(brush))
+        # the style's sky curve: below 1 the deep zenith colour reaches further down, above 1 the pale horizon rises
+        curve = g.n("ShaderNodeValue", -760, 700, label="sky curve")
+        g.out(curve).default_value = 1.0
+        bent = g.math("POWER", -600, 200, g.out(g.math("MAXIMUM", -680, 200, g.out(mr, "Result"), 0.0)), g.out(curve))
+        fac1 = g.math("ADD", -520, 300, g.out(bent), g.out(streak), clamp=True)
+        steps = g.math("DIVIDE", -440, 420, g.out(g.math("ROUND", -520, 420, g.out(g.math("MULTIPLY", -600, 560, g.out(fac1), 7.0)))), 7.0)
+        bands = g.n("ShaderNodeValue", -520, 560, label="sky bands")
+        g.out(bands).default_value = 0.0
+        fac2 = g.mix(-360, 300, dtype="FLOAT", fac=g.out(bands), a=g.out(fac1), b=g.out(steps))
         ramp = g.n("ShaderNodeValToRGB", -400, 0, label="sky ramp")
-        g.link(mr, "Result", ramp, "Fac")
+        g.links.new(g.mixout(fac2), ramp.inputs["Fac"])
         cr = ramp.color_ramp
         cr.interpolation = "EASE"
         cr.elements[0].position = 0.0
@@ -212,7 +229,8 @@ def drive_sun(world, sun):
     shading.drive_sun_dir(sun)
 
 
-def set_sky_extras(world, mid=None, glow="#FFF6DC", sun=0.6, cirrus=0.0, cirrus_colour="#EEF6FF"):
+def set_sky_extras(world, mid=None, glow="#FFF6DC", sun=0.6, cirrus=0.0, cirrus_colour="#EEF6FF", brush=0.0,
+                   bands=0.0, curve=1.0):
     """Mid-sky colour (None = between horizon and zenith), sun glow and cirrus of a season."""
     nt = world.node_tree
     ramp = nt.nodes.get("sky ramp")
@@ -222,7 +240,8 @@ def set_sky_extras(world, mid=None, glow="#FFF6DC", sun=0.6, cirrus=0.0, cirrus_
             els[2].color = [a * 0.45 + b * 0.55 for a, b in zip(els[1].color, els[3].color)]
         else:
             els[2].color = (*srgb(mid), 1.0)
-    for key, val in (("sky sun", sun), ("sky cirrus", cirrus)):
+    for key, val in (("sky sun", sun), ("sky cirrus", cirrus), ("sky brush", brush), ("sky bands", bands),
+                     ("sky curve", curve)):
         n = nt.nodes.get(key)
         if n is not None:
             only(n.outputs).default_value = val
