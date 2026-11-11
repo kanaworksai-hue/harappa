@@ -150,8 +150,31 @@ class G:
         return node
 
 
+_KEPT = {}      # group name -> identifiers of the interface sockets the running rebuild has claimed, in order
+
+
+def _sockets(ng):
+    return [i for i in ng.interface.items_tree if getattr(i, "item_type", "") == "SOCKET"]
+
+
 def iface(ng, name, in_out, stype, default=None, lo=None, hi=None, desc=None, subtype=None):
-    s = ng.interface.new_socket(name, in_out=in_out, socket_type=stype)
+    """Declare one socket of a group's interface.
+
+    While a group is being rebuilt (fresh_group) a socket that already has this name and direction is kept, not
+    replaced: its identifier stays, and with it every value a user set on a modifier, every driver on it and
+    every link to it from the user's own node trees."""
+    kept = _KEPT.get(ng.name)
+    s = None
+    if kept is not None:
+        s = next((i for i in _sockets(ng) if i.in_out == in_out and i.name == name and i.identifier not in kept),
+                 None)
+        if s is not None and s.socket_type != stype:
+            s.socket_type = stype
+            s = next(i for i in _sockets(ng) if i.in_out == in_out and i.name == name and i.identifier not in kept)
+    if s is None:
+        s = ng.interface.new_socket(name, in_out=in_out, socket_type=stype)
+    if kept is not None:
+        kept.append(s.identifier)
     if default is not None and hasattr(s, "default_value"):
         s.default_value = default
     if lo is not None and hasattr(s, "min_value"):
@@ -199,8 +222,11 @@ def to_hex(lin):
     return "#%02X%02X%02X" % tuple(out)
 
 
-def fresh_group(name, kind, version):
+def fresh_group(name, kind, version, renames=None):
     """Return (group, rebuilt?) - the node group is emptied for a rebuild when its version tag differs.
+
+    Only the nodes are cleared. The interface is reconciled by iface() and stamp(), so sockets that still exist
+    keep their identifier; renames maps an old socket name to its new one.
 
     The caller stamps the version with stamp() after it has built the group, so a build that stopped half-way
     (an error on a new Blender) is not mistaken for a finished one and is rebuilt next time."""
@@ -211,14 +237,33 @@ def fresh_group(name, kind, version):
         ng = bpy.data.node_groups.new(name, kind)
     else:
         ng.nodes.clear()
-        ng.interface.clear()
+        for old, new in (renames or {}).items():            # a socket that changed its name keeps its values
+            for i in _sockets(ng):
+                if i.name == old:
+                    i.name = new
+        _KEPT[ng.name] = []                                  # iface() keeps what is still declared ...
     ng[VERSION_KEY] = BUILDING
     return ng, True
 
 
 def stamp(idblock, version):
     """Mark a node group / material / world as completely built at this version."""
+    kept = _KEPT.pop(getattr(idblock, "name", None), None) if isinstance(idblock, bpy.types.NodeTree) else None
+    if kept is not None:                                     # ... and what is no longer declared goes here
+        for i in [i for i in _sockets(idblock) if i.identifier not in kept]:
+            idblock.interface.remove(i)
+        _reorder(idblock, kept)
     idblock[VERSION_KEY] = version
+
+
+def _reorder(ng, order):
+    """Put the interface sockets in the order they were declared (outputs first, as Blender keeps them)."""
+    by_id = {i.identifier: i for i in _sockets(ng)}
+    want = ([k for k in order if by_id[k].in_out == "OUTPUT"] + [k for k in order if by_id[k].in_out == "INPUT"])
+    for pos, ident in enumerate(want):
+        item = next(i for i in _sockets(ng) if i.identifier == ident)
+        if item.position != pos:
+            ng.interface.move(item, pos)
 
 
 def mod_input(mod, name, value=None):

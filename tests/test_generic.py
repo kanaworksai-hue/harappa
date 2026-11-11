@@ -327,5 +327,46 @@ check(pal.animation_data is not None and len(pal.animation_data.drivers) == 1, "
 if not UPDATE:
     ok, msg = seasons.compare(sc, "AUTUMN", os.path.join(OUT, "upgrade_autumn.png"))
     check(ok, f"an older scene renders like a new one ({msg})")
+
+# --- 9. a scene made with older geometry nodes: the rebuild keeps what the user set on the modifiers ---------
+# Rebuilding a group must not replace its interface sockets: a new socket gets a new identifier, and the values
+# on every modifier (density, height, wind, the Avoid collection) would silently fall back to the defaults.
+def _iface(ng):
+    return [(i.in_out, i.name, i.socket_type) for i in ng.interface.items_tree
+            if getattr(i, "item_type", "") == "SOCKET"]
+
+
+ground = next(o for o in sc.objects if o.get("hrp_ground") and o.modifiers.get(build.GRASS_MOD))
+gmod, fmod = ground.modifiers[build.GRASS_MOD], ground.modifiers[build.FLOWER_MOD]
+gn_groups = [bpy.data.node_groups[n] for n in (scatter.WIND, scatter.GRASS, scatter.FLOWERS, scatter.FOLIAGE)]
+declared = {ng.name: _iface(ng) for ng in gn_groups}
+ids_before = {ng.name: sorted(i.identifier for i in ng.interface.items_tree
+                              if getattr(i, "item_type", "") == "SOCKET") for ng in gn_groups}
+avoid_coll = bpy.data.collections.new("Test Avoid")
+sc.collection.children.link(avoid_coll)
+mine = {(gmod, "Density"): 33.0, (gmod, "Height"): 0.61, (gmod, "Seed"): 5, (gmod, "Avoid Margin"): 0.44,
+        (gmod, "Avoid"): avoid_coll, (fmod, "Height"): 0.52, (fmod, "Size"): 0.21, (fmod, "Seed"): 9}
+for (m, name), v in mine.items():
+    mod_input(m, name, v)
+tuft_before = mod_input(gmod, "Tuft")
+for ng in gn_groups:                                          # what an older version left behind
+    ng[util.VERSION_KEY] = scatter.GN_VER - 1
+    ng.interface.new_socket("Gone In 1.1", in_out="INPUT", socket_type="NodeSocketFloat")
+    first = next(i for i in ng.interface.items_tree if getattr(i, "item_type", "") == "SOCKET" and i.in_out == "INPUT")
+    ng.interface.move(first, len(ng.interface.items_tree) - 1)
+scatter.wind_group(), scatter.grass_group(), scatter.flowers_group(), scatter.foliage_group()
+check(all(ng.get(util.VERSION_KEY) == scatter.GN_VER for ng in gn_groups), "older geometry nodes are rebuilt")
+check(all(_iface(ng) == declared[ng.name] for ng in gn_groups),
+      "rebuilt groups have exactly the declared sockets, in the declared order")
+check(all(sorted(i.identifier for i in ng.interface.items_tree if getattr(i, "item_type", "") == "SOCKET")
+          == ids_before[ng.name] for ng in gn_groups), "rebuilt groups keep their socket identifiers")
+kept = []
+for (m, name), v in mine.items():
+    now = mod_input(m, name)
+    kept.append(now == v if not isinstance(v, float) else abs(now - v) < 1e-5)
+check(all(kept) and mod_input(gmod, "Tuft") == tuft_before,
+      f"the rebuild keeps the values set on the modifiers ({sum(kept)}/{len(kept)})")
+ok, msg = wiring.compare()
+check(ok and not wiring.problems(), f"rebuilt geometry nodes are wired as recorded ({msg})")
 H.unregister()
 print("RESULT", "ALL PASS" if not fails else f"{len(fails)} FAIL: {fails}")
