@@ -401,6 +401,26 @@ cherry = next(o for o in sc.objects if o.get("hrp_canopy") and o.parent is not N
 check(mod_input(cherry.modifiers["Harappa Foliage"], "Blossom") > 0.8, "a cherry tree is in blossom")
 labels = {i[0] for i in H.TREE_SHAPES}
 check(labels == set(htree.SHAPES), "every tree shape is offered in the panel")
+# a poplar narrows to a point; a willow hangs below its crown; every pine pad has a limb reaching it
+_tm, _cm = htree.build_meshes("COLUMN", 10.0, 1)
+_zs = [v.co.z for v in _cm.vertices]
+_z0, _z1 = min(_zs), max(_zs)
+
+
+def _width(m, lo, hi):
+    xs = [v.co.x for v in m.vertices if lo <= v.co.z <= hi]
+    return max(xs) - min(xs) if xs else 0.0
+
+
+check(_width(_cm, _z1 - 0.12 * (_z1 - _z0), _z1) < 0.5 * _width(_cm, _z0 + 0.3 * (_z1 - _z0), _z0 + 0.45 * (_z1 - _z0)),
+      "a poplar is a spindle with a pointed top")
+_tm, _cm = htree.build_meshes("WILLOW", 10.0, 1)
+check(min(v.co.z for v in _cm.vertices) < 3.0, "a willow's strands hang far below its crown")
+_tm, _cm = htree.build_meshes("PINE", 10.0, 1)
+_far = max((v.co.xy.length for v in _tm.vertices), default=0.0)
+check(_far > 0.6 * max(v.co.xy.length for v in _cm.vertices), "a pine's limbs reach out to its pads")
+for _m in (_tm, _cm):
+    bpy.data.meshes.remove(_m)
 
 # --- 11. detail levels: less or more of the same picture, never a change to the user's own values ----------
 def _instances():
@@ -501,6 +521,8 @@ sc.render.resolution_x, sc.render.resolution_y = sc.render.resolution_y, sc.rend
 n_r = len(hridges.ridges_of(sc))
 bpy.ops.harappa.add_ridges(layers=3, seed=4)
 check(n_r == 3 and len(hridges.ridges_of(sc)) == 3, "Distant Mountains rebuilds its three layers, no more")
+_sl = [d.value for d in hridges.ridges_of(sc)[-1].data.attributes["hrp_slope"].data]
+check(min(_sl) < -0.3 and max(_sl) > 0.3, "the far mountains know which way each flank faces (lit and shaded sides)")
 bpy.ops.harappa.add_ridges(layers=0)
 check(not hridges.ridges_of(sc), "0 mountain layers removes them")
 bpy.ops.harappa.add_ridges(layers=2, seed=4)

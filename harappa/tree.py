@@ -37,10 +37,10 @@ SHAPES = {
                    bloom=0.92, trunk=0.05, roundness=0.4, lean=0.05),
     "PINE": dict(cw=0.5, ch=0.3, cz=0.72, clumps=6, cr=0.5, style="NEEDLE", dens=85, leaf=0.055,
                  bloom=0.0, trunk=0.045, roundness=0.2, pads=True, lean=0.16, value=-0.06),
-    "WILLOW": dict(cw=0.44, ch=0.26, cz=0.72, clumps=10, cr=0.44, style="SMALL", dens=70, leaf=0.05,
+    "WILLOW": dict(cw=0.42, ch=0.2, cz=0.76, clumps=8, cr=0.4, style="SMALL", dens=80, leaf=0.042,
                    bloom=0.0, trunk=0.045, roundness=0.5, droop=True),
-    "COLUMN": dict(cw=0.1, ch=0.44, cz=0.54, clumps=16, cr=0.34, style="SMALL", dens=70, leaf=0.05,
-                   bloom=0.0, trunk=0.03, roundness=0.6, value=-0.08),
+    "COLUMN": dict(cw=0.1, ch=0.42, cz=0.53, clumps=14, cr=0.3, style="SMALL", dens=75, leaf=0.045,
+                   bloom=0.0, trunk=0.03, roundness=0.6, value=-0.08, spindle=True),
 }
 
 
@@ -77,13 +77,28 @@ def _pad_points(rng, n, cw, ch, centre):
 
 
 def _droop_points(rng, n, cw, ch, centre, base):
-    """A willow's curtain: hanging strands around the rim of the crown, reaching down towards the ground."""
+    """A willow's curtain: thin hanging strands round the rim of the crown and a few further in, each
+    (top, bottom); they end at different heights so the hem is ragged and the sky shows between them."""
+    out = []
+    for k in range(n):
+        a = (k + rng.uniform(-0.35, 0.35)) / n * math.tau
+        r = cw * (rng.uniform(0.78, 1.02) if k % 3 else rng.uniform(0.45, 0.7))
+        top = centre.z + ch * rng.uniform(-0.1, 0.35)
+        bottom = base + (centre.z - base) * rng.uniform(0.0, 0.45)
+        out.append((Vector((centre.x + math.cos(a) * r, centre.y + math.sin(a) * r, top)), bottom))
+    return out
+
+
+def _spindle_points(rng, n, cw, ch, centre):
+    """A poplar: clumps stacked up the axis, (point, size 0..1) - widest a third of the way up, then
+    narrowing to a pointed top."""
     pts = []
     for k in range(n):
-        a = (k + rng.uniform(-0.3, 0.3)) / n * math.tau
-        r = cw * rng.uniform(0.72, 0.98)
-        z = base + (centre.z - base) * rng.uniform(0.35, 0.6)
-        pts.append(Vector((centre.x + math.cos(a) * r, centre.y + math.sin(a) * r, z)))
+        t = k / max(1, n - 1)
+        prof = math.sin(math.pi * (0.12 + 0.88 * t)) ** 0.6 * (1.15 - 0.5 * t)
+        j = cw * 0.35 * prof
+        pts.append((Vector((centre.x + rng.uniform(-j, j), centre.y + rng.uniform(-j, j), centre.z - ch + t * 2 * ch)),
+                    max(0.18, prof)))
     return pts
 
 
@@ -154,8 +169,12 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
                      rng.uniform(-0.03, 0.03) * H + math.sin(la) * lean, sp["cz"] * H))
     cr = sp["cr"] * max(cw, ch * 0.8)
     strands = []
+    sizes = None
     if sp.get("conifer"):
         clumps = _conifer_points(rng, sp["clumps"], cw, ch, centre)
+    elif sp.get("spindle"):
+        sp_pts = _spindle_points(rng, sp["clumps"], cw, ch, centre)
+        clumps, sizes = [p for p, _ in sp_pts], [f for _, f in sp_pts]
     elif sp.get("pads"):
         clumps = _pad_points(rng, sp["clumps"], cw, ch, centre)
     else:
@@ -165,32 +184,33 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
     bm = bmesh.new()
     clump_r = []
     for i, c in enumerate(clumps):
-        r = cr * rng.uniform(0.62, 1.3)
+        r = cr * rng.uniform(0.62, 1.3) if sizes is None else cr * sizes[i] * rng.uniform(0.9, 1.1)
         if sp.get("conifer"):
             r *= 0.45 + 0.75 * (1 - (c.z - (centre.z - ch)) / (2 * ch))
         if sp.get("bush"):
             c.z = max(c.z, r * 0.55)
         clump_r.append(r)
-        flat = 0.42 if sp.get("conifer") else (0.34 if sp.get("pads") else 0.85)
+        flat = 0.42 if sp.get("conifer") else (0.34 if sp.get("pads") else (1.25 if sizes else 0.85))
         if sp.get("pads"):
             r *= 0.9 - 0.35 * (c.z - (centre.z - ch * 0.75)) / (ch * 1.6)      # smaller pads towards the top
         m = Matrix.Translation(c) @ Matrix.Diagonal((r, r, r * flat, 1.0))
         bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0, matrix=m)
     # top-of-crown cap so the silhouette is not flat
-    if not sp.get("conifer") and sp["trunk"] > 0:
+    if not sp.get("conifer") and not sp.get("spindle") and sp["trunk"] > 0:
         top = centre + Vector((0, 0, ch * 0.55))
         r = cr * 0.9
         bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0,
                                    matrix=Matrix.Translation(top) @ Matrix.Diagonal((r, r, r * 0.8, 1)))
     if sp.get("droop"):
-        strands = _droop_points(rng, 13, cw, ch, centre, H * 0.16)
-        for c in strands:
-            r = cr * rng.uniform(0.3, 0.42)
-            m = Matrix.Translation(c) @ Matrix.Diagonal((r, r, (c.z - H * 0.12) * rng.uniform(0.8, 1.0), 1.0))
+        strands = _droop_points(rng, 22, cw, ch, centre, H * 0.14)
+        for top, bottom in strands:
+            r = cr * rng.uniform(0.13, 0.2)
+            half = (top.z - bottom) * 0.5
+            m = Matrix.Translation(Vector((top.x, top.y, bottom + half))) @ Matrix.Diagonal((r, r, half, 1.0))
             bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0, matrix=m)
-    if sp.get("conifer"):                      # a pointed tip, so no bare trunk pokes out of the top tier
-        tip = Vector((centre.x, centre.y, centre.z + ch * 0.9))
-        r = cr * 0.42
+    if sp.get("conifer") or sp.get("spindle"):    # a pointed tip, so no bare trunk pokes out of the top tier
+        tip = Vector((centre.x, centre.y, centre.z + ch * (0.9 if sp.get("conifer") else 1.05)))
+        r = cr * (0.42 if sp.get("conifer") else 0.3)
         bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0,
                                    matrix=Matrix.Translation(tip) @ Matrix.Diagonal((r, r, r * 2.0, 1)))
     for f in bm.faces:
@@ -203,8 +223,8 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
     tm = bpy.data.meshes.new(name + " Trunk")
     bm = bmesh.new()
     r0 = sp["trunk"] * H
-    if sp.get("conifer"):
-        fork = Vector((0, 0, centre.z + ch * 0.78))
+    if sp.get("conifer") or sp.get("spindle"):
+        fork = Vector((centre.x * 0.5, centre.y * 0.5, centre.z + ch * 0.78))
     elif sp.get("pads"):
         fork = Vector((centre.x, centre.y, centre.z + ch * 0.7))       # a pine's trunk runs up through its pads
     else:
@@ -218,15 +238,23 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
     _tube(bm, trunk, trunk_r, sides=9)
     # branches from the upper trunk into each clump
     for i, c in enumerate(clumps):
-        if sp.get("conifer") or sp.get("pads"):
+        if sp.get("conifer") or sp.get("pads") or sp.get("spindle"):
             t0 = max(0.15, min(0.95, c.z / fork.z))
         else:
             t0 = rng.uniform(0.6, 0.95)
         idx = min(len(trunk) - 1, int(t0 * (len(trunk) - 1)))
         a = trunk[idx]
-        b = c.lerp(a, 0.25)
-        pts = _branch_path(rng, a, b, (b - a).length * 0.18, segs=5)
-        rb = trunk_r[idx] * 0.55
+        if sp.get("pads"):                    # a pine's limb runs out level and holds its pad from below
+            idx = min(len(trunk) - 1, max(0, int(max(0.15, min(0.95, (c.z - clump_r[i] * 0.5) / fork.z))
+                                                  * (len(trunk) - 1))))
+            a = trunk[idx]
+            b = c - Vector((0, 0, clump_r[i] * 0.12))
+            pts = _branch_path(rng, a, b, (b - a).length * 0.1, segs=6)
+            rb = trunk_r[idx] * 0.7
+        else:
+            b = c.lerp(a, 0.25)
+            pts = _branch_path(rng, a, b, (b - a).length * 0.18, segs=5)
+            rb = trunk_r[idx] * 0.55
         radii = [rb * (1 - 0.75 * (k / (len(pts) - 1))) for k in range(len(pts))]
         _tube(bm, pts, radii, sides=6)
         # a twig or two poking out of the clump edge

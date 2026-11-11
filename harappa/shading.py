@@ -1155,6 +1155,26 @@ def ridge_material():
     amt = g.maprange(-620, -500, g.out(lay, "Fac"), 0.0, 2.0, 0.26, 0.1)
     dk = g.math("MULTIPLY", -450, -350, g.out(cut, "Result"), g.out(amt, "Result"))
     shade = g.mix(-250, 200, "MULTIPLY", fac=g.out(dk), a=g.mixout(col), b=(0.55, 0.62, 0.9, 1.0))
+    # the side of each peak turned away from the sun gets one darker, cooler step (all layers, the far one too)
+    slope = _attr(g, "hrp_slope", "GEOMETRY", -1300, -700)
+    geo = g.n("ShaderNodeNewGeometry", -1300, -900)
+    oinf = g.n("ShaderNodeObjectInfo", -1300, -1100)
+    rad = g.vmath("MULTIPLY", -1120, -950, g.out(g.vmath("SUBTRACT", -1200, -950, g.out(geo, "Position"),
+                                                           g.out(oinf, "Location"))), (1.0, 1.0, 0.0))
+    tng = g.vmath("CROSS_PRODUCT", -950, -950, (0.0, 0.0, 1.0), g.out(g.vmath("NORMALIZE", -1040, -950, g.out(rad))))
+    sdir = g.n("ShaderNodeCombineXYZ", -1120, -1150)
+    for c in "xyz":
+        g.link(pal, "sun_" + c, sdir, c.upper())
+    st_ = g.vmath("DOT_PRODUCT", -800, -950, g.out(tng), g.out(sdir))
+    lit = g.math("MULTIPLY", -650, -800, g.out(slope, "Fac"), g.out(st_, "Value"))       # < 0: facing the sun
+    lit = g.math("ADD", -520, -800, g.out(lit), g.out(g.math("MULTIPLY", -650, -950,
+                                                               g.out(g.math("SUBTRACT", -780, -1100, g.out(noi, "Fac"), 0.5)), 0.3)))
+    # lower down the shade reaches further round the peak: the edge runs down the flank at a slant
+    lit = g.math("MULTIPLY_ADD", -450, -950, g.out(t, "Fac"), 0.12, g.out(g.math("SUBTRACT", -520, -950, g.out(lit), 0.08)))
+    back = g.maprange(-380, -800, g.out(lit), 0.03, g.out(g.math("ADD", -520, -1000, g.out(pal, "ridge_soft"), 0.05)),
+                      smooth=True)
+    bamt = g.math("MULTIPLY", -240, -800, g.out(back, "Result"), 0.75)
+    shade = g.mix(-150, 100, "MULTIPLY", fac=g.out(bamt), a=g.mixout(shade), b=(0.8, 0.84, 0.97, 1.0))
     # air at the foot
     foot = g.maprange(-620, 0, g.out(t, "Fac"), 0.0, 0.5, 0.75, 0.0, smooth=True)
     out = g.mix(-50, 200, fac=g.out(foot, "Result"), a=g.mixout(shade), b=g.out(pal, "haze_colour"))

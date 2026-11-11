@@ -77,12 +77,17 @@ def build(context, ground=None, seed=0, layers=3):
         me = bpy.data.meshes.new(f"Ridge {k + 1}")
         bm = bmesh.new()
         lo, mid, hi = [], [], []
+        hs, h0 = [], []
         for i in range(seg):
             a = i / seg * math.tau
             h = _profile(a, k, seed, rough, sharp)
+            h0.append(h)
             if sharp > 0.0:                                  # fine breaks along the crest of the far layers
                 p = Vector((math.cos(a), math.sin(a), 0.0)) * (rough * 9.0)
                 h = max(0.0, h + noise.noise(p + Vector((seed * 1.3, k * 7.7, 0.0))) * 0.035 * sharp)
+            hs.append(h)
+        for i, h in enumerate(hs):
+            a = i / seg * math.tau
             x, y = math.cos(a) * dist, math.sin(a) * dist
             lo.append(bm.verts.new((x, y, foot)))
             mid.append(bm.verts.new((x, y, peak * h * 0.35)))
@@ -96,6 +101,15 @@ def build(context, ground=None, seed=0, layers=3):
         t = me.attributes.new("hrp_t", "FLOAT", "POINT")           # 0 foot .. 1 crest of this spot
         for i in range(seg):
             t.data[i * 3].value, t.data[i * 3 + 1].value, t.data[i * 3 + 2].value = 0.0, 0.35, 1.0
+        # which way the slope faces along the ridge (rising with the angle > 0): the shader lights one side of
+        # each peak and shades the other, by the sun
+        sl = me.attributes.new("hrp_slope", "FLOAT", "POINT")
+        win = 22                                             # whole flanks of a peak, not every small break
+        for i in range(seg):
+            d = (h0[(i + win) % seg] - h0[i - win]) * seg / (2.0 * win * math.tau) * peak / dist
+            v = max(-1.0, min(1.0, d * 6.0))
+            for r_ in range(3):
+                sl.data[i * 3 + r_].value = v
         me.materials.append(shading.ridge_material())
         ob = bpy.data.objects.new(me.name, me)
         collection(scene).objects.link(ob)

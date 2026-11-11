@@ -222,7 +222,7 @@ def _season_blossom(sc, amount):
         if mod is None:
             continue
         root = ob.parent if ob.parent is not None and "hrp_tree" in ob.parent else None
-        if root is not None and root.get("hrp_tree") in ("CONIFER", "PINE"):
+        if root is not None and root.get("hrp_tree") in ("CONIFER", "PINE", "COLUMN"):   # no blossom on these
             continue
         if "hrp_blossom_base" not in ob:
             ob["hrp_blossom_base"] = float(mod_input(mod, "Blossom"))
