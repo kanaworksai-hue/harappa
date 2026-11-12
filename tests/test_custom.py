@@ -102,7 +102,7 @@ check(a[:, 3].max() > 0.99 and a[:, 3].min() == 0.0 and a[a[:, 3] > 0.99][:, 1].
       "Colour layer: red where painted, alpha 0 elsewhere")
 layers.paint_disc(m, "COLOUR", (5.0, 5.0), 3.0, layers.target("COLOUR", "ERASE", (0, 0, 1))[0], strength=0.5)
 b = layer(m, "COLOUR")
-check(b[:, 3].max() < 0.6 and abs(b[a[:, 3] > 0.99][:, 0].mean() - 1.0) < 1e-4,
+check(b[:, 3].max() < 0.6 and np.allclose(b[:, :3], a[:, :3]),
       "erasing colour lowers the amount and keeps the colour")
 layers.fill(m, "COLOUR", (0.0, 0.0, 0.0, 0.0))
 check(layer(m, "COLOUR")[:, 3].max() == 0.0, "Erase-filling the Colour layer leaves no colour")
@@ -382,5 +382,25 @@ if res.returncode == 0:
           and hl[:, 0].max() > 0.99 and fl[:, 0].min() > 0.99, "the CLI paints the four layers like the brush")
     check(any(fn.startswith("From CLI") for fn in os.listdir(LOOKS)), "the CLI saves a look")
     check("avoid skipped Harappa Camera" in res.stdout, "the CLI reports the objects Avoid refused")
+
+# --- 6. a translated Blender: node groups still build (zone items get translated names when they are created) ----
+view = bpy.context.preferences.view
+view.use_translate_interface = True
+view.use_translate_new_dataname = True
+built = {}
+for loc in ("zh_HANS", "ja_JP", "ko_KR"):
+    view.language = loc
+    for ng in (scatter.grass_group(), scatter.flowers_group()):
+        ng[H.util.VERSION_KEY] = 0                       # force a rebuild in this language
+    try:
+        ok_ = scatter.grass_group().get(H.util.VERSION_KEY) == scatter.GN_VER and \
+            scatter.flowers_group().get(H.util.VERSION_KEY) == scatter.GN_VER
+    except KeyError as e:
+        ok_ = False
+        print("build error", e)
+    built[loc] = ok_
+view.language = "en_US"
+m2 = next(o for o in sc.objects if o.modifiers.get(build.GRASS_MOD) and o.get("hrp_hill"))
+check(all(built.values()) and count(m2, "HRP Grass") > 1000, f"grass builds in a translated Blender ({built})")
 
 print("RESULT ALL PASS" if not fails else f"RESULT {len(fails)} FAIL: {fails}")

@@ -45,7 +45,7 @@ def ensure(me, layer):
 def target(layer, mode, colour=(1.0, 1.0, 1.0)):
     """(RGBA the brush moves towards, blend mode) for Paint / Erase on a layer."""
     if layer == "COLOUR":
-        colour = tuple(max(c, MIN_TINT) for c in colour[:3])     # pure black reads as 'no layer' in the shader
+        colour = tuple(min(max(c, MIN_TINT), 1.0 - MIN_TINT) for c in colour[:3])   # pure black / white = none
         if mode == "ERASE":
             return (*colour, 0.0), "ERASE_ALPHA"
         return (*colour, 1.0), "MIX"
@@ -75,6 +75,16 @@ def fill(ob, layer, rgba):
 
 def clear(ob, layer):
     fill(ob, layer, LAYERS[layer][1])
+
+
+def fill_colour(layer, mode, colour=(1.0, 1.0, 1.0), clear_=False):
+    """The RGB Blender's own Fill (paint.vertex_color_set, always alpha 1) needs for a Fill or Clear of a layer.
+    The Colour layer's 'none' is pure white, so clearing it that way equals its starting state."""
+    if clear_:
+        return LAYERS[layer][1][:3]
+    if layer == "COLOUR" and mode == "ERASE":
+        return (1.0, 1.0, 1.0)
+    return target(layer, mode, colour)[0][:3]
 
 
 def paint_disc(ob, layer, centre, radius, rgba, strength=1.0, soft=0.35):
@@ -113,8 +123,13 @@ def painted(ob):
         if at is None or at.domain != "POINT" or at.data_type != "FLOAT_COLOR":
             continue
         vals = _read(at, len(me.vertices))
-        c = 3 if key == "COLOUR" else 0
-        if len(vals) and np.abs(vals[:, c] - start[c]).max() > 1e-3:
+        if not len(vals):
+            continue
+        if key == "COLOUR":                     # some amount, on a colour that is not the 'none' white / black
+            s = vals[:, :3].sum(axis=1)
+            if ((vals[:, 3] > 1e-3) & (s > 1e-3) & (s < 2.9995)).any():
+                out.append(key)
+        elif np.abs(vals[:, 0] - start[0]).max() > 1e-3:
             out.append(key)
     return out
 

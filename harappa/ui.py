@@ -195,6 +195,28 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
             _mod_inputs(col, fm, ("Density", "Patch Size", "Patch Amount", "Size", "Height", "Seed"))
 
 
+_previews = {"coll": None}
+
+
+def _swatch_icon(key, rgb):
+    """A small square of a palette colour, for the swatch buttons (redrawn only when the colour changes)."""
+    from bpy.utils import previews
+    if _previews["coll"] is None:
+        _previews["coll"] = previews.new()
+    pc = _previews["coll"]
+    pv = pc.get(key) or pc.new(key)
+    want = tuple(round(c, 4) for c in rgb[:3])
+    if _previews.get(key) != want:
+        n = 16
+        srgb = [c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055 for c in want]
+        pv.icon_size = (n, n)
+        pv.icon_pixels_float = [*srgb, 1.0] * (n * n)
+        pv.image_size = (n, n)
+        pv.image_pixels_float = [*srgb, 1.0] * (n * n)
+        _previews[key] = want
+    return pv.icon_id
+
+
 LAYER_ICONS = {"GRASS": "OUTLINER_OB_POINTCLOUD", "FLOWERS": "OUTLINER_OB_FORCE_FIELD", "HEIGHT": "SORT_ASC",
                "COLOUR": "COLOR"}
 
@@ -206,15 +228,15 @@ def _brush_layers(layout, context, ob):
     box = layout.box()
     col = box.column(align=True)
     col.label(text=t("Brush Layers"), translate=False)
-    row = col.row(align=True)
-    row.scale_y = 1.3
+    grid = col.grid_flow(row_major=True, columns=2, even_columns=True, align=True)
+    grid.scale_y = 1.3
     prop = s.bl_rna.properties["paint_layer"]
     for it in prop.enum_items:
-        op = row.operator("harappa.paint_layer", text=t(it.name), translate=False, icon=LAYER_ICONS[it.identifier],
-                          depress=painting and s.paint_layer == it.identifier)
+        op = grid.operator("harappa.paint_layer", text=t(it.name), translate=False, icon=LAYER_ICONS[it.identifier],
+                           depress=painting and s.paint_layer == it.identifier)
         op.layer = it.identifier
     if not painting:
-        box.label(text=t("Click a layer to paint it on the meadow"), icon="INFO", translate=False)
+        box.label(text=t("Click a layer to paint it"), icon="INFO", translate=False)
     else:
         row = box.row(align=True)
         for it in s.bl_rna.properties["paint_mode"].enum_items:
@@ -224,8 +246,8 @@ def _brush_layers(layout, context, ob):
         if s.paint_layer == "COLOUR":
             _prop(col, s, "paint_colour", "Paint Colour")
             row = col.row(align=True)
-            for k, label in zip(SWATCHES, ("Patches", "Tips", "Shade", "Earth", "Petals")):
-                op = row.operator("harappa.paint_swatch", text=t(label), translate=False)
+            for k in SWATCHES:
+                op = row.operator("harappa.paint_swatch", text="", icon_value=_swatch_icon(k, getattr(s, k)))
                 op.key = k
             _prop(col, s, "tint_amount")
         row = box.row(align=True)
@@ -280,7 +302,9 @@ class HRP_PT_avoid(HrpSub, bpy.types.Panel):
         _prop(col, s, "avoid_floor")
         _prop(col, s, "avoid_reach")
         _prop(col, s, "avoid_box")
-        _prop(layout, s, "avoid_collection", "Collection")
+        col = layout.column(align=True)
+        col.label(text=t("Collection"), translate=False)
+        col.prop(s, "avoid_collection", text="")
 
 
 class HRP_PT_tint(HrpSub, bpy.types.Panel):
@@ -535,6 +559,11 @@ def register():
 
 
 def unregister():
+    if _previews["coll"] is not None:
+        from bpy.utils import previews
+        previews.remove(_previews["coll"])
+        _previews.clear()
+        _previews["coll"] = None
     for c in reversed(PANELS):
         bpy.utils.unregister_class(c)
     for c in reversed(MENUS):

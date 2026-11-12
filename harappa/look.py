@@ -65,7 +65,7 @@ def compose(ob):
     elif "hrp_look" in ob:
         del ob["hrp_look"]
     if amt > 1e-6:
-        ob["hrp_own"] = [*(max(c, 0.002) for c in col), amt]     # pure black would read as 'none' (HRP Grade)
+        ob["hrp_own"] = [*(min(max(c, 0.002), 0.998) for c in col), amt]   # pure black or white mean none
     elif "hrp_own" in ob:
         del ob["hrp_own"]
     ob.update_tag()

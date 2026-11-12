@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 37
+SHADER_VER = 38
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -411,13 +411,14 @@ def cel_group():
     return ng
 
 
-def _colourise(g, x, y, color_sock, tint_sock, amount_sock):
-    """Mix a colour towards a tint at the colour's own brightness: the tint's hue and saturation, the cel light and
-    shade of the original stay. amount 0 = unchanged."""
+def _colourise(g, x, y, color_sock, tint_sock, amount_sock, ref_sock=None):
+    """Mix a colour towards a tint. Without ref_sock at the colour's own brightness (the tint's hue and saturation,
+    the cel light and shade of the original stay). With ref_sock (the lit colour of a cel trio) the lit colour turns
+    into the tint itself and the shadow colours keep their brightness ratio to it. amount 0 = unchanged."""
     bw = g.n("ShaderNodeRGBToBW", x, y + 150)
     g.links.new(color_sock, bw.inputs["Color"])
     tb = g.n("ShaderNodeRGBToBW", x, y + 50)
-    g.links.new(tint_sock, tb.inputs["Color"])
+    g.links.new(ref_sock if ref_sock is not None else tint_sock, tb.inputs["Color"])
     k = g.math("DIVIDE", x + 160, y + 100, g.out(bw), g.out(g.math("MAXIMUM", x + 80, y, g.out(tb), 0.03)))
     kc = g.n("ShaderNodeCombineColor", x + 300, y + 100)
     for ch in ("Red", "Green", "Blue"):
@@ -430,20 +431,38 @@ def _colourise(g, x, y, color_sock, tint_sock, amount_sock):
 
 def _attr_amount(g, x, y, attr_node):
     """The amount (alpha) of a colour attribute, 0 when the attribute is missing. EEVEE reads a missing attribute as
-    black with alpha 1, so pure black counts as 'missing' (Harappa never stores a pure black tint: see look.py and
-    layers.py)."""
+    black with alpha 1, so pure black counts as 'none'; so does pure white, the Colour layer's cleared state (Blender's
+    own undoable Fill writes alpha 1). Painted and own colours are kept just inside (layers.py, look.py)."""
     sep = g.n("ShaderNodeSeparateColor", x - 300, y - 60)
     g.link(attr_node, "Color", sep, "Color")
     tot = g.math("ADD", x - 150, y - 60, g.out(g.math("ADD", x - 220, y - 120, g.out(sep, "Red"), g.out(sep, "Green"))),
                  g.out(sep, "Blue"))
     there = g.math("MULTIPLY", x - 60, y - 60, g.out(tot), 1e4, clamp=True)
+    white = g.math("MULTIPLY", x - 60, y - 160, g.out(g.math("SUBTRACT", x - 120, y - 160, 2.9995, g.out(tot))), 1e4,
+                   clamp=True)
+    there = g.math("MULTIPLY", x - 30, y - 100, g.out(there), g.out(white))
     return g.out(g.math("MULTIPLY", x, y, g.out(attr_node, "Alpha"), g.out(there), clamp=True))
 
 
 def _paint_tint(g, pal, x, y, attr_node, cols):
-    """Colours painted on the ground's Colour layer (hrp_tint: colour + alpha amount), lit / shadow / deep alike."""
+    """Colours painted on the ground's Colour layer (hrp_tint: colour + alpha amount): the lit tone becomes the painted
+    colour, shadow and deep shadow follow at their usual brightness below it (cols = lit, shadow, deep).
+
+    The layer starts white with alpha 0 and the brush mixes colour and alpha with the same weight, so what is stored
+    is the painted colour laid over white: the colour itself is (rgb - (1 - a)) / a. Without this a half-strength
+    stroke would be the colour mixed with white (pale and grey) instead of the colour at half strength."""
+    a = g.math("MAXIMUM", x - 250, y + 250, g.out(attr_node, "Alpha"), 1e-3)
+    off = g.math("SUBTRACT", x - 250, y + 350, g.out(attr_node, "Alpha"), 1.0)
+    offc = g.n("ShaderNodeCombineColor", x - 120, y + 350)
+    ac = g.n("ShaderNodeCombineColor", x - 120, y + 250)
+    for ch in ("Red", "Green", "Blue"):
+        g.link(off, 0, offc, ch)
+        g.link(a, 0, ac, ch)
+    num = g.mix(x, y + 350, "ADD", fac=1.0, a=g.out(attr_node, "Color"), b=g.out(offc))
+    col = g.mix(x + 120, y + 300, "DIVIDE", fac=1.0, a=g.mixout(num), b=g.out(ac), clamp=True)
     amt = g.math("MULTIPLY", x, y, _attr_amount(g, x - 100, y + 150, attr_node), g.out(pal, "tint_amount"), clamp=True)
-    return [_colourise(g, x + 200, y - 300 * i, c, g.out(attr_node, "Color"), g.out(amt)) for i, c in enumerate(cols)]
+    return [_colourise(g, x + 200, y - 300 * i, c, g.mixout(col), g.out(amt), ref_sock=cols[0])
+            for i, c in enumerate(cols)]
 
 
 def grade_group():

@@ -18,7 +18,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 29
+GN_VER = 30
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -218,16 +218,18 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     zo = g.n("GeometryNodeForeachGeometryElementOutput", x + 540, y + 400)
     zi.pair_with_output(zo)
     zo.domain = "INSTANCE"
+    for item in zo.generation_items:                   # created with a translated name when Blender translates new
+        item.name = "Geometry"                          # data names: name it, and link it by its identifier below
     g.link(ci, 0, zi, "Geometry")
     zr = g.n("GeometryNodeRealizeInstances", x + 180, y + 400)
     g.link(zi, "Element", zr, "Geometry")
     bb = g.n("GeometryNodeBoundBox", x + 360, y + 400)
     g.link(zr, 0, bb, "Geometry")
-    g.link(bb, "Bounding Box", zo, "Geometry")
+    g.link(bb, "Bounding Box", zo, "Generation_0")
     rz = g.n("GeometryNodeSwitch", x + 720, y + 200, input_type="GEOMETRY")
     g.link(gi, "Avoid Box", rz, "Switch")
     g.link(rz0, 0, rz, "False")
-    g.link(zo, ("Geometry", 1), rz, "True")              # the zone's generated geometry, not its main output
+    g.link(zo, "Generation_0", rz, "True")              # the zone's generated geometry, not its main output
     cnt = g.n("GeometryNodeAttributeDomainSize", x + 360, y + 200, component="MESH")
     g.link(rz, 0, cnt, "Geometry")
     has = g.math("GREATER_THAN", x + 540, y + 200, g.out(cnt, "Face Count"), 0.5)

@@ -1497,6 +1497,7 @@ class HRP_OT_paint_layer(bpy.types.Operator):
             bpy.ops.object.mode_set(mode="VERTEX_PAINT")
         layers.set_preview(ob, True)
         _painting.add(ob.name)
+        _outline_off(context)
         if not apply_brush(context):
             self.report({"WARNING"}, report("Pick the brush colour by hand: this Blender's brush can't be set"))
         return {"FINISHED"}
@@ -1513,6 +1514,7 @@ class HRP_OT_paint_done(bpy.types.Operator):
             bpy.ops.object.mode_set(mode="OBJECT")
         layers.end_previews(context.scene)
         _painting.clear()
+        _outline_back()
         return {"FINISHED"}
 
 
@@ -1538,17 +1540,27 @@ class HRP_OT_paint_fill(bpy.types.Operator):
     def execute(self, context):
         s = context.scene.harappa
         ob = _paint_target(context)
-        mode = context.mode
-        if mode == "PAINT_VERTEX":
-            bpy.ops.object.mode_set(mode="OBJECT")              # data written in Object Mode is undoable
+        m = "PAINT" if s.paint_mode == "SMOOTH" else s.paint_mode
+        if context.mode == "PAINT_VERTEX" and context.active_object == ob:
+            # while painting, Blender's own Fill: it goes onto the paint undo stack, so Ctrl+Z takes it back
+            # (data written from Python in paint mode would not be undoable)
+            layers.ensure(ob.data, s.paint_layer)
+            rgb = layers.fill_colour(s.paint_layer, m, tuple(s.paint_colour), self.clear)
+            vp = context.tool_settings.vertex_paint
+            for holder in (getattr(vp, "unified_paint_settings", None), getattr(vp, "brush", None)):
+                try:
+                    holder.color = rgb
+                except (AttributeError, TypeError):
+                    pass
+            try:
+                bpy.ops.paint.vertex_color_set()
+            finally:
+                apply_brush(context)                            # the brush back to what it paints
+            return {"FINISHED"}
         if self.clear:
             layers.clear(ob, s.paint_layer)
         else:
-            m = "PAINT" if s.paint_mode == "SMOOTH" else s.paint_mode
             layers.fill(ob, s.paint_layer, layers.target(s.paint_layer, m, tuple(s.paint_colour))[0])
-        if mode == "PAINT_VERTEX":
-            bpy.ops.object.mode_set(mode="VERTEX_PAINT")
-            apply_brush(context)
         return {"FINISHED"}
 
 
@@ -1608,6 +1620,32 @@ class HRP_OT_ground_finer(bpy.types.Operator):
 
 
 _painting = set()                      # meadows drawn lighter while they are painted
+_outlines = {}                         # 3D views whose selection outline is hidden while painting: pointer -> old value
+
+
+def _outline_off(context):
+    """Every grass blade of the selected meadow gets Blender's orange selection outline, which turns the whole meadow
+    orange while it is painted. Hide the outline in this view while painting; Done Painting puts it back."""
+    sp = context.space_data
+    if sp is None or sp.type != "VIEW_3D":
+        return
+    if sp.as_pointer() not in _outlines:
+        _outlines[sp.as_pointer()] = sp.overlay.show_outline_selected
+    sp.overlay.show_outline_selected = False
+
+
+def _outline_back():
+    if not _outlines:
+        return
+    try:
+        for win in bpy.context.window_manager.windows:
+            for area in win.screen.areas:
+                for sp in area.spaces:
+                    if sp.type == "VIEW_3D" and sp.as_pointer() in _outlines:
+                        sp.overlay.show_outline_selected = _outlines[sp.as_pointer()]
+    except (AttributeError, ReferenceError):
+        pass
+    _outlines.clear()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1951,6 +1989,7 @@ def _paint_watch():
         return
     names = list(_painting)
     _painting.clear()
+    _outline_back()
     for name in names:
         ob = bpy.data.objects.get(name)
         if ob is not None:
