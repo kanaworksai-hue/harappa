@@ -69,6 +69,8 @@ def compose(ob):
     elif "hrp_own" in ob:
         del ob["hrp_own"]
     ob.update_tag()
+    from . import build
+    build.refresh_custom(ob)                            # a meadow's grass shows its own colour only when it has one
 
 
 def set_user(ob, h=None, s=None, v=None, colour=None, amount=None):

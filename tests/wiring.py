@@ -38,6 +38,8 @@ SETTINGS = ("operation", "blend_type", "data_type", "use_clamp", "clamp", "clamp
             "rotation_space", "axis", "pivot_axis", "target_element", "component", "mode", "samples",
             "extension", "projection", "vector")
 VOLATILE = {"moon dir", "sun dir"}        # nodes whose input values follow the scene (camera, sun)
+# unlinked inputs the recording Blender (5.2) has and older supported versions do not: not a lost value there
+ADDED_LATER = {("GeometryNodeCaptureAttribute", "Selection")}       # 5.2
 NUMERIC = {"VALUE", "INT", "BOOLEAN", "VECTOR", "RGBA", "STRING", "ROTATION"}
 
 
@@ -180,6 +182,9 @@ def compare(update=False):
         diff += [f"{label}: unexpected link {x}" for x in sorted(lb - la)]
         for k, v in sorted(a["values"].items()):            # sockets a newer Blender adds are not in the record
             if k not in b["values"]:
+                m = re.match(r"\d{3}<(\w+)>\.(.+)$", k)
+                if m and (m.group(1), m.group(2)) in ADDED_LATER:
+                    continue
                 diff.append(f"{label}: {k} is gone or linked")
             elif not _same(v, b["values"][k]):
                 diff.append(f"{label}: {k} is {b['values'][k]}, recorded {v}")

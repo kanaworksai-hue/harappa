@@ -17,13 +17,15 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 38
+SHADER_VER = 39
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
 GRADE = "HRP Grade"
+GRADE_OBJ = "HRP Grade Object"
 MAT_GROUND = "HRP Ground"
 MAT_GRASS = "HRP Grass"
+MAT_GRASS_CUSTOM = "HRP Grass Custom"
 MAT_FLOWER = "HRP Flower"
 MAT_LEAVES = "HRP Leaves"
 MAT_BARK = "HRP Bark"
@@ -191,6 +193,7 @@ def _rebuild_stale():
     if _stale["busy"]:
         return
     builders = {MAT_GROUND: ground_material, MAT_GRASS: grass_material, MAT_FLOWER: flower_material,
+                MAT_GRASS_CUSTOM: lambda: grass_material(custom=True),
                 MAT_BARK: bark_material, MAT_FILL: fill_material, MAT_CLOUD: cloud_material,
                 MAT_CLOUD_FILL: cloud_fill_material, MAT_CUMULUS: cumulus_material,
                 MAT_RIDGE: ridge_material}
@@ -411,15 +414,18 @@ def cel_group():
     return ng
 
 
-def _colourise(g, x, y, color_sock, tint_sock, amount_sock, ref_sock=None):
+def _colourise(g, x, y, color_sock, tint_sock, amount_sock, ref_sock=None, lum_sock=None):
     """Mix a colour towards a tint. Without ref_sock at the colour's own brightness (the tint's hue and saturation,
     the cel light and shade of the original stay). With ref_sock (the lit colour of a cel trio) the lit colour turns
-    into the tint itself and the shadow colours keep their brightness ratio to it. amount 0 = unchanged."""
-    bw = g.n("ShaderNodeRGBToBW", x, y + 150)
-    g.links.new(color_sock, bw.inputs["Color"])
+    into the tint itself and the darker tones keep their brightness ratio to it. lum_sock: the colour's luminance
+    when it is already at hand. amount 0 = unchanged."""
+    if lum_sock is None:
+        bw = g.n("ShaderNodeRGBToBW", x, y + 150)
+        g.links.new(color_sock, bw.inputs["Color"])
+        lum_sock = g.out(bw)
     tb = g.n("ShaderNodeRGBToBW", x, y + 50)
     g.links.new(ref_sock if ref_sock is not None else tint_sock, tb.inputs["Color"])
-    k = g.math("DIVIDE", x + 160, y + 100, g.out(bw), g.out(g.math("MAXIMUM", x + 80, y, g.out(tb), 0.03)))
+    k = g.math("DIVIDE", x + 160, y + 100, lum_sock, g.out(g.math("MAXIMUM", x + 80, y, g.out(tb), 0.03)))
     kc = g.n("ShaderNodeCombineColor", x + 300, y + 100)
     for ch in ("Red", "Green", "Blue"):
         g.link(k, 0, kc, ch)
@@ -427,6 +433,24 @@ def _colourise(g, x, y, color_sock, tint_sock, amount_sock, ref_sock=None):
     m = g.mix(x + 600, y, fac=amount_sock, a=color_sock, b=g.mixout(tinted))
     m.clamp_factor = True
     return g.mixout(m)
+
+
+def _hue_rotate(g, x, y, color_sock, turns_sock, scale_sock=None):
+    """Turn a colour around the grey axis (a hue shift without the cost of an HSV round trip; 1 = a full turn),
+    optionally scaling its brightness. Returns a colour socket."""
+    vr = g.n("ShaderNodeVectorRotate", x, y, rotation_type="AXIS_ANGLE")
+    g.links.new(color_sock, g.inp(vr, "Vector"))
+    g.set(vr, "Axis", (0.57735, 0.57735, 0.57735))
+    g.link(g.math("MULTIPLY", x - 160, y - 150, turns_sock, math.tau), 0, vr, "Angle")
+    v = g.out(vr)
+    if scale_sock is not None:
+        v = g.out(g.vmath("SCALE", x + 160, y, v, scale=scale_sock))
+    sep = g.n("ShaderNodeSeparateXYZ", x + 300, y)
+    g.links.new(v, sep.inputs["Vector"])
+    cc = g.n("ShaderNodeCombineColor", x + 440, y)
+    for a, b in (("X", "Red"), ("Y", "Green"), ("Z", "Blue")):
+        g.link(sep, a, cc, b)
+    return g.out(cc)
 
 
 def _attr_amount(g, x, y, attr_node):
@@ -444,9 +468,10 @@ def _attr_amount(g, x, y, attr_node):
     return g.out(g.math("MULTIPLY", x, y, g.out(attr_node, "Alpha"), g.out(there), clamp=True))
 
 
-def _paint_tint(g, pal, x, y, attr_node, cols):
-    """Colours painted on the ground's Colour layer (hrp_tint: colour + alpha amount): the lit tone becomes the painted
-    colour, shadow and deep shadow follow at their usual brightness below it (cols = lit, shadow, deep).
+def _paint_tint(g, pal, x, y, attr_node, color_sock, lit_sock):
+    """A colour painted on the ground's Colour layer (hrp_tint: colour + alpha amount) on the finished cel colour:
+    the lit tone becomes the painted colour, the shadow tones follow at their usual brightness below it (lit_sock is
+    the lit colour of the cel trio).
 
     The layer starts white with alpha 0 and the brush mixes colour and alpha with the same weight, so what is stored
     is the painted colour laid over white: the colour itself is (rgb - (1 - a)) / a. Without this a half-strength
@@ -461,15 +486,18 @@ def _paint_tint(g, pal, x, y, attr_node, cols):
     num = g.mix(x, y + 350, "ADD", fac=1.0, a=g.out(attr_node, "Color"), b=g.out(offc))
     col = g.mix(x + 120, y + 300, "DIVIDE", fac=1.0, a=g.mixout(num), b=g.out(ac), clamp=True)
     amt = g.math("MULTIPLY", x, y, _attr_amount(g, x - 100, y + 150, attr_node), g.out(pal, "tint_amount"), clamp=True)
-    return [_colourise(g, x + 200, y - 300 * i, c, g.mixout(col), g.out(amt), ref_sock=cols[0])
-            for i, c in enumerate(cols)]
+    return _colourise(g, x + 200, y, color_sock, g.mixout(col), g.out(amt), ref_sock=lit_sock)
 
 
-def grade_group():
+def grade_group(per_object=False):
     """One grade for every Harappa material: colour strength and contrast, read from the palette. It sits in
     the materials (not in the compositor), so the viewport shows what the render shows and the user's own
-    compositing is left alone. At 1.0 / 1.0 it changes nothing."""
-    ng, rebuilt = fresh_group(GRADE, "ShaderNodeTree", SHADER_VER)
+    compositing is left alone. At 1.0 / 1.0 it changes nothing.
+
+    per_object: HRP Grade Object also applies this object's own colour (look.py): hue / saturation / brightness in
+    hrp_look and an own colour in hrp_own. Missing on an object = no change. Materials drawn on very many instances
+    (grass, flowers) use the plain grade: every object attribute a material reads costs EEVEE time per instance."""
+    ng, rebuilt = fresh_group(GRADE_OBJ if per_object else GRADE, "ShaderNodeTree", SHADER_VER)
     if not rebuilt:
         return ng
     g = G(ng)
@@ -479,26 +507,28 @@ def grade_group():
     go = g.n("NodeGroupOutput", 900, 0)
     pal = g.n("ShaderNodeGroup", -900, -300)
     pal.node_tree = palette_group()
-    # this object's own colour (look.py): hue / saturation / brightness offsets in hrp_look, an own colour with its
-    # amount in hrp_own. Missing on an object = 0 = no change. Two object attributes for all of it (5.0 / 5.1 allow
-    # 8 object + instancer attributes per material).
-    look = g.n("ShaderNodeAttribute", -1500, 300, label="hrp_look", attribute_name="hrp_look", attribute_type="OBJECT")
-    lsep = g.n("ShaderNodeSeparateXYZ", -1350, 300)
-    g.link(look, "Vector", lsep, "Vector")
-    hs = g.n("ShaderNodeHueSaturation", -1150, 200)
-    g.link(g.math("ADD", -1250, 400, g.out(lsep, "X"), 0.5), 0, hs, "Hue")
-    g.link(g.math("ADD", -1250, 300, g.out(lsep, "Y"), 1.0), 0, hs, "Saturation")
-    g.link(g.math("ADD", -1250, 200, g.out(lsep, "Z"), 1.0), 0, hs, "Value")
-    g.link(gi, "Color", hs, "Color")
-    own = g.n("ShaderNodeAttribute", -1500, -100, label="hrp_own", attribute_name="hrp_own", attribute_type="OBJECT")
-    col0 = _colourise(g, -1000, 0, g.out(hs, "Color"), g.out(own, "Color"), _attr_amount(g, -1200, -250, own))
+    col0 = g.out(gi, "Color")
     bw = g.n("ShaderNodeRGBToBW", -700, 150)
-    g.links.new(col0, bw.inputs["Color"])
+    lsep = None
+    if per_object:
+        look = g.n("ShaderNodeAttribute", -1500, 300, label="hrp_look", attribute_name="hrp_look",
+                   attribute_type="OBJECT")
+        lsep = g.n("ShaderNodeSeparateXYZ", -1350, 300)
+        g.link(look, "Vector", lsep, "Vector")
+        col1 = _hue_rotate(g, -1300, 150, col0, g.out(lsep, "X"), g.out(g.math("ADD", -1400, 0, g.out(lsep, "Z"), 1.0)))
+        g.links.new(col1, bw.inputs["Color"])
+        own = g.n("ShaderNodeAttribute", -1500, -100, label="hrp_own", attribute_name="hrp_own", attribute_type="OBJECT")
+        # the own colour keeps the luminance, so the grey below stays the same
+        col0 = _colourise(g, -1000, 0, col1, g.out(own, "Color"), _attr_amount(g, -1200, -250, own), lum_sock=g.out(bw))
+    else:
+        g.link(gi, "Color", bw, "Color")
     grey = g.n("ShaderNodeCombineColor", -620, 0)
     for ch in ("Red", "Green", "Blue"):
         g.links.new(g.out(bw), grey.inputs[ch])
     amount = g.math("MULTIPLY", -700, -150, g.out(pal, "grade_sat"), g.out(pal, "style_sat"))
     amount = g.math("MULTIPLY", -600, -150, g.out(amount), g.out(pal, "season_sat"))
+    if lsep is not None:
+        amount = g.math("MULTIPLY", -550, -200, g.out(amount), g.out(g.math("ADD", -650, -250, g.out(lsep, "Y"), 1.0)))
     power = g.math("MULTIPLY", -100, -500, g.out(pal, "grade_contrast"), g.out(pal, "style_contrast"))
     power = g.math("MULTIPLY", 0, -500, g.out(power), g.out(pal, "season_contrast"))
     sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(amount), a=g.out(grey), b=col0)
@@ -555,11 +585,12 @@ def _haze(g, pal, x, y, color_sock, amount=1.0, cap=0.92):
     return g.mixout(m)
 
 
-def _emit_out(g, color_sock, x, y, alpha=None, shadow_off=False, pal=None, haze=1.0, haze_cap=0.92):
-    """Emission of the cel colour (+ haze); optional alpha cut-out; optional 'no cast shadow'."""
+def _emit_out(g, color_sock, x, y, alpha=None, shadow_off=False, pal=None, haze=1.0, haze_cap=0.92, per_object=True):
+    """Emission of the cel colour (+ haze); optional alpha cut-out; optional 'no cast shadow'. per_object: the
+    grade with this object's own colour (see grade_group)."""
     if pal is not None:
         gr = g.n("ShaderNodeGroup", x - 760, y + 120, label="grade")
-        gr.node_tree = grade_group()
+        gr.node_tree = grade_group(per_object)
         g.links.new(color_sock, gr.inputs["Color"])
         color_sock = g.out(gr, "Color")
     if pal is not None and (isinstance(haze, bpy.types.NodeSocket) or haze > 0):
@@ -697,9 +728,7 @@ def ground_material():
     for c in ("Red", "Green", "Blue"):
         g.links.new(g.mixout(npm), npc.inputs[c])
     lit_p = g.mix(-150, -500, "MULTIPLY", fac=1.0, a=g.mixout(lit_s), b=g.out(npc))
-    tint = _attr(g, "hrp_tint", "GEOMETRY", -500, -900)
-    lit_t, sh, dp_t = _paint_tint(g, pal, -350, -900, tint, (g.mixout(lit_p), sh, g.mixout(dp2)))
-    cel = _cel_node(g, pal, 0, 200, g.mixout(nmix), lit_t, sh, dp_t)
+    cel = _cel_node(g, pal, 0, 200, g.mixout(nmix), g.mixout(lit_p), sh, g.mixout(dp2))
     sft0 = g.math("MULTIPLY_ADD", -150, 0, g.out(far, "Result"), 0.12, g.out(pal, "softness"))
     sft = g.math("MULTIPLY_ADD", -150, -150, g.out(g.math("MINIMUM", -300, -150, g.out(boost0, "Fac"), 1.0)),
                  0.25, g.out(g.math("ADD", -300, -250, g.out(sft0), 0.04)))
@@ -730,13 +759,18 @@ def ground_material():
     camt = g.math("MULTIPLY", 900, 1400, g.out(cmask, "Result"), g.out(cfar, "Result"))
     camt = g.math("MULTIPLY", 1050, 1400, g.out(camt), g.out(pal, "cloud_shade"), clamp=True)
     cv = g.mix(1100, 300, fac=g.out(camt), a=g.mixout(cv), b=sh)
-    _emit_out(g, g.mixout(cv), 1300, 200, pal=pal, haze=g.out(hz))
+    tint = _attr(g, "hrp_tint", "GEOMETRY", 900, -400)
+    cvt = _paint_tint(g, pal, 1100, -400, tint, g.mixout(cv), g.mixout(lit_p))
+    _emit_out(g, cvt, 1300, 200, pal=pal, haze=g.out(hz))
     _done(mat, "ground")
     return mat
 
 
-def grass_material():
-    mat, rebuilt = _fresh_mat(MAT_GRASS)
+def grass_material(custom=False):
+    """HRP Grass, or HRP Grass Custom for a meadow with a painted Colour layer or its own colour: the custom one
+    reads two more object attributes and one more instance attribute, which costs render time on every blade, so a
+    meadow only switches to it when it uses them (build.refresh_custom)."""
+    mat, rebuilt = _fresh_mat(MAT_GRASS_CUSTOM if custom else MAT_GRASS)
     if not rebuilt:
         return mat
     mat.use_backface_culling = False
@@ -787,9 +821,7 @@ def grass_material():
     off = g.math("MULTIPLY", 330, 850, g.out(off1), g.out(near_f))
     nrm = g.mix(-150, 550, "MIX", "VECTOR", fac=g.out(far_f), a=g.out(cl, "Normal"), b=g.out(gn, "Vector"))
     lit4 = g.mix(180, 1150, fac=g.out(far_f), a=g.mixout(lit3), b=lit0)
-    tint = _attr(g, "hrp_tint", "INSTANCER", -100, -300)
-    lit5, sh, dp = _paint_tint(g, pal, 0, -300, tint, (g.mixout(lit4), sh, dp))
-    cel = _cel_node(g, pal, 250, 300, g.mixout(nrm), lit5, sh, dp, offset=g.out(off))
+    cel = _cel_node(g, pal, 250, 300, g.mixout(nrm), g.mixout(lit4), sh, dp, offset=g.out(off))
     cdat = g.n("ShaderNodeCameraData", -900, 2200)
     far = g.maprange(-750, 2200, g.out(cdat, "View Distance"), 40.0, 150.0)
     sft0 = g.math("MULTIPLY_ADD", -600, 2200, g.out(far, "Result"), 0.12, 0.29)     # as in the ground material
@@ -797,10 +829,14 @@ def grass_material():
     g.link(sft, 0, cel, "Softness")
     hz = g.math("ADD", 330, 600, g.out(boost, "Fac"), 1.0)
     hcap = g.math("MULTIPLY_ADD", 330, 450, g.out(far_f), -0.08, 1.0)     # 0.92 on the far hills like their ground
+    celt = g.out(cel, "Color")
+    if custom:
+        tint = _attr(g, "hrp_tint", "INSTANCER", 300, -300)
+        celt = _paint_tint(g, pal, 500, -300, tint, celt, g.mixout(lit4))
     hue = g.n("ShaderNodeHueSaturation", 450, 300)
     g.link(g.maprange(300, 450, g.out(wn, "Value"), 0.0, 1.0, 0.485, 0.515), "Result", hue, "Hue")
-    g.link(cel, "Color", hue, "Color")
-    _emit_out(g, g.out(hue, "Color"), 1150, 300, pal=pal, haze=g.out(hz), haze_cap=g.out(hcap))
+    g.links.new(celt, hue.inputs["Color"])
+    _emit_out(g, g.out(hue, "Color"), 1150, 300, pal=pal, haze=g.out(hz), haze_cap=g.out(hcap), per_object=custom)
     _done(mat, "grass")
     return mat
 
@@ -862,7 +898,7 @@ def flower_material():
     for c in ("Red", "Green", "Blue"):
         g.link(pal, "flower_dim", dim, c)
     dm = g.mix(1000, 400, "MULTIPLY", fac=1.0, a=g.out(cel, "Color"), b=g.out(dim))
-    _emit_out(g, g.mixout(dm), 1650, 300, alpha=g.out(tex, "Alpha"), shadow_off=True, pal=pal)
+    _emit_out(g, g.mixout(dm), 1650, 300, alpha=g.out(tex, "Alpha"), shadow_off=True, pal=pal, per_object=False)
     _done(mat, "flower")
     return mat
 
@@ -1303,6 +1339,6 @@ def cloud_fill_material():
 
 
 def all_materials():
-    return [ground_material(), grass_material(), flower_material(), bark_material(), fill_material(),
+    return [ground_material(), grass_material(), grass_material(custom=True), flower_material(), bark_material(), fill_material(),
             cloud_material(), cloud_fill_material(), cumulus_material(), ridge_material()] + \
         [leaves_material(st) for st in LEAF_STYLES]

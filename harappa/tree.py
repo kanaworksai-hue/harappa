@@ -334,8 +334,23 @@ def card_object(scene, kind, style="ROUND"):
     return asset_object(scene, "HRP Flower Card", me2, shading.flower_material())
 
 
-def tuft_object(scene):
-    return asset_object(scene, "HRP Grass Tuft", assets.grass_tuft(), shading.grass_material())
+def tuft_object(scene, custom=False):
+    """The grass tuft the meadows instance; custom: the same blades with the custom grass material (a meadow with a
+    painted Colour layer or its own colour, see build.refresh_custom)."""
+    me = assets.grass_tuft()
+    if not custom:
+        return asset_object(scene, "HRP Grass Tuft", me, shading.grass_material())
+    nm = "HRP Grass Tuft Custom"
+    me2 = bpy.data.meshes.get(nm)
+    if me2 is None or me2.get("hrp_src") != me.get("hrp_ver"):         # a copy of the current blades
+        old = me2
+        me2 = me.copy()
+        me2["hrp_src"] = me.get("hrp_ver")
+        if old is not None:
+            old.user_remap(me2)
+            bpy.data.meshes.remove(old)
+        me2.name = nm
+    return asset_object(scene, nm, me2, shading.grass_material(custom=True))
 
 
 def add_tree(context, shape="ROUND", height=5.0, seed=0, location=(0, 0, 0), leaf_style=None, blossom=None):

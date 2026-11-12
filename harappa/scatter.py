@@ -18,7 +18,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 30
+GN_VER = 31
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -202,11 +202,14 @@ def _avoid_inputs(ng):
 
 
 def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
-    """Delete points under / against the 'Avoid' objects and return (points, factor field 0..1).
+    """Delete points under / against the 'Avoid' objects and return (points, factor field 0..1, target, has, lean,
+    cone).
 
     Under = a ray straight up from the root hits the object (so nothing grows inside or below it). Next to it, the
     distance to the object's surface scales the blade: short right against it, full height past the margin.
-    With an empty collection nothing changes (factor 1)."""
+    Only the points inside the objects' bounding box (grown by the margin, the blade reach and the reach above)
+    are tested: they are separated, worked out, and their results sampled back by index and captured before any
+    point is deleted. With an empty collection none of it runs (factor 1)."""
     ci = g.n("GeometryNodeCollectionInfo", x, y, transform_space="RELATIVE")
     g.link(gi, "Avoid", ci, "Collection")
     g.set(ci, "Separate Children", True)                 # one instance per object: one box per object
@@ -233,6 +236,41 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     cnt = g.n("GeometryNodeAttributeDomainSize", x + 360, y + 200, component="MESH")
     g.link(rz, 0, cnt, "Geometry")
     has = g.math("GREATER_THAN", x + 540, y + 200, g.out(cnt, "Face Count"), 0.5)
+
+    # which points can be touched at all: inside the objects' box, grown sideways by the margin / blade reach and
+    # downwards by the reach above
+    box = g.n("GeometryNodeBoundBox", x + 900, y + 600)
+    g.link(rz, 0, box, "Geometry")
+    pad = g.math("ADD", x + 900, y + 800, g.out(g.math("MAXIMUM", x + 800, y + 800, g.out(gi, "Avoid Margin"), reach)),
+                 0.05)
+    padv = g.n("ShaderNodeCombineXYZ", x + 1050, y + 800)
+    g.link(pad, 0, padv, "X")
+    g.link(pad, 0, padv, "Y")
+    g.link(g.math("ADD", x + 950, y + 900, g.out(gi, "Avoid Reach"), g.out(pad)), 0, padv, "Z")
+    lo = g.vmath("SUBTRACT", x + 1200, y + 700, g.out(box, "Min"), g.out(padv))
+    padu = g.n("ShaderNodeCombineXYZ", x + 1050, y + 950)
+    g.link(pad, 0, padu, "X")
+    g.link(pad, 0, padu, "Y")
+    g.link(pad, 0, padu, "Z")
+    hi = g.vmath("ADD", x + 1200, y + 850, g.out(box, "Max"), g.out(padu))
+    pos = g.n("GeometryNodeInputPosition", x + 1200, y + 1000)
+    above = g.vmath("SUBTRACT", x + 1350, y + 750, g.out(pos), g.out(lo))
+    below = g.vmath("SUBTRACT", x + 1350, y + 900, g.out(hi), g.out(pos))
+    mn = g.vmath("MINIMUM", x + 1500, y + 800, g.out(above), g.out(below))
+    ms = g.n("ShaderNodeSeparateXYZ", x + 1650, y + 800)
+    g.link(mn, 0, ms, "Vector")
+    m1 = g.math("MINIMUM", x + 1800, y + 800, g.out(ms, "X"), g.out(ms, "Y"))
+    m2 = g.math("MINIMUM", x + 1950, y + 800, g.out(m1), g.out(ms, "Z"))
+    near_sel = g.math("GREATER_THAN", x + 2100, y + 800, g.out(m2), 0.0)
+    acc = g.n("GeometryNodeAccumulateField", x + 2100, y + 650, data_type="INT", domain="POINT")
+    g.link(near_sel, 0, acc, "Value")
+    sub_i = g.math("SUBTRACT", x + 2250, y + 650, g.out(acc, "Leading"), 1.0)
+    sep = g.n("GeometryNodeSeparateGeometry", x + 2100, y + 450, domain="POINT")
+    g.links.new(pts, sep.inputs["Geometry"])
+    g.link(near_sel, 0, sep, "Selection")
+    sub = g.out(sep, "Selection")
+
+    # the work, done on the near points only (fields below are evaluated on 'sub' through Sample Index)
     rc = g.n("GeometryNodeRaycast", x + 360, y - 100)
     g.link(rz, 0, rc, "Target Geometry")
     rc.inputs["Ray Direction"].default_value = (0.0, 0.0, 1.0)
@@ -245,26 +283,20 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     rcd.inputs["Ray Direction"].default_value = (0.0, 0.0, -1.0)
     rcd.inputs["Ray Length"].default_value = 0.15
     under_any = g.math("MAXIMUM", x + 700, y - 200, g.out(rc, "Is Hit"), g.out(rcd, "Is Hit"))
-    kill = g.math("MULTIPLY", x + 860, y - 200, g.out(under_any), g.out(has))
-    dl = g.n("GeometryNodeDeleteGeometry", x + 1000, y, domain="POINT")
-    g.links.new(pts, dl.inputs["Geometry"])
-    g.link(kill, 0, dl, "Selection")
     # continuous: zero height right at the surface, full height past the margin (no popping as things move)
     near = g.maprange(x + 700, y - 500, g.out(px, "Distance"), keep_gap * 0.25, g.out(gi, "Avoid Margin"), 1.0, 0.0,
                       smooth=True)                              # 1 at the surface .. 0 past the margin
-    nearh = g.math("MULTIPLY", x + 860, y - 450, g.out(near, "Result"), g.out(has))
     drop = g.math("SUBTRACT", x + 860, y - 550, 1.0, g.out(gi, "Avoid Floor"))
-    cut = g.math("MULTIPLY", x + 1000, y - 500, g.out(nearh), g.out(drop))
+    cut = g.math("MULTIPLY", x + 1000, y - 500, g.out(near, "Result"), g.out(drop))
     f = g.math("SUBTRACT", x + 1140, y - 500, 1.0, g.out(cut))    # never below the floor (no mown ring)
-    nohas_s = g.math("SUBTRACT", x + 700, y - 1150, 1.0, g.out(has))
     # lean away from the object: axis = up x (root - nearest point), angle up to 25 degrees right against it
-    pos = g.n("GeometryNodeInputPosition", x + 360, y - 700)
-    away = g.vmath("SUBTRACT", x + 540, y - 750, g.out(pos), g.out(px, "Position"))
+    ppos = g.n("GeometryNodeInputPosition", x + 360, y - 700)
+    away = g.vmath("SUBTRACT", x + 540, y - 750, g.out(ppos), g.out(px, "Position"))
     up = g.n("FunctionNodeInputVector", x + 540, y - 900)
     up.vector = (0.0, 0.0, 1.0)
     ax = g.vmath("CROSS_PRODUCT", x + 700, y - 800, g.out(up), g.out(away))
     axn = g.vmath("NORMALIZE", x + 860, y - 800, g.out(ax))
-    ang = g.math("MULTIPLY", x + 1000, y - 700, g.out(nearh), math.radians(25))
+    ang = g.math("MULTIPLY", x + 1000, y - 700, g.out(near, "Result"), math.radians(25))
     lean = g.n("FunctionNodeAxisAngleToRotation", x + 1140, y - 750)
     g.link(axn, 0, lean, "Axis")
     g.link(ang, 0, lean, "Angle")
@@ -272,9 +304,61 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     # reach it whatever the tilt; at the object's edge the height goes to 0. Continuous everywhere, so blades never
     # pop when an object moves (a breathing character) - the upward-ray kill only happens where this is ~0 already.
     cone = g.math("MULTIPLY", x + 700, y - 1000, g.out(px, "Distance"), 1.5)
-    cone_any = g.math("MAXIMUM", x + 860, y - 1000, g.out(cone), g.out(g.math("MULTIPLY", x + 760, y - 1100, g.out(nohas_s),
-                                                                              1e6)))
-    return g.out(dl), g.out(f), g.out(rz), g.out(has), g.out(lean), g.out(cone_any)
+
+    def back(sock, kind, xx, yy):
+        """The value a near point got in 'sub', for every point (by its index among the near points)."""
+        si = g.n("GeometryNodeSampleIndex", xx, yy, data_type=kind, domain="POINT")
+        g.links.new(sub, si.inputs["Geometry"])
+        g.links.new(sock, si.inputs["Value"])
+        g.link(sub_i, 0, si, "Index")
+        return g.out(si)
+
+    kill_n = back(g.out(under_any), "FLOAT", x + 1400, y - 200)
+    f_n = back(g.out(f), "FLOAT", x + 1400, y - 500)
+    lean_n = back(g.out(lean), "QUATERNION", x + 1400, y - 750)
+    cone_n = back(g.out(cone), "FLOAT", x + 1400, y - 1000)
+    f_s = g.n("GeometryNodeSwitch", x + 1600, y - 500, input_type="FLOAT")
+    g.link(near_sel, 0, f_s, "Switch")
+    f_s.inputs["False"].default_value = 1.0
+    g.links.new(f_n, f_s.inputs["True"])
+    cone_s = g.n("GeometryNodeSwitch", x + 1600, y - 1000, input_type="FLOAT")
+    g.link(near_sel, 0, cone_s, "Switch")
+    cone_s.inputs["False"].default_value = 1e6
+    g.links.new(cone_n, cone_s.inputs["True"])
+    lean_s = g.n("GeometryNodeSwitch", x + 1600, y - 750, input_type="ROTATION")
+    g.link(near_sel, 0, lean_s, "Switch")
+    g.links.new(lean_n, lean_s.inputs["True"])
+    # capture on all points before any is deleted (the indices above are those of this geometry)
+    cap = g.n("GeometryNodeCaptureAttribute", x + 1800, y, domain="POINT")
+    for kind, name in (("FLOAT", "Factor"), ("ROTATION", "Lean"), ("FLOAT", "Cone")):
+        it = cap.capture_items.new(kind, name)
+        it.name = name
+    g.links.new(pts, cap.inputs["Geometry"])
+    g.link(f_s, 0, cap, "Value")
+    g.link(lean_s, 0, cap, "Value_1")
+    g.link(cone_s, 0, cap, "Value_2")
+    kill = g.math("MULTIPLY", x + 1800, y - 200, g.out(near_sel), kill_n)
+    dl = g.n("GeometryNodeDeleteGeometry", x + 2000, y, domain="POINT")
+    g.link(cap, "Geometry", dl, "Geometry")
+    g.link(kill, 0, dl, "Selection")
+    # nothing to avoid: the points as they are, and the neutral values (the switch skips all of the above)
+    sw = g.n("GeometryNodeSwitch", x + 2200, y, input_type="GEOMETRY")
+    g.link(has, 0, sw, "Switch")
+    g.links.new(pts, sw.inputs["False"])
+    g.link(dl, 0, sw, "True")
+
+    def pick(sock, kind, default, xx, yy):
+        s_ = g.n("GeometryNodeSwitch", xx, yy, input_type=kind)
+        g.link(has, 0, s_, "Switch")
+        if default is not None:
+            s_.inputs["False"].default_value = default
+        g.links.new(sock, s_.inputs["True"])
+        return g.out(s_)
+
+    f_out = pick(g.out(cap, "Attribute"), "FLOAT", 1.0, x + 2200, y - 500)
+    lean_out = pick(g.out(cap, "Attribute_1"), "ROTATION", None, x + 2200, y - 750)
+    cone_out = pick(g.out(cap, "Attribute_2"), "FLOAT", 1e6, x + 2200, y - 1000)
+    return g.out(sw), f_out, g.out(rz), g.out(has), lean_out, cone_out
 
 
 # ----------------------------------------------------------------------------------------------

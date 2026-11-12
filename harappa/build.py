@@ -24,6 +24,27 @@ def ensure_mask(me, name=scatter.MASK_ATTR, value=1.0):
     return attr
 
 
+def is_custom(ob):
+    """Does this meadow need the custom grass material (painted colour, or its own colour)?"""
+    from . import scatter
+    return bool(ob.type == "MESH" and (ob.data.color_attributes.get(scatter.TINT_ATTR) is not None
+                                       or "hrp_look" in ob or "hrp_own" in ob))
+
+
+def refresh_custom(ob):
+    """Point the meadow's grass at the plain or the custom tuft, whichever it needs now."""
+    mod = ob.modifiers.get(GRASS_MOD) if ob.type == "MESH" else None
+    if mod is None or mod.node_group is None:
+        return
+    want = tree.tuft_object(bpy.context.scene, custom=is_custom(ob))
+    try:
+        if mod_input(mod, "Tuft") != want:
+            mod_input(mod, "Tuft", want)
+            ob.update_tag()
+    except KeyError:
+        pass
+
+
 def ground_area(ob):
     me = ob.data
     s = ob.matrix_world.to_scale()
@@ -45,7 +66,7 @@ def make_meadow(context, ob, density=40.0, height=0.35, flowers=True, max_tufts=
             me.materials[i] = gm
     area = max(ground_area(ob), 1e-4)
     dens = min(density, max_tufts / area)
-    tuft = tree.tuft_object(scene)
+    tuft = tree.tuft_object(scene, custom=is_custom(ob))
     mod = ob.modifiers.get(GRASS_MOD)
     if mod is None:
         mod = ob.modifiers.new(GRASS_MOD, "NODES")

@@ -39,6 +39,11 @@ def ensure(me, layer):
     if at is None:
         at = me.color_attributes.new(name, "FLOAT_COLOR", "POINT")
         at.data.foreach_set("color", list(start) * len(me.vertices))
+        if layer == "COLOUR":                           # the meadow's grass needs the material that shows it
+            from . import build
+            for ob in bpy.data.objects:
+                if ob.data == me:
+                    build.refresh_custom(ob)
     return at
 
 
