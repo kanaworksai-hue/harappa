@@ -242,7 +242,7 @@ def build_meshes(shape="ROUND", height=5.0, seed=0, name="Anime Tree"):
     trunk_r = []
     for i, p in enumerate(trunk):
         t = i / (len(trunk) - 1)
-        flare = 1.0 + 0.7 * max(0.0, 1 - t * 6) ** 2
+        flare = 1.0 + 0.55 * max(0.0, 1 - t * 4) ** 2          # a gentle root flare, no waist above it
         trunk_r.append(r0 * (1.0 - (0.9 if sp.get("conifer") else 0.45) * t) * flare)    # a conifer's leader thins out
     _tube(bm, trunk, trunk_r, sides=9)
     # branches from the upper trunk into each clump

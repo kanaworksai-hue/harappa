@@ -49,7 +49,8 @@ UI = {
     "Season": ("季節", "季节", "계절"),
     "Colours, sunlight and sky": ("色・日差し・空", "颜色、阳光与天空", "색, 햇빛, 하늘"),
     "Paint Style": ("画風", "画风", "화풍"),
-    "How the light and shadow are painted": ("光と影の描き方", "光影的画法", "빛과 그림자를 그리는 방식"),
+    "How light and shadow are painted, how big the leaf dabs are and how blocky the clouds are": (
+        "光と影の描き方、葉のタッチの大きさ、雲の粗さ", "光影的画法、树叶笔触的大小和云的粗细", "빛과 그림자를 그리는 방식, 잎 터치 크기, 구름의 거칠기"),
     "Variation": ("バリエーション", "变体", "변형"),
     "Re-rolls colours, clumps, flowers, sun angle, each tree's tint, the mountain shapes and the clouds Make Clouds "
     "placed, around the current season and style. 0 = off": (
@@ -374,9 +375,10 @@ OPS = {
                                                          "花朵笔触比例（-1 = 使用面板数值）",
                                                          "꽃 터치 비율 (-1 = 패널 값 사용)"),
     "Plant Trees": ("木を植える", "种树", "나무 심기"),
-    "Scatter anime trees over the active meadow, keeping off painted paths":
-        ("選択中の草原にアニメの木を散らして植えます（塗った道は避けます）", "在当前草地上散布动画树（避开画出的小路）",
-         "선택한 초원에 애니 나무를 흩어 심습니다 (칠한 길은 피합니다)"),
+    "Scatter anime trees over the active meadow, keeping off painted paths. Clouds that the new trees would cover step aside":
+        ("選択中の草原にアニメの木を散らして植えます（塗った道は避けます）。新しい木に隠れる雲は少しよけます",
+         "在当前草地上散布动画树（避开画出的小路）。会被新树挡住的云会让开",
+         "선택한 초원에 애니 나무를 흩어 심습니다 (칠한 길은 피합니다). 새 나무에 가려질 구름은 비켜 갑니다"),
     "How many trees to add": ("追加する本数", "添加的数量", "추가할 수"),
     "Placement seed": ("配置のシード", "摆放种子", "배치 시드"),
     "Average tree height": ("木の平均の高さ", "平均树高", "평균 나무 높이"),

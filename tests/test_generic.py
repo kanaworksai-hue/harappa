@@ -637,10 +637,37 @@ sc.harappa.style = "CRISP"
 check(mod_input(_fm, "Leaf Size") > _ls0 * 1.3 and mod_input(_fm, "Density") < _de0
       and mod_input(hero.modifiers[cumulus.MOD], "Quality") < _cq0 * 0.8, "Crisp Cel paints bigger leaf dabs and chunkier clouds")
 sc.harappa.style = "PAINTERLY"
-check(mod_input(_fm, "Leaf Size") < _ls0 * 0.8 and shading.palette_get("leaf_break") > 0.5, "Painterly paints small, broken leaf dabs")
+check(mod_input(_fm, "Leaf Size") < _ls0 * 0.9 and shading.palette_get("leaf_break") > 0.5, "Painterly paints small, broken leaf dabs")
+_ev = next((o for o in sc.objects if o.get("hrp_canopy") and o.get("hrp_evergreen")), None)
+check(_ev is None or abs(mod_input(_ev.modifiers["Harappa Foliage"], "Leaf Size")
+                         - _ev["hrp_leaf_base"][0]) < 1e-5, "evergreens keep their solid needle pads under Painterly")
 sc.harappa.style = "ANIME"
 check(abs(mod_input(_fm, "Leaf Size") - _ls0) < 1e-5 and abs(mod_input(_fm, "Density") - _de0) < 1e-3
       and abs(mod_input(hero.modifiers[cumulus.MOD], "Quality") - _cq0) < 1e-5, "and back to Anime gives the same values back")
+# Make Foliage again under Crisp Cel: fresh values, and switching back is still lossless
+bpy.ops.mesh.primitive_ico_sphere_add(radius=2.0, location=(0, 40, 8))
+_fo = bpy.context.active_object
+sc.harappa.style = "CRISP"
+bpy.ops.harappa.make_foliage()
+bpy.ops.harappa.make_foliage()
+_fs = mod_input(_fo.modifiers["Harappa Foliage"], "Leaf Size")
+sc.harappa.style = "ANIME"
+check(abs(mod_input(_fo.modifiers["Harappa Foliage"], "Leaf Size") * 1.45 - _fs) < 1e-4,
+      "Make Foliage run twice under Crisp Cel keeps the style's base")
+bpy.data.objects.remove(_fo)
+# planting more trees moves only the clouds the new crowns would cover
+_before = {o.name: o.location.copy() for o in sc.objects if o.get("hrp_cloud_auto")}
+bpy.context.view_layer.objects.active = ground
+bpy.ops.harappa.plant_trees(count=3, seed=11)
+from harappa import clouds as hclouds  # noqa: E402
+bpy.context.view_layer.update()
+_boxes = hclouds._tree_boxes(sc, cam)
+_stay = [n for n, loc in _before.items() if n in sc.objects and (sc.objects[n].location - loc).length < 1e-4]
+_free = [o for o in sc.objects if o.get("hrp_cloud_auto")
+         and not hclouds._overlaps(sc, cam, o.location + __import__("mathutils").Vector((0, 0, o.scale.x * 0.2)),
+                                   o.scale.x * 0.62, _boxes)]
+check(len(_stay) >= len(_before) - 3 and len(_free) >= len(_before) - 1,
+      f"planting moves only the clouds the new trees cover ({len(_stay)} of {len(_before)} stayed)")
 # the clouds' painter's light knows where the camera looks even under the user's own world
 _w = sc.world
 sc.world = bpy.data.worlds.new("User World")

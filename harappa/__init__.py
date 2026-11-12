@@ -237,12 +237,14 @@ def _season_blossom(sc, amount):
 
 def _style_leaves(sc, obs=None):
     """The paint style also sets the size of the leaf dabs (Crisp: big blocks, Painterly: small broken dabs), with
-    the density turned the other way so a crown stays as full. Each crown keeps its own base values, so a style
+    the density turned the other way (by area) so a crown stays as full. Each crown keeps its own base values, so a style
     change is lossless and a value the user typed is taken as the new base."""
-    m = float(presets.STYLES[sc.harappa.style]["keys"].get("leaf_scale", 1.0))
+    m0 = float(presets.STYLES[sc.harappa.style]["keys"].get("leaf_scale", 1.0))
     for ob in (obs if obs is not None else sc.objects):
         if not ob.get("hrp_canopy") or ob.get("hrp_clouds"):
             continue
+        # needle pads stay solid: an evergreen only takes the bigger dabs, never smaller ones
+        m = max(m0, 1.0) if ob.get("hrp_evergreen") else m0
         mod = ob.modifiers.get("Harappa Foliage")
         if mod is None or mod.node_group is None:
             continue
@@ -253,12 +255,12 @@ def _style_leaves(sc, obs=None):
         prev = float(ob.get("hrp_leaf_mult", 1.0))
         base = ob.get("hrp_leaf_base")
         if base is None or abs(cs - base[0] * prev) > 1e-5 * max(1.0, cs) \
-                or abs(cd - base[1] / prev ** 1.4) > 1e-4 * max(1.0, cd):
-            base = (cs / prev, cd * prev ** 1.4)               # new, rebuilt or edited by hand
+                or abs(cd - base[1] / prev ** 2) > 1e-4 * max(1.0, cd):
+            base = (cs / prev, cd * prev ** 2)                 # new, rebuilt or edited by hand
         ob["hrp_leaf_base"] = list(base)
         ob["hrp_leaf_mult"] = m
         mod_input(mod, "Leaf Size", base[0] * m)
-        mod_input(mod, "Density", base[1] / m ** 1.4)
+        mod_input(mod, "Density", base[1] / m ** 2)            # by area: a crown stays as full
         ob.update_tag()
 
 
@@ -488,7 +490,8 @@ def _settings_annotations():
         "season": bpy.props.EnumProperty(name="Season", items=_enum_items(presets.SEASONS), default="SUMMER",
                                          description="Colours, sunlight and sky", update=apply_season),
         "style": bpy.props.EnumProperty(name="Paint Style", items=_enum_items(presets.STYLES), default="ANIME",
-                                        description="How the light and shadow are painted", update=apply_style),
+                                        description="How light and shadow are painted, how big the leaf dabs are and "
+                                                    "how blocky the clouds are", update=apply_style),
         "variation": bpy.props.IntProperty(
             name="Variation", default=0, min=0, max=99999, update=apply_variation,
             description="Re-rolls colours, clumps, flowers, sun angle, each tree's tint, the mountain shapes and "
@@ -749,13 +752,9 @@ class HRP_OT_add_tree(bpy.types.Operator):
 
 
 def _refit_clouds(sc):
-    """Trees were planted after the clouds were laid out: lay the layout's own clouds out again (same seed) so they
-    keep clear of the new crowns. Clouds the user moved or shaped stay."""
-    lay = sc.get("hrp_cloud_layout")
-    if lay is None or not any(cumulus.is_auto(o) for o in cumulus.clouds_of(sc)):
-        return
-    cnt, cseed, dist_ = list(lay)
-    cumulus.layout(bpy.context, int(cnt), int(cseed), float(dist_))
+    """Trees were planted after the clouds were laid out: the layout's own clouds that a new crown would cover step
+    aside. The others, and clouds the user moved or shaped, stay where they are."""
+    cumulus.clear_trees(bpy.context)
 
 
 def _onto_third(sc, cam, ground, co, h, others, mask):
@@ -790,7 +789,8 @@ def _onto_third(sc, cam, ground, co, h, others, mask):
 class HRP_OT_plant_trees(bpy.types.Operator):
     bl_idname = "harappa.plant_trees"
     bl_label = "Plant Trees"
-    bl_description = "Scatter anime trees over the active meadow, keeping off painted paths"
+    bl_description = ("Scatter anime trees over the active meadow, keeping off painted paths. Clouds that the new "
+                      "trees would cover step aside")
     bl_options = {"REGISTER", "UNDO"}
 
     count: bpy.props.IntProperty(name="Trees", default=8, min=1, max=500, description="How many trees to add")
@@ -1040,6 +1040,9 @@ class HRP_OT_make_foliage(bpy.types.Operator):
             self.report({"WARNING"}, report("Select one or more mesh objects"))
             return {"CANCELLED"}
         for ob in obs:
+            for k in ("hrp_leaf_base", "hrp_leaf_mult"):          # fresh values: not a hand edit under this style
+                if k in ob:
+                    del ob[k]
             mod = ob.modifiers.get("Harappa Foliage") or ob.modifiers.new("Harappa Foliage", "NODES")
             mod.node_group = scatter.foliage_group()
             mod_input(mod, "Card", tree.card_object(context.scene, "leaf", "ROUND"))

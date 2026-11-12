@@ -194,7 +194,7 @@ def lobes(width, seed=0, tower=0.0):
     # a puff buried deep inside a bigger one adds nothing to the outline but pulls the shading into a dent
     keep = []
     for c, r in out:
-        if any(r2 > r and (c - c2).length + r < r2 + r * 0.15 for c2, r2 in out):   # sticks out < 15 %
+        if any(r2 > r and (c - c2).length + r < r2 + r * 0.25 for c2, r2 in out):   # sticks out < 25 %
             continue
         keep.append((c, r))
     return keep
@@ -427,6 +427,10 @@ def layout(context, count=5, seed=0, distance=0.0):
             flat = direction(sx, 0.5)
             az = math.atan2(flat.y, flat.x)
             ridge = skyline(az, 0.5 * rel, d)                   # only the mountains in front of it
+            if role == "hero":                                  # the foot hides even where the ridge dips
+                dips = [skyline(az + k * 0.08 * rel, 0.04 * rel, d) for k in range(-6, 7)]
+                dips = [e for e in dips if e > 0.0]
+                ridge = min([ridge] + dips)
             if role == "hero":                          # its foot hidden behind the mountain tops
                 if ridge > 0.0:
                     low = max(low, ridge - 0.25 * height_deg)
@@ -468,6 +472,46 @@ def layout(context, count=5, seed=0, distance=0.0):
         far = max((o.location - origin).length + o.scale.x for o in made)
         fit_clip(cam, far * 1.2)
     return made
+
+
+def clear_trees(context):
+    """After trees are planted: each cloud of the layout that a tree crown now covers slides sideways (or up) along
+    the sky until it is clear; every other cloud stays exactly where it is."""
+    from . import clouds as old
+    scene = context.scene
+    cam = scene.camera if scene.camera is not None and scene.camera.type == "CAMERA" else None
+    if cam is None:
+        return 0
+    context.view_layer.update()
+    boxes = old._tree_boxes(scene, cam)
+    if not boxes:
+        return 0
+    origin = cam.matrix_world.translation
+    moved = 0
+    for ob in clouds_of(scene):
+        if not is_auto(ob):
+            continue
+        w = ob.scale.x
+
+        def hit(c):
+            return old._overlaps(scene, cam, c + Vector((0, 0, w * 0.2)), w * 0.62, boxes)
+        if not hit(ob.location):
+            continue
+        v = ob.location - origin
+        best = None
+        for step in (3, -3, 6, -6, 9, -9, 12, -12, 16, -16, 20, -20, 25, -25, 30, -30):
+            a = math.radians(step)
+            p = origin + Vector((v.x * math.cos(a) - v.y * math.sin(a), v.x * math.sin(a) + v.y * math.cos(a), v.z))
+            if not hit(p):
+                best = (p, a)
+                break
+        if best is None:
+            continue
+        ob.location = best[0]
+        ob.rotation_euler.z += best[1]
+        mark_auto(ob)
+        moved += 1
+    return moved
 
 
 def fit_clip(cam, far):

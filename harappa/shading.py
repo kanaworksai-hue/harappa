@@ -831,10 +831,13 @@ def leaves_material(style="ROUND"):
     isb = g.math("GREATER_THAN", -300, 600, g.out(blm, "Fac"), 0.5)
     alpha = g.mix(0, 900, "MIX", "FLOAT", fac=g.out(isb), a=g.out(tl, "Alpha"), b=g.out(tb, "Alpha"))
     # the paint style can break the dab's edge into ragged bristle marks
-    bn = g.n("ShaderNodeTexNoise", -100, 1300, noise_dimensions="2D")
-    g.links.new(uvs, bn.inputs["Vector"])
+    bn = g.n("ShaderNodeTexNoise", -100, 1300, noise_dimensions="3D")              # each card its own pattern
+    bv = g.n("ShaderNodeCombineXYZ", -250, 1350)
+    g.link(rnd, "Fac", bv, "Z")
+    g.links.new(g.out(g.vmath("ADD", -180, 1300, uvs, g.out(g.vmath("SCALE", -250, 1250, g.out(bv), scale=17.0)))),
+                bn.inputs["Vector"])
     g.set(bn, "Scale", 9.0)
-    g.set(bn, "Detail", 2.0)
+    g.set(bn, "Detail", 0.0)
     brk = g.math("MULTIPLY", 100, 1300, g.out(g.math("SUBTRACT", 0, 1300, g.out(bn, "Fac"), 0.45)),
                  g.out(g.math("MULTIPLY", 0, 1450, g.out(pal, "leaf_break"), 0.6)))
     alpha = g.math("SUBTRACT", 200, 1000, g.mixout(alpha), g.out(brk))
