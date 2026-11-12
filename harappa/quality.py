@@ -19,7 +19,8 @@ LEVELS = {
 
 
 def cloud_quality(scene):
-    return LEVELS[scene.harappa.detail_level]["cloud"] / 56.0
+    from . import presets
+    return LEVELS[scene.harappa.detail_level]["cloud"] / 56.0 * float(presets.STYLES[scene.harappa.style]["keys"].get("cloud_res", 1.0))
 
 
 def apply(scene, level=None, render=False):
@@ -28,6 +29,8 @@ def apply(scene, level=None, render=False):
     Only inputs that belong to the Detail Level are written ('Detail' on grass and flowers, 'Quality' on clouds).
     The render samples are the user's: they are set only when the user switches the level (render=True)."""
     lv = LEVELS[level or scene.harappa.detail_level]
+    from . import presets
+    style_res = float(presets.STYLES[scene.harappa.style]["keys"].get("cloud_res", 1.0))   # Crisp chunkier, Painterly finer
     for ob in scene.objects:
         for mod in ob.modifiers:
             if mod.type != "NODES" or mod.node_group is None:
@@ -38,7 +41,7 @@ def apply(scene, level=None, render=False):
                 elif mod.name == build.FLOWER_MOD:
                     mod_input(mod, "Detail", lv["flowers"])
                 elif mod.name == cumulus.MOD:
-                    mod_input(mod, "Quality", lv["cloud"] / 56.0)
+                    mod_input(mod, "Quality", lv["cloud"] / 56.0 * style_res)
                 else:
                     continue
             except KeyError:

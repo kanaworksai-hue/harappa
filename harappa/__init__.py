@@ -73,6 +73,7 @@ VALUE_PROPS = [
     ("ridge_soft", "Mountain Softness", 0.0, 0.5, "How soft the painted shapes on the distant mountains are"),
     ("cloud_shade", "Cloud Shadows", 0.0, 1.0, "Shadows of the clouds on the open ground in the middle distance. "
                                                "The season sets this value"),
+    ("leaf_break", "Broken Leaf Edges", 0.0, 1.0, "Breaks the edges of the leaf dabs into ragged brush marks"),
     ("cloud_jitter", "Cloud Brushiness", 0.0, 4.0, "How broken and brushy the edge between a cloud's light and shade is"),
     ("cloud_rim_amount", "Cloud Rim Glow", 0.0, 1.0, "Bright edge on clouds that have the sun behind them"),
     ("cloud_threshold", "Cloud Light / Shadow Split", 0.0, 1.0, "How much of each cloud is in shade"),
@@ -234,10 +235,39 @@ def _season_blossom(sc, amount):
             del ob["hrp_blossom_base"]
 
 
+def _style_leaves(sc, obs=None):
+    """The paint style also sets the size of the leaf dabs (Crisp: big blocks, Painterly: small broken dabs), with
+    the density turned the other way so a crown stays as full. Each crown keeps its own base values, so a style
+    change is lossless and a value the user typed is taken as the new base."""
+    m = float(presets.STYLES[sc.harappa.style]["keys"].get("leaf_scale", 1.0))
+    for ob in (obs if obs is not None else sc.objects):
+        if not ob.get("hrp_canopy") or ob.get("hrp_clouds"):
+            continue
+        mod = ob.modifiers.get("Harappa Foliage")
+        if mod is None or mod.node_group is None:
+            continue
+        try:
+            cs, cd = float(mod_input(mod, "Leaf Size")), float(mod_input(mod, "Density"))
+        except KeyError:
+            continue
+        prev = float(ob.get("hrp_leaf_mult", 1.0))
+        base = ob.get("hrp_leaf_base")
+        if base is None or abs(cs - base[0] * prev) > 1e-5 * max(1.0, cs) \
+                or abs(cd - base[1] / prev ** 1.4) > 1e-4 * max(1.0, cd):
+            base = (cs / prev, cd * prev ** 1.4)               # new, rebuilt or edited by hand
+        ob["hrp_leaf_base"] = list(base)
+        ob["hrp_leaf_mult"] = m
+        mod_input(mod, "Leaf Size", base[0] * m)
+        mod_input(mod, "Density", base[1] / m ** 1.4)
+        ob.update_tag()
+
+
 def apply_style(self, context):
     if _busy["on"]:
         return
     _apply_values(self, None, presets.STYLES[self.style]["keys"])
+    _style_leaves(context.scene)
+    quality.apply(context.scene)                          # the clouds' grid follows the style too
     _upd_sky(self, context)                               # the style also paints the sky
     _rebase(self, context)
 
@@ -707,6 +737,7 @@ class HRP_OT_add_tree(bpy.types.Operator):
             loc.z = hit.z - 0.02 * self.height
         root = tree.add_tree(context, self.shape, self.height, seed, loc, blossom=bl)
         init_tree_settings(root, self.shape, self.height, seed, tree.SHAPES[self.shape]["style"])
+        _style_leaves(sc, root.children)
         if not _scene_ready(sc):
             setup_scene(context)
         for o in context.selected_objects:
@@ -717,20 +748,31 @@ class HRP_OT_add_tree(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _refit_clouds(sc):
+    """Trees were planted after the clouds were laid out: lay the layout's own clouds out again (same seed) so they
+    keep clear of the new crowns. Clouds the user moved or shaped stay."""
+    lay = sc.get("hrp_cloud_layout")
+    if lay is None or not any(cumulus.is_auto(o) for o in cumulus.clouds_of(sc)):
+        return
+    cnt, cseed, dist_ = list(lay)
+    cumulus.layout(bpy.context, int(cnt), int(cseed), float(dist_))
+
+
 def _onto_third(sc, cam, ground, co, h, others, mask):
     """Slide the focal tree sideways onto the nearer third of the frame, onto the ground, if there is room."""
     from bpy_extras.object_utils import world_to_camera_view
     q = world_to_camera_view(sc, cam, co)
     target = 1 / 3 if q.x < 0.5 else 2 / 3
-    tr, br, _bl, _tl = cam.data.view_frame(scene=sc)
-    half = abs(tr.x) / max(abs(tr.z), 1e-6)                    # half the frame width per metre of depth
+    tr, _br, _bl, tl = cam.data.view_frame(scene=sc)
+    half = abs(tr.x - tl.x) * 0.5 / max(abs(tr.z), 1e-6)      # half the frame width per metre of depth
     right = cam.matrix_world.to_quaternion() @ Vector((1, 0, 0))
     right.z = 0.0
     if right.length < 1e-6:
         return co
     p = co + right.normalized() * (target - q.x) * 2.0 * half * q.z
     inv = ground.matrix_world.inverted()
-    hit, loc, _n, idx = ground.ray_cast(inv @ (p + Vector((0, 0, 1000.0))), Vector((0, 0, -1)))
+    hit, loc, _n, idx = ground.ray_cast(inv @ (p + Vector((0, 0, 1000.0))),
+                                         (inv.to_3x3() @ Vector((0, 0, -1))).normalized())
     if not hit:
         return co
     p = ground.matrix_world @ loc
@@ -739,6 +781,8 @@ def _onto_third(sc, cam, ground, co, h, others, mask):
         if min(mask.data[v].color[0] for v in poly.vertices) < 0.7:   # not onto a painted path
             return co
     if any((p - o).length < h * 0.9 for o in others):
+        return co
+    if (p - cam.matrix_world.translation).length < h * 3.0:     # the same 'not too close' rule as the others
         return co
     return p
 
@@ -834,6 +878,8 @@ class HRP_OT_plant_trees(bpy.types.Operator):
             sd = rng.randint(0, 99999)
             root = tree.add_tree(context, shape, h, sd, co - Vector((0, 0, 0.02 * h)), blossom=bl)
             init_tree_settings(root, shape, h, sd, tree.SHAPES[shape]["style"])
+        _style_leaves(sc)
+        _refit_clouds(sc)
         self.report({"INFO"}, report(f"Planted {len(placed)} tree(s)"))
         return {"FINISHED"}
 
@@ -877,6 +923,10 @@ def rebuild_tree(context, root):
             mod_input(mod, "Roundness", sp["roundness"])
             mod_input(mod, "Blossom Scale", 0.16 * height)
             mod_input(mod, "Card", tree.card_object(context.scene, "leaf", style))
+            for k in ("hrp_leaf_base", "hrp_leaf_mult"):
+                if k in canopy:
+                    del canopy[k]
+            _style_leaves(context.scene, [canopy])
 
 
 def _upd_tree(self, context):
@@ -1006,6 +1056,7 @@ class HRP_OT_make_foliage(bpy.types.Operator):
             ob["hrp_value"] = 0.0
         if not _scene_ready(context.scene):
             setup_scene(context)
+        _style_leaves(context.scene, obs)
         self.report({"INFO"}, report(f"Foliage on {len(obs)} object(s)"))
         return {"FINISHED"}
 
@@ -1285,6 +1336,7 @@ _sky_seen = {}
 def _follow_camera(scene, _depsgraph=None):
     """Keep the sky gradient fitted to the camera when the user moves it, changes the lens or the format."""
     try:
+        hscene.aim_view(scene, _depsgraph)                 # the clouds' painter's light, whatever the world
         w = scene.world
         if w is None or w.name != hscene.WORLD or w.get("hrp_ver") != hscene.SKY_VER:
             return

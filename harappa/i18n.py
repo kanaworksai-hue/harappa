@@ -174,6 +174,10 @@ UI = {
     "Managed by Make Clouds": ("「雲を作る」が管理している雲です", "此云由「生成云」管理", "「구름 만들기」가 관리하는 구름입니다"),
     "It also sets the render samples": ("レンダーサンプル数も設定します", "同时会设置渲染采样数", "렌더 샘플 수도 설정합니다"),
     "Switching it also sets the render samples": ("切り替えるとレンダーサンプル数も設定されます", "切换时也会设置渲染采样数", "바꾸면 렌더 샘플 수도 설정됩니다"),
+    "Broken Leaf Edges": ("葉の筆跡のかすれ", "叶片笔触破边", "잎 붓터치 갈라짐"),
+    "Breaks the edges of the leaf dabs into ragged brush marks": ("葉の一筆一筆の縁を、かすれた筆跡のように崩します",
+                                                                  "把每片叶子笔触的边缘打碎成毛糙的笔痕",
+                                                                  "잎 붓터치의 가장자리를 거친 붓 자국처럼 흐트러뜨립니다"),
     "Cloud Shadows": ("雲の影", "云影", "구름 그림자"),
     "Shadows of the clouds on the open ground in the middle distance. The season sets this value": (
         "中景の開けた地面に落ちる雲の影。季節を選ぶとこの値も設定されます", "中景空地上的云影。选择季节时会设置此值",

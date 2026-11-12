@@ -112,6 +112,7 @@ PALETTE_KEYS = {
     "moon_y": ("VALUE", 0.0),
     "moon_z": ("VALUE", 1.0),
     "moon_rim": ("VALUE", 0.0),             # ... and how much the clouds' edges facing it shine (1 at night)
+    "leaf_break": ("VALUE", 0.0),           # Painterly: ragged, broken edges on the leaf dabs
     "view_x": ("VALUE", 0.0),               # towards the camera (scene.aim_sky writes it): one direction per frame
     "view_y": ("VALUE", -1.0),
     "view_z": ("VALUE", 0.0),
@@ -829,6 +830,14 @@ def leaves_material(style="ROUND"):
     g.links.new(uvs, tb.inputs["Vector"])
     isb = g.math("GREATER_THAN", -300, 600, g.out(blm, "Fac"), 0.5)
     alpha = g.mix(0, 900, "MIX", "FLOAT", fac=g.out(isb), a=g.out(tl, "Alpha"), b=g.out(tb, "Alpha"))
+    # the paint style can break the dab's edge into ragged bristle marks
+    bn = g.n("ShaderNodeTexNoise", -100, 1300, noise_dimensions="2D")
+    g.links.new(uvs, bn.inputs["Vector"])
+    g.set(bn, "Scale", 9.0)
+    g.set(bn, "Detail", 2.0)
+    brk = g.math("MULTIPLY", 100, 1300, g.out(g.math("SUBTRACT", 0, 1300, g.out(bn, "Fac"), 0.45)),
+                 g.out(g.math("MULTIPLY", 0, 1450, g.out(pal, "leaf_break"), 0.6)))
+    alpha = g.math("SUBTRACT", 200, 1000, g.mixout(alpha), g.out(brk))
     shade = g.mix(0, 1100, fac=g.out(isb), a=g.out(tl, "Color"), b=g.out(tb, "Color"))
     # normal: the canopy normal, nudged per card so neighbouring dabs break the terminator
     rn = g.n("ShaderNodeTexWhiteNoise", -1500, 300, noise_dimensions="1D")
@@ -903,7 +912,7 @@ def leaves_material(style="ROUND"):
     g.link(g.math("ADD", 1050, 600, g.out(hue, "Fac"), 0.5), 0, hs, "Hue")
     g.link(g.math("ADD", 1050, 800, g.out(val, "Fac"), 1.0), 0, hs, "Value")
     g.links.new(g.mixout(col2), hs.inputs["Color"])
-    _emit_out(g, g.out(hs, "Color"), 1950, 250, alpha=g.mixout(alpha), pal=pal)
+    _emit_out(g, g.out(hs, "Color"), 1950, 250, alpha=g.out(alpha), pal=pal)
     _done(mat, "leaves")
     mat["hrp_style"] = style
     return mat
@@ -1103,7 +1112,7 @@ def cumulus_material():
                  g.out(g.math("MULTIPLY", -1400, -450, g.out(pal, "cloud_jitter"), 0.22)))
     v = g.math("MULTIPLY_ADD", -330, 500, g.out(ch), 0.28, g.out(g.math("MULTIPLY", -420, 420, g.out(lv), 0.78)))
     v = g.math("ADD", -180, 500, g.out(v), g.out(jit))
-    v = g.math("MULTIPLY_ADD", -100, 420, g.out(g.math("SUBTRACT", -180, 420, g.out(wob, "Fac"), 0.5)), 0.22, g.out(v))
+    v = g.math("MULTIPLY_ADD", -100, 420, g.out(g.math("SUBTRACT", -180, 420, g.out(wob, "Fac"), 0.5)), 0.14, g.out(v))
     # clouds keep their painted steps in every style: a soft style only softens the edge a little (a fully
     # blended cloud reads as modelling clay)
     soft = g.math("MULTIPLY_ADD", -330, 250, g.out(g.math("MINIMUM", -480, 250, g.out(pal, "softness"), 0.07)), 0.75,

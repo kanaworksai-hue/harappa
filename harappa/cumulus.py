@@ -172,9 +172,11 @@ def lobes(width, seed=0, tower=0.0):
                 rr = r * rng.uniform(0.8, 1.1)
                 mid.append((c, rr))
                 out.append((c, rr))
-                if k > 0:                                 # a middle-sized puff in the seam with the storey below
-                    m = Vector((c.x + rng.uniform(-0.3, 0.3) * rr, c.y + rng.uniform(-0.6, 0.6) * rr, c.z - rr * 0.6))
-                    out.append((m, rr * rng.uniform(0.45, 0.6)))
+                if k > 0:                                 # a middle-sized puff bulging out of the seam below it
+                    sd = 1.0 if c.x >= col.x else -1.0
+                    m = Vector((c.x + sd * rr * rng.uniform(0.55, 0.8), c.y + rng.uniform(-0.4, 0.4) * rr,
+                                c.z - rr * rng.uniform(0.3, 0.45)))
+                    out.append((m, rr * rng.uniform(0.5, 0.65)))
                 # cauliflower: smaller puffs bulging out of the storey's sides, so the tower's outline is lumpy
                 # instead of a stack of smooth balls
                 side = 1.0 if c.x >= col.x else -1.0
@@ -184,12 +186,18 @@ def lobes(width, seed=0, tower=0.0):
                     d = Vector((side * math.cos(a) * math.cos(yaw), math.sin(yaw) * 0.6, math.sin(a)))
                     sr = rr * rng.uniform(0.25, 0.38)
                     out.append((c + d * (rr * 0.86), sr))
-            z += r * 0.95
-            r *= rng.uniform(0.8, 0.9)
+            z += r * 0.9
+            r *= rng.uniform(0.72, 0.84)                  # each storey smaller: the tower narrows as it climbs
     small = on_top(mid, rng.randint(14, 20), (0.4, 0.62), 0.2)
     out += small
     out += on_top(small + mid, rng.randint(8, 14), (0.4, 0.6), 0.45)
-    return out
+    # a puff buried deep inside a bigger one adds nothing to the outline but pulls the shading into a dent
+    keep = []
+    for c, r in out:
+        if any(r2 > r and (c - c2).length + r < r2 + r * 0.15 for c2, r2 in out):   # sticks out < 15 %
+            continue
+        keep.append((c, r))
+    return keep
 
 
 def _points_mesh(name, pts):

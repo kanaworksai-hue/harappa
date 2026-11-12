@@ -625,6 +625,33 @@ _seen = [o for o in sc.objects if "hrp_tree" in o and 0.08 < world_to_camera_vie
          and world_to_camera_view(sc, cam, o.location).z > 0]
 _big = max(_seen, key=lambda o: o["hrp_height"])
 check(_big["hrp_tree"] == "ROUND", "mixed planting gives the picture a round broadleaf as its tallest tree")
+# the focal tree sits on a third of the frame
+_hq = world_to_camera_view(sc, cam, _big.location)
+check(min(abs(_hq.x - 1 / 3), abs(_hq.x - 2 / 3)) < 0.03, f"the focal tree stands on a third of the frame (x {_hq.x:.3f})")
+# the paint style sizes the leaf dabs (density the other way) and the clouds' grid; switching back loses nothing
+_can = next(o for o in _big.children if o.get("hrp_canopy"))
+_fm = _can.modifiers["Harappa Foliage"]
+_ls0, _de0 = mod_input(_fm, "Leaf Size"), mod_input(_fm, "Density")
+_cq0 = mod_input(hero.modifiers[cumulus.MOD], "Quality")
+sc.harappa.style = "CRISP"
+check(mod_input(_fm, "Leaf Size") > _ls0 * 1.3 and mod_input(_fm, "Density") < _de0
+      and mod_input(hero.modifiers[cumulus.MOD], "Quality") < _cq0 * 0.8, "Crisp Cel paints bigger leaf dabs and chunkier clouds")
+sc.harappa.style = "PAINTERLY"
+check(mod_input(_fm, "Leaf Size") < _ls0 * 0.8 and shading.palette_get("leaf_break") > 0.5, "Painterly paints small, broken leaf dabs")
+sc.harappa.style = "ANIME"
+check(abs(mod_input(_fm, "Leaf Size") - _ls0) < 1e-5 and abs(mod_input(_fm, "Density") - _de0) < 1e-3
+      and abs(mod_input(hero.modifiers[cumulus.MOD], "Quality") - _cq0) < 1e-5, "and back to Anime gives the same values back")
+# the clouds' painter's light knows where the camera looks even under the user's own world
+_w = sc.world
+sc.world = bpy.data.worlds.new("User World")
+cam.rotation_euler[2] += math.radians(60.0)
+bpy.context.view_layer.update()
+H._follow_camera(sc, bpy.context.evaluated_depsgraph_get())
+_back = cam.matrix_world.to_quaternion() @ __import__("mathutils").Vector((0, 0, 1))
+check(all(abs(shading.palette_get("view_" + c) - v) < 1e-3 for c, v in zip("xyz", _back)),
+      "under the user's own world the clouds still light towards the camera")
+cam.rotation_euler[2] -= math.radians(60.0)
+sc.world = _w
 # night: the clouds' edges facing the moon shine; by day they do not
 sc.harappa.season = "NIGHT"
 check(shading.palette_get("moon_rim") > 0.9, "at night the clouds get a moon rim")
