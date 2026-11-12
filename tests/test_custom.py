@@ -542,23 +542,41 @@ def heads_above(z_off):
 above = {z_: heads_above(z_) for z_ in (0.02, 0.05, 0.1, 0.4)}
 layers.clear(m2, "FLOWERS")
 check(not any(above.values()), f"no flower head above a blanket or bench on the grass ({above})")
-# an object rising through 'Reaches Down From' changes the grass under it smoothly
-s.avoid_reach = 0.3
-pl2 = plank(0.29)
+# an object rising through 'Reaches Down From' changes the grass under it smoothly (1 cm steps across the band)
+s.avoid_reach = 0.5
+pl2 = plank(0.12)
 pl = pl2
 avoid.add(ctx, [pl2])
-hs_a = under()
-z0_ = pl2.location.z
-pl2.location.z = z0_ + 0.02
-m2.update_tag()
-hs_b = under()
+def abs_heights():
+    dg = ctx.evaluated_depsgraph_get()
+    out = {}
+    for i in dg.object_instances:
+        if (i.is_instance and i.parent and i.parent.original == m2 and i.object.data is not None
+                and i.object.data.name.startswith("HRP Grass")):
+            p0 = i.matrix_world.translation
+            if abs(p0.x - pl2.location.x) < 0.8 and abs(p0.y - pl2.location.y) < 0.25:
+                out[(round(p0.x, 4), round(p0.y, 4))] = i.matrix_world.to_scale().z
+    return out
+steps_ = []
+prev_ = abs_heights()
+first_ = dict(prev_)
+tall_ = []
+for k_ in range(30):
+    pl2.location.z += 0.01
+    m2.update_tag()
+    cur_ = abs_heights()
+    common = set(prev_) & set(cur_)
+    if common:
+        steps_.append(max(abs(cur_[c] - prev_[c]) for c in common) / max(max(prev_.values()), 1e-6))
+    tall_.append(max(cur_.values() or [0]))
+    prev_ = cur_
 s.avoid_reach = 100.0
 avoid.remove(ctx, [pl2])
 bpy.data.objects.remove(pl2)
-# under() gives height / room; compare absolute heights: rising 2 cm through the reach must not jump
-rel = abs(np.mean(hs_b) * (0.29 + 0.02) - np.mean(hs_a) * 0.29) / max(np.mean(hs_a) * 0.29, 1e-6) if hs_a and hs_b else 1.0
-check(hs_a and hs_b and rel < 0.15, f"an object rising through 'Reaches Down From' changes the grass smoothly "
-      f"({rel * 100:.0f}% for 2 cm)")
+grow_ = max((prev_[c] - first_[c] for c in set(prev_) & set(first_)), default=0.0)
+check(steps_ and max(steps_) <= 0.12 and grow_ > 0.1,
+      f"an object rising through 'Reaches Down From' changes the grass smoothly (blades grow by up to {grow_:.2f} m "
+      f"over 30 cm, largest 1 cm step {max(steps_ or [1]) * 100:.0f}% of the tallest blade)")
 # the paint colour field shows the colour as it will be painted (full brightness)
 s.paint_colour = H.srgb("#6B4A2A")
 check(abs(max(s.paint_colour) - 1.0) < 1e-4, f"a dark paint colour shows at the brightness it paints ({tuple(round(c, 3) for c in s.paint_colour)})")

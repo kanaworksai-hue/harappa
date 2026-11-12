@@ -18,7 +18,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 35
+GN_VER = 36
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -314,13 +314,14 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     room = g.math("MULTIPLY", x + 700, y - 1350, g.out(g.math("SUBTRACT", x + 600, y - 1350, g.out(rc, "Hit Distance"),
                                                               0.02)), 0.8)
     # an object higher above the root than Avoid Reach leaves the grass under it alone: the ceiling fades out over
-    # the last fifth of the reach (no jump when an object rises through it)
+    # the last half of the reach (no jump when an object rises through it)
     fade = g.maprange(x + 500, y - 1550, g.out(rc, "Hit Distance"), g.out(g.math("MULTIPLY", x + 400, y - 1600,
-                      g.out(gi, "Avoid Reach"), 0.8)), g.out(gi, "Avoid Reach"), smooth=True)
-    fade2 = g.math("MULTIPLY", x + 600, y - 1550, g.out(fade, "Result"), g.out(fade, "Result"))
+                      g.out(gi, "Avoid Reach"), 0.5)), g.out(gi, "Avoid Reach"), smooth=True)
+    # in height units: at the end of the band the ceiling is well above any blade (reach = 1.6 x grass height)
+    fade2 = g.math("MULTIPLY", x + 600, y - 1550, g.out(fade, "Result"), g.out(g.math("MULTIPLY", x + 500, y - 1650,
+                                                                                      reach, 1.0)))
     miss = g.math("SUBTRACT", x + 600, y - 1450, 1.0, g.out(rc, "Is Hit"))
-    lift_c = g.math("MULTIPLY_ADD", x + 700, y - 1500, g.out(fade2), 1e3, g.out(g.math("MULTIPLY", x + 650, y - 1450,
-                                                                                      g.out(miss), 1e6)))
+    lift_c = g.math("MULTIPLY_ADD", x + 700, y - 1500, g.out(miss), 1e6, g.out(fade2))
     ceiling = g.math("ADD", x + 860, y - 1400, g.out(g.math("MAXIMUM", x + 780, y - 1350, g.out(room), 0.0)),
                      g.out(lift_c))
     squeezed = g.math("LESS_THAN", x + 1000, y - 1400, g.out(ceiling), 0.01)
