@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 36
+SHADER_VER = 37
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -122,6 +122,7 @@ PALETTE_KEYS = {
     "season_contrast": ("VALUE", 1.0),
     "grade_sat": ("VALUE", 1.0),            # overall colour strength of everything Harappa paints
     "grade_contrast": ("VALUE", 1.0),       # overall contrast (around mid grey)
+    "tint_amount": ("VALUE", 1.0),          # how strongly colours painted on the Colour layer show
     "sun_x": ("VALUE", 0.0),                # direction to the sun (world), written with the sun
     "sun_y": ("VALUE", 0.0),
     "sun_z": ("VALUE", 1.0),
@@ -410,6 +411,41 @@ def cel_group():
     return ng
 
 
+def _colourise(g, x, y, color_sock, tint_sock, amount_sock):
+    """Mix a colour towards a tint at the colour's own brightness: the tint's hue and saturation, the cel light and
+    shade of the original stay. amount 0 = unchanged."""
+    bw = g.n("ShaderNodeRGBToBW", x, y + 150)
+    g.links.new(color_sock, bw.inputs["Color"])
+    tb = g.n("ShaderNodeRGBToBW", x, y + 50)
+    g.links.new(tint_sock, tb.inputs["Color"])
+    k = g.math("DIVIDE", x + 160, y + 100, g.out(bw), g.out(g.math("MAXIMUM", x + 80, y, g.out(tb), 0.03)))
+    kc = g.n("ShaderNodeCombineColor", x + 300, y + 100)
+    for ch in ("Red", "Green", "Blue"):
+        g.link(k, 0, kc, ch)
+    tinted = g.mix(x + 440, y + 50, "MULTIPLY", fac=1.0, a=tint_sock, b=g.out(kc))
+    m = g.mix(x + 600, y, fac=amount_sock, a=color_sock, b=g.mixout(tinted))
+    m.clamp_factor = True
+    return g.mixout(m)
+
+
+def _attr_amount(g, x, y, attr_node):
+    """The amount (alpha) of a colour attribute, 0 when the attribute is missing. EEVEE reads a missing attribute as
+    black with alpha 1, so pure black counts as 'missing' (Harappa never stores a pure black tint: see look.py and
+    layers.py)."""
+    sep = g.n("ShaderNodeSeparateColor", x - 300, y - 60)
+    g.link(attr_node, "Color", sep, "Color")
+    tot = g.math("ADD", x - 150, y - 60, g.out(g.math("ADD", x - 220, y - 120, g.out(sep, "Red"), g.out(sep, "Green"))),
+                 g.out(sep, "Blue"))
+    there = g.math("MULTIPLY", x - 60, y - 60, g.out(tot), 1e4, clamp=True)
+    return g.out(g.math("MULTIPLY", x, y, g.out(attr_node, "Alpha"), g.out(there), clamp=True))
+
+
+def _paint_tint(g, pal, x, y, attr_node, cols):
+    """Colours painted on the ground's Colour layer (hrp_tint: colour + alpha amount), lit / shadow / deep alike."""
+    amt = g.math("MULTIPLY", x, y, _attr_amount(g, x - 100, y + 150, attr_node), g.out(pal, "tint_amount"), clamp=True)
+    return [_colourise(g, x + 200, y - 300 * i, c, g.out(attr_node, "Color"), g.out(amt)) for i, c in enumerate(cols)]
+
+
 def grade_group():
     """One grade for every Harappa material: colour strength and contrast, read from the palette. It sits in
     the materials (not in the compositor), so the viewport shows what the render shows and the user's own
@@ -424,8 +460,21 @@ def grade_group():
     go = g.n("NodeGroupOutput", 900, 0)
     pal = g.n("ShaderNodeGroup", -900, -300)
     pal.node_tree = palette_group()
+    # this object's own colour (look.py): hue / saturation / brightness offsets in hrp_look, an own colour with its
+    # amount in hrp_own. Missing on an object = 0 = no change. Two object attributes for all of it (5.0 / 5.1 allow
+    # 8 object + instancer attributes per material).
+    look = g.n("ShaderNodeAttribute", -1500, 300, label="hrp_look", attribute_name="hrp_look", attribute_type="OBJECT")
+    lsep = g.n("ShaderNodeSeparateXYZ", -1350, 300)
+    g.link(look, "Vector", lsep, "Vector")
+    hs = g.n("ShaderNodeHueSaturation", -1150, 200)
+    g.link(g.math("ADD", -1250, 400, g.out(lsep, "X"), 0.5), 0, hs, "Hue")
+    g.link(g.math("ADD", -1250, 300, g.out(lsep, "Y"), 1.0), 0, hs, "Saturation")
+    g.link(g.math("ADD", -1250, 200, g.out(lsep, "Z"), 1.0), 0, hs, "Value")
+    g.link(gi, "Color", hs, "Color")
+    own = g.n("ShaderNodeAttribute", -1500, -100, label="hrp_own", attribute_name="hrp_own", attribute_type="OBJECT")
+    col0 = _colourise(g, -1000, 0, g.out(hs, "Color"), g.out(own, "Color"), _attr_amount(g, -1200, -250, own))
     bw = g.n("ShaderNodeRGBToBW", -700, 150)
-    g.link(gi, "Color", bw, "Color")
+    g.links.new(col0, bw.inputs["Color"])
     grey = g.n("ShaderNodeCombineColor", -620, 0)
     for ch in ("Red", "Green", "Blue"):
         g.links.new(g.out(bw), grey.inputs[ch])
@@ -433,7 +482,7 @@ def grade_group():
     amount = g.math("MULTIPLY", -600, -150, g.out(amount), g.out(pal, "season_sat"))
     power = g.math("MULTIPLY", -100, -500, g.out(pal, "grade_contrast"), g.out(pal, "style_contrast"))
     power = g.math("MULTIPLY", 0, -500, g.out(power), g.out(pal, "season_contrast"))
-    sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(amount), a=g.out(grey), b=g.out(gi, "Color"))
+    sat = g.mix(-500, 0, dtype="RGBA", fac=g.out(amount), a=g.out(grey), b=col0)
     sat.clamp_factor = False                       # above 1 = stronger than the palette colour
     sep = g.n("ShaderNodeSeparateColor", -300, 0)
     g.links.new(g.mixout(sat), sep.inputs["Color"])
@@ -629,7 +678,9 @@ def ground_material():
     for c in ("Red", "Green", "Blue"):
         g.links.new(g.mixout(npm), npc.inputs[c])
     lit_p = g.mix(-150, -500, "MULTIPLY", fac=1.0, a=g.mixout(lit_s), b=g.out(npc))
-    cel = _cel_node(g, pal, 0, 200, g.mixout(nmix), g.mixout(lit_p), sh, g.mixout(dp2))
+    tint = _attr(g, "hrp_tint", "GEOMETRY", -500, -900)
+    lit_t, sh, dp_t = _paint_tint(g, pal, -350, -900, tint, (g.mixout(lit_p), sh, g.mixout(dp2)))
+    cel = _cel_node(g, pal, 0, 200, g.mixout(nmix), lit_t, sh, dp_t)
     sft0 = g.math("MULTIPLY_ADD", -150, 0, g.out(far, "Result"), 0.12, g.out(pal, "softness"))
     sft = g.math("MULTIPLY_ADD", -150, -150, g.out(g.math("MINIMUM", -300, -150, g.out(boost0, "Fac"), 1.0)),
                  0.25, g.out(g.math("ADD", -300, -250, g.out(sft0), 0.04)))
@@ -717,7 +768,9 @@ def grass_material():
     off = g.math("MULTIPLY", 330, 850, g.out(off1), g.out(near_f))
     nrm = g.mix(-150, 550, "MIX", "VECTOR", fac=g.out(far_f), a=g.out(cl, "Normal"), b=g.out(gn, "Vector"))
     lit4 = g.mix(180, 1150, fac=g.out(far_f), a=g.mixout(lit3), b=lit0)
-    cel = _cel_node(g, pal, 250, 300, g.mixout(nrm), g.mixout(lit4), sh, dp, offset=g.out(off))
+    tint = _attr(g, "hrp_tint", "INSTANCER", -100, -300)
+    lit5, sh, dp = _paint_tint(g, pal, 0, -300, tint, (g.mixout(lit4), sh, dp))
+    cel = _cel_node(g, pal, 250, 300, g.mixout(nrm), lit5, sh, dp, offset=g.out(off))
     cdat = g.n("ShaderNodeCameraData", -900, 2200)
     far = g.maprange(-750, 2200, g.out(cdat, "View Distance"), 40.0, 150.0)
     sft0 = g.math("MULTIPLY_ADD", -600, 2200, g.out(far, "Result"), 0.12, 0.29)     # as in the ground material
@@ -908,14 +961,8 @@ def leaves_material(style="ROUND"):
     rl = g.math("MULTIPLY", 1100, -400, g.out(rl0), g.out(gate))
     ra = g.math("MULTIPLY", 1200, -450, g.out(rl), g.out(pal, "rim_amount"))
     col2 = g.mix(1250, 250, fac=g.out(ra), a=g.mixout(col2a), b=g.out(pal, "rim_colour"))
-    # per-tree variation (object custom properties; 0 when missing = no change)
-    hue = _attr(g, "hrp_hue", "OBJECT", 900, 600)
-    val = _attr(g, "hrp_value", "OBJECT", 900, 800)
-    hs = g.n("ShaderNodeHueSaturation", 1150, 450)
-    g.link(g.math("ADD", 1050, 600, g.out(hue, "Fac"), 0.5), 0, hs, "Hue")
-    g.link(g.math("ADD", 1050, 800, g.out(val, "Fac"), 1.0), 0, hs, "Value")
-    g.links.new(g.mixout(col2), hs.inputs["Color"])
-    _emit_out(g, g.out(hs, "Color"), 1950, 250, alpha=g.out(alpha), pal=pal)
+    # per-tree variation and the user's colour for this tree: hrp_look, read in HRP Grade (look.py)
+    _emit_out(g, g.mixout(col2), 1950, 250, alpha=g.out(alpha), pal=pal)
     _done(mat, "leaves")
     mat["hrp_style"] = style
     return mat

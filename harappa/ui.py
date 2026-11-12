@@ -129,6 +129,12 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         col = layout.column(align=True)
         _enum(col, s, "season")
         _enum(col, s, "style")
+        row = col.split(factor=0.36, align=True)
+        row.label(text=t("Look"), translate=False)
+        sub = row.row(align=True)
+        sub.menu("HRP_MT_looks", text=s.look_name or t("Season Default"), translate=False)
+        sub.operator("harappa.look_save", text="", icon="ADD")
+        sub.menu("HRP_MT_look_more", text="", icon="DOWNARROW_HLT")
         col = layout.column(align=True)
         _prop(col, s, "grade_sat")
         _prop(col, s, "grade_contrast")
@@ -173,14 +179,7 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
         from . import build
         ob = context.active_object
         layout = self.layout
-        row = layout.row(align=True)
-        row.scale_y = 1.2
-        op = _op(row, "harappa.paint_mask", "Paint Path", icon="BRUSH_DATA")
-        op.value = 0.0
-        op = _op(row, "harappa.paint_mask", "Paint Grass", icon="OUTLINER_OB_POINTCLOUD")
-        op.value = 1.0
-        if context.mode == "PAINT_VERTEX":
-            layout.label(text=t("Black = bare path, white = grass"), icon="INFO", translate=False)
+        _brush_layers(layout, context, ob)
         gm = ob.modifiers.get(build.GRASS_MOD)
         col = layout.column(align=True)
         col.label(text=t("Grass"), translate=False)
@@ -194,6 +193,169 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
             col = layout.column(align=True)
             col.label(text=t("Flowers"), translate=False)
             _mod_inputs(col, fm, ("Density", "Patch Size", "Patch Amount", "Size", "Height", "Seed"))
+
+
+LAYER_ICONS = {"GRASS": "OUTLINER_OB_POINTCLOUD", "FLOWERS": "OUTLINER_OB_FORCE_FIELD", "HEIGHT": "SORT_ASC",
+               "COLOUR": "COLOR"}
+
+
+def _brush_layers(layout, context, ob):
+    from . import SWATCHES, layers
+    s = context.scene.harappa
+    painting = context.mode == "PAINT_VERTEX"
+    box = layout.box()
+    col = box.column(align=True)
+    col.label(text=t("Brush Layers"), translate=False)
+    row = col.row(align=True)
+    row.scale_y = 1.3
+    prop = s.bl_rna.properties["paint_layer"]
+    for it in prop.enum_items:
+        op = row.operator("harappa.paint_layer", text=t(it.name), translate=False, icon=LAYER_ICONS[it.identifier],
+                          depress=painting and s.paint_layer == it.identifier)
+        op.layer = it.identifier
+    if not painting:
+        box.label(text=t("Click a layer to paint it on the meadow"), icon="INFO", translate=False)
+    else:
+        row = box.row(align=True)
+        for it in s.bl_rna.properties["paint_mode"].enum_items:
+            row.prop_enum(s, "paint_mode", it.identifier, text=t(it.name), translate=False)
+        col = box.column(align=True)
+        _prop(col, s, "paint_strength")
+        if s.paint_layer == "COLOUR":
+            _prop(col, s, "paint_colour", "Paint Colour")
+            row = col.row(align=True)
+            for k, label in zip(SWATCHES, ("Patches", "Tips", "Shade", "Earth", "Petals")):
+                op = row.operator("harappa.paint_swatch", text=t(label), translate=False)
+                op.key = k
+            _prop(col, s, "tint_amount")
+        row = box.row(align=True)
+        _op(row, "harappa.paint_fill", "Fill Layer", icon="SNAP_FACE").clear = False
+        _op(row, "harappa.paint_fill", "Clear Layer", icon="X").clear = True
+        row = box.row()
+        row.scale_y = 1.5
+        row.alert = True
+        _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK")
+        box.label(text=t("F = brush size, Shift+F = strength"), icon="INFO", translate=False)
+        box.label(text=t("Lighter preview while painting"), icon="HIDE_OFF", translate=False)
+    if layers.spacing(ob) > 0.5:
+        box.label(text=t("Ground is coarse: strokes will look blocky"), icon="ERROR", translate=False)
+        if not ob.get("hrp_hill"):
+            _op(box, "harappa.ground_finer", "Make Ground Finer", icon="MOD_SUBSURF")
+
+
+class HRP_PT_avoid(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_avoid"
+    title = "Avoid Objects"
+
+    @classmethod
+    def poll(cls, context):
+        from . import avoid
+        return bool(avoid.meadows(context.scene))
+
+    def draw(self, context):
+        from . import avoid
+        s = context.scene.harappa
+        layout = self.layout
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.scale_y = 1.2
+        _op(row, "harappa.avoid_add", "Avoid Selected", icon="ADD")
+        _op(row, "harappa.avoid_remove", "Stop Avoiding", icon="REMOVE")
+        coll = avoid.current(context.scene)
+        box = layout.box()
+        objs = list(coll.objects) if coll is not None else []
+        if not objs:
+            box.label(text=t("Select your character, then click Avoid Selected"), icon="INFO", translate=False)
+        for ob in objs[:12]:
+            row = box.row(align=True)
+            op = row.operator("harappa.avoid_select", text=ob.name, translate=False, icon="OBJECT_DATA", emboss=False)
+            op.name = ob.name
+            op = row.operator("harappa.avoid_remove", text="", icon="X", emboss=False)
+            op.name = ob.name
+        if len(objs) > 12:
+            box.label(text=i18n.report(f"and {len(objs) - 12} more"), translate=False)
+        col = layout.column(align=True)
+        _prop(col, s, "avoid_margin")
+        _prop(col, s, "avoid_floor")
+        _prop(col, s, "avoid_reach")
+        _prop(col, s, "avoid_box")
+        _prop(layout, s, "avoid_collection", "Collection")
+
+
+class HRP_PT_tint(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_tint"
+    title = "This Object's Colour"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        from . import look
+        return look.is_harappa(context.active_object)
+
+    def draw_header(self, context):
+        from . import look
+        mark = any(look.overridden(o) for o in look.targets(context.active_object))
+        self.layout.label(text=t(self.title) + ("  \u25CF" if mark else ""), translate=False)
+
+    def draw(self, context):
+        s = context.scene.harappa
+        layout = self.layout
+        col = layout.column(align=True)
+        for k in ("obj_hue", "obj_sat", "obj_value"):
+            _prop(col, s, k, slider=True)
+        col = layout.column(align=True)
+        _prop(col, s, "obj_tint")
+        _prop(col, s, "obj_tint_amount", "Amount", slider=True)
+        row = layout.row(align=True)
+        _op(row, "harappa.tint_copy", "Copy to Selected", icon="COPYDOWN")
+        _op(row, "harappa.tint_reset", "Follow the Scene", icon="LOOP_BACK")
+
+
+class HRP_MT_looks(bpy.types.Menu):
+    bl_idname = "HRP_MT_looks"
+    bl_label = "My Looks"
+
+    def draw(self, context):
+        from . import looks
+        layout = self.layout
+        layout.operator("harappa.look_season", text=t("Season Default"), translate=False, icon="FILE_REFRESH")
+        layout.separator()
+        items = looks.all_looks()
+        if not items:
+            layout.label(text=t("No saved looks yet: click + to save one"), translate=False)
+        for name, path in items:
+            op = layout.operator("harappa.look_apply", text=name, translate=False, icon="COLOR",
+                                 depress=name == context.scene.harappa.look_name)
+            op.filepath = path
+
+
+class HRP_MT_look_delete(bpy.types.Menu):
+    bl_idname = "HRP_MT_look_delete"
+    bl_label = "Delete Look"
+
+    def draw(self, context):
+        from . import looks
+        items = looks.all_looks()
+        if not items:
+            self.layout.label(text=t("No saved looks yet: click + to save one"), translate=False)
+        for name, path in items:
+            op = self.layout.operator("harappa.look_delete", text=name, translate=False, icon="TRASH")
+            op.filepath = path
+
+
+class HRP_MT_look_more(bpy.types.Menu):
+    bl_idname = "HRP_MT_look_more"
+    bl_label = "Looks"
+
+    def draw(self, context):
+        layout = self.layout
+        _op(layout, "harappa.look_import", "Import Look", icon="IMPORT")
+        _op(layout, "harappa.look_export", "Export Look", icon="EXPORT")
+        _op(layout, "harappa.look_folder", "Open Looks Folder", icon="FILE_FOLDER")
+        layout.separator()
+        layout.menu("HRP_MT_look_delete", text=t("Delete Look"), translate=False, icon="TRASH")
 
 
 class HRP_PT_cloud(HrpSub, bpy.types.Panel):
@@ -271,12 +433,6 @@ class HRP_PT_tree(HrpSub, bpy.types.Panel):
             col = layout.column(align=True)
             col.label(text=t("Wind"), translate=False)
             _mod_inputs(col, mod, ("Wind Strength", "Wind Speed", "Wind Scale", "Wind Direction"))
-        col = layout.column(align=True)
-        col.label(text=t("Tint"), translate=False)
-        if "hrp_hue" in canopy:
-            col.prop(canopy, '["hrp_hue"]', text=t("Hue Shift"), translate=False, slider=True)
-        if "hrp_value" in canopy:
-            col.prop(canopy, '["hrp_value"]', text=t("Brightness"), translate=False, slider=True)
         _op(layout, "harappa.edit_canopy", "Shape Canopy", icon="EDITMODE_HLT")
 
 
@@ -365,8 +521,10 @@ class HRP_PT_links(HrpSub, bpy.types.Panel):
                      icon="URL").url = "https://x.com/KanaWorks_AI"
 
 
-MENUS = [_enum_menu(n) for n in ENUMS] + [_tree_enum_menu(n) for n in ("shape", "leaf_style")]
-PANELS = (HRP_PT_main, HRP_PT_meadow, HRP_PT_cloud, HRP_PT_tree, HRP_PT_light, HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
+MENUS = ([_enum_menu(n) for n in ENUMS] + [_tree_enum_menu(n) for n in ("shape", "leaf_style")]
+         + [HRP_MT_looks, HRP_MT_look_delete, HRP_MT_look_more])
+PANELS = (HRP_PT_main, HRP_PT_meadow, HRP_PT_tint, HRP_PT_cloud, HRP_PT_tree, HRP_PT_avoid, HRP_PT_light,
+          HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
 
 
 def register():

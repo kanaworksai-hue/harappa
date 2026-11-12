@@ -7,6 +7,10 @@ HRP Grass    tufts scattered on a ground by a paintable mask, kept as instances 
              ground normal / mask / wind wave stored per instance for the shader
 HRP Flowers  camera-facing flower cards sitting in the grass tops, in colour clusters
 HRP Foliage  camera-facing leaf / blossom cards on a canopy mesh, with canopy normal + depth
+
+Brush layers: point colour attributes on the ground, each one "no change" when it is missing (see layers.py).
+hrp_grass (white = grass), hrp_flowers (0.5 = the natural patches, 1 = flowers everywhere, 0 = none),
+hrp_height (0.5 = x1, 1 = x2, 0 = flat) and hrp_tint (painted colour, alpha = amount; read by the materials).
 """
 import math
 
@@ -14,12 +18,15 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 28
+GN_VER = 29
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
 FOLIAGE = "HRP Foliage"
 MASK_ATTR = "hrp_grass"
+FLOWERS_ATTR = "hrp_flowers"
+HEIGHT_ATTR = "hrp_height"
+TINT_ATTR = "hrp_tint"
 
 
 def _store(g, x, y, geo_sock, name, value_sock, dtype="FLOAT", domain="POINT"):
@@ -68,6 +75,32 @@ def _mask(g, gi, x, y):
     amt = g.math("MULTIPLY", x + 520, y - 200, g.out(wob), g.out(edge))
     out = g.math("MULTIPLY_ADD", x + 680, y - 100, g.out(amt), 3.0, g.out(sw), clamp=True)
     return g.out(out)
+
+
+def _layer(g, x, y, name, default):
+    """A painted brush layer as a number (the colour's grey), or the default when the ground has no such layer."""
+    na = g.n("GeometryNodeInputNamedAttribute", x, y, data_type="FLOAT")
+    na.inputs["Name"].default_value = name
+    sw = g.n("GeometryNodeSwitch", x + 180, y, input_type="FLOAT")
+    g.link(na, "Exists", sw, "Switch")
+    sw.inputs["False"].default_value = default
+    g.link(na, "Attribute", sw, "True")
+    return g.out(sw)
+
+
+def _height_layer(g, x, y):
+    """Height multiplier from the Height layer: 0.5 (and no layer) = x1, white = x2, black = flat."""
+    return g.out(g.math("MULTIPLY", x + 380, y, _layer(g, x, y, HEIGHT_ATTR, 0.5), 2.0))
+
+
+def _preview(g, gi, x, y):
+    """Preview Factor in the viewport only (lighter grass while painting), 1 in renders."""
+    vp = g.n("GeometryNodeIsViewport", x, y)
+    sw = g.n("GeometryNodeSwitch", x + 180, y, input_type="FLOAT")
+    g.link(vp, 0, sw, "Switch")
+    sw.inputs["False"].default_value = 1.0
+    g.link(gi, "Preview Factor", sw, "True")
+    return g.out(sw)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -160,6 +193,12 @@ def _avoid_inputs(ng):
           desc="Grass gets shorter within this distance of the avoided objects")
     iface(ng, "Avoid Floor", "INPUT", "NodeSocketFloat", 0.3, 0.0, 1.0, subtype="FACTOR",
           desc="Height of the grass right against an avoided object (it also leans away from it)")
+    iface(ng, "Avoid Box", "INPUT", "NodeSocketBool", False,
+          desc="Faster: treat each avoided object as its bounding box (heavy models, crowds)")
+    iface(ng, "Avoid Reach", "INPUT", "NodeSocketFloat", 100.0, 0.0, 100000.0, subtype="DISTANCE",
+          desc="How far above a root an avoided object still clears the grass under it")
+    iface(ng, "Preview Factor", "INPUT", "NodeSocketFloat", 1.0, 0.0, 1.0, subtype="FACTOR",
+          desc="Share of the grass drawn in the viewport (lowered while painting); renders always draw all of it")
 
 
 def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
@@ -170,15 +209,32 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     With an empty collection nothing changes (factor 1)."""
     ci = g.n("GeometryNodeCollectionInfo", x, y, transform_space="RELATIVE")
     g.link(gi, "Avoid", ci, "Collection")
-    rz = g.n("GeometryNodeRealizeInstances", x + 180, y)
-    g.link(ci, 0, rz, "Geometry")
+    g.set(ci, "Separate Children", True)                 # one instance per object: one box per object
+    rz0 = g.n("GeometryNodeRealizeInstances", x + 180, y)
+    g.link(ci, 0, rz0, "Geometry")
+    # Box mode: each object's bounding box (a For Each zone over the instances; the Bounding Box node alone would
+    # give one box around all of them). The switch only evaluates the side it uses.
+    zi = g.n("GeometryNodeForeachGeometryElementInput", x, y + 400)
+    zo = g.n("GeometryNodeForeachGeometryElementOutput", x + 540, y + 400)
+    zi.pair_with_output(zo)
+    zo.domain = "INSTANCE"
+    g.link(ci, 0, zi, "Geometry")
+    zr = g.n("GeometryNodeRealizeInstances", x + 180, y + 400)
+    g.link(zi, "Element", zr, "Geometry")
+    bb = g.n("GeometryNodeBoundBox", x + 360, y + 400)
+    g.link(zr, 0, bb, "Geometry")
+    g.link(bb, "Bounding Box", zo, "Geometry")
+    rz = g.n("GeometryNodeSwitch", x + 720, y + 200, input_type="GEOMETRY")
+    g.link(gi, "Avoid Box", rz, "Switch")
+    g.link(rz0, 0, rz, "False")
+    g.link(zo, ("Geometry", 1), rz, "True")              # the zone's generated geometry, not its main output
     cnt = g.n("GeometryNodeAttributeDomainSize", x + 360, y + 200, component="MESH")
     g.link(rz, 0, cnt, "Geometry")
     has = g.math("GREATER_THAN", x + 540, y + 200, g.out(cnt, "Face Count"), 0.5)
     rc = g.n("GeometryNodeRaycast", x + 360, y - 100)
     g.link(rz, 0, rc, "Target Geometry")
     rc.inputs["Ray Direction"].default_value = (0.0, 0.0, 1.0)
-    rc.inputs["Ray Length"].default_value = 100.0        # "under" = anything above the root (also inside big objects)
+    g.link(gi, "Avoid Reach", rc, "Ray Length")            # "under" = anything above the root (also inside big objects)
     px = g.n("GeometryNodeProximity", x + 360, y - 400, target_element="FACES")
     g.link(rz, 0, px, "Geometry")
     # roots inside a sunken object (e.g. the hollow of an ear lying in the ground) see it right below them
@@ -283,6 +339,7 @@ def grass_group():
     g.link(sel, 0, dp, "Selection")
     dens = g.math("MULTIPLY", -1300, -150, g.out(gi, "Density"), g.out(dfac))
     dens = g.math("MULTIPLY", -1150, -150, g.out(dens), g.out(gi, "Detail"))
+    dens = g.math("MULTIPLY", -1100, -100, g.out(dens), _preview(g, gi, -1500, 150))
     g.link(dens, 0, dp, "Density")      # Random mode ignores Density Factor: multiply instead
     g.link(gi, "Seed", dp, "Seed")
     pts = g.out(dp, "Points")
@@ -331,7 +388,8 @@ def grass_group():
     lods = g.math("POWER", -450, -2000, g.out(lodf), -0.5)
     s1 = g.math("MULTIPLY", -250, -1650, g.out(gi, "Height"), g.mixout(hrl))
     s2 = g.math("MULTIPLY", -100, -1750, g.out(s1), g.out(es, "Result"))
-    s3a = g.math("MULTIPLY", 50, -1850, g.out(s2), g.out(lods))
+    s3h = g.math("MULTIPLY", -20, -1800, g.out(s2), _height_layer(g, -500, -2200))      # painted Height layer
+    s3a = g.math("MULTIPLY", 50, -1850, g.out(s3h), g.out(lods))
     s3b = g.math("MULTIPLY", 120, -1950, g.out(s3a), avf)
     s3 = g.math("MINIMUM", 300, -2000, g.out(s3b), avcone)
     wider = g.math("POWER", 60, -1650, g.out(gi, "Detail"), -0.5)        # fewer tufts cover the same ground
@@ -416,11 +474,21 @@ def flowers_group():
     th2 = g.math("ADD", -1200, -800, g.out(th, "Result"), 0.08)
     pf = g.maprange(-1200, -600, g.out(pn, "Fac"), g.out(th, "Result"), g.out(th2), smooth=True)
     mk = g.maprange(-1400, -400, mask, 0.5, 0.8)
-    dfac = g.math("MULTIPLY", -1000, -500, g.out(pf, "Result"), g.out(mk, "Result"))
+    # painted Flowers layer f: below 0.5 thins the natural patches out (0 = none), above 0.5 fills the gaps
+    # between them (1 = flowers everywhere); 0.5 and no layer = the patches as they are. Continuous everywhere.
+    fl = _layer(g, -1600, -1000, FLOWERS_ATTR, 0.5)
+    f2 = g.math("MULTIPLY", -1400, -1000, fl, 2.0)
+    lo = g.math("MINIMUM", -1250, -950, g.out(f2), 1.0)
+    hi = g.math("MAXIMUM", -1250, -1050, g.out(g.math("SUBTRACT", -1350, -1100, g.out(f2), 1.0)), 0.0)
+    pf1 = g.math("MULTIPLY", -1100, -900, g.out(pf, "Result"), g.out(lo))
+    gap = g.math("SUBTRACT", -1100, -1050, 1.0, g.out(pf, "Result"))
+    pf2 = g.math("MULTIPLY_ADD", -950, -1000, g.out(gap), g.out(hi), g.out(pf1))
+    dfac = g.math("MULTIPLY", -1000, -500, g.out(pf2), g.out(mk, "Result"))
     dp = g.n("GeometryNodeDistributePointsOnFaces", -800, 0, distribute_method="RANDOM")
     g.link(gi, "Geometry", dp, "Mesh")
     dens = g.math("MULTIPLY", -900, -150, g.out(gi, "Density"), g.out(dfac))
     dens = g.math("MULTIPLY", -750, -150, g.out(dens), g.out(gi, "Detail"))
+    dens = g.math("MULTIPLY", -700, -100, g.out(dens), _preview(g, gi, -1000, 150))
     g.link(dens, 0, dp, "Density")
     sd = g.math("ADD", -1000, -200, g.out(gi, "Seed"), 101)
     g.link(sd, 0, dp, "Seed")
@@ -449,7 +517,8 @@ def flowers_group():
     # lift to the grass tops, sway with the wind
     lift = _rand(g, -400, -1500, 0.45, 0.95, g.out(gi, "Seed"), 81)
     lh0 = g.math("MULTIPLY", -200, -1500, lift, g.out(gi, "Height"))
-    lh = g.math("MULTIPLY", -100, -1600, g.out(lh0), avf)
+    lh1 = g.math("MULTIPLY", -150, -1550, g.out(lh0), _height_layer(g, -700, -1700))  # painted Height layer
+    lh = g.math("MULTIPLY", -100, -1600, g.out(lh1), avf)
     up = g.vmath("SCALE", 0, -1500, g.out(dp, "Normal"), scale=g.out(lh))
     wind = _wind_node(g, gi, -200, -1800, g.out(pos))
     sway = g.math("MULTIPLY", 0, -1800, g.out(wind, "Angle"), g.out(lh))

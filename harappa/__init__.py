@@ -7,13 +7,15 @@ Redistribution or modification must keep the attribution in NOTICE.md (GPLv3 sec
 """
 import colorsys
 import math
+import os
 import random
 
 import bmesh
 import bpy
 from mathutils import Vector, noise
 
-from . import build, clouds, cumulus, i18n, presets, quality, ridges, scatter, scene as hscene, shading, tree, ui
+from . import (avoid, build, clouds, cumulus, i18n, layers, look, looks, presets, quality, ridges, scatter,
+               scene as hscene, shading, tree, ui)
 from .i18n import report
 from .util import mod_input, srgb, to_hex
 
@@ -77,6 +79,7 @@ VALUE_PROPS = [
     ("cloud_jitter", "Cloud Brushiness", 0.0, 4.0, "How broken and brushy the edge between a cloud's light and shade is"),
     ("cloud_rim_amount", "Cloud Rim Glow", 0.0, 1.0, "Bright edge on clouds that have the sun behind them"),
     ("cloud_threshold", "Cloud Light / Shadow Split", 0.0, 1.0, "How much of each cloud is in shade"),
+    ("tint_amount", "Painted Colour Strength", 0.0, 1.0, "How strongly colours painted on the meadow show through"),
 ]
 SKY_PROPS = [("sky_zenith", "Sky Top"), ("sky_horizon", "Sky Horizon")]
 TREE_SHAPES = [
@@ -96,6 +99,18 @@ LEAF_STYLES = [
     ("NEEDLE", "Needles", "Thin needle strokes"),
 ]
 _busy = {"on": False}
+
+
+def bl_info_version():
+    """The add-on version from blender_manifest.toml (written into saved looks)."""
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "blender_manifest.toml"), encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("version"):
+                    return line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------------------------------------
@@ -213,7 +228,26 @@ def apply_season(self, context):
     if w is not None:
         st, mo = presets.SEASONS[self.season].get("night", (0.0, 0.0))
         hscene.set_night(w, st, mo, sc.camera)
+    self.look_name = ""                                   # the season's colours replace a look's
     _rebase(self, context)
+
+
+def after_look(context):
+    """A look was written into the settings (looks.apply): bring the scene up to it in one go."""
+    sc = context.scene
+    s = sc.harappa
+    se = presets.SEASONS[s.season]
+    sun = bpy.data.objects.get(hscene.SUN)
+    if sun is not None:
+        hscene.key_sun(sc, sc.camera, s.sun_elevation, s.sun_side, se["sun"]["colour"], se["sun"]["strength"])
+    _season_blossom(sc, se.get("blossom", 0.0))
+    w = bpy.data.worlds.get(hscene.WORLD)
+    if w is not None:
+        st, mo = se.get("night", (0.0, 0.0))
+        hscene.set_night(w, st, mo, sc.camera)
+    _style_leaves(sc)
+    quality.apply(sc)
+    _refresh_all(s, context)
 
 
 def _season_blossom(sc, amount):
@@ -341,7 +375,7 @@ def _reseed(sc, rng):
         if ob.get("hrp_canopy"):
             ob["hrp_hue"] = rng.uniform(-0.03, 0.03) if rng else 0.0
             ob["hrp_value"] = float(ob.get("hrp_value_base", 0.0)) + (rng.uniform(-0.08, 0.08) if rng else 0.0)
-            ob.update_tag()
+            look.compose(ob)                               # the user's own colour for this tree stays
         if "hrp_tree" in ob:
             ts = ob.harappa_tree
             if "hrp_seed_base" not in ob:
@@ -475,6 +509,65 @@ def _cloud_props():
     }
 
 
+PAINT_LAYERS = [
+    ("GRASS", "Grass", "Paint where grass grows. Erase to make bare paths and clearings"),
+    ("FLOWERS", "Flowers", "Paint where flowers bloom. Erase to keep an area plain grass"),
+    ("HEIGHT", "Grass Height", "Paint taller grass. Erase to make it shorter, like a mown lawn"),
+    ("COLOUR", "Colour", "Paint a colour onto the grass and ground: sunlit patches, dry spots, flower beds"),
+]
+_BRUSHES = "brushes/essentials_brushes-mesh_vertex.blend/Brush/"
+
+
+def _upd_brush(self, context):
+    if not _busy["on"] and context.mode == "PAINT_VERTEX" and meadow_of(context.active_object) is not None:
+        apply_brush(context)                    # never on the user's own mesh they are vertex painting
+
+
+def apply_brush(context):
+    """Point Blender's vertex paint brush at the chosen layer, mode, strength and colour. Every step is optional:
+    brushes are assets that differ between versions, so whatever cannot be set is left to the user."""
+    s = context.scene.harappa
+    ob = context.active_object
+    if ob is None or ob.type != "MESH":
+        return False
+    me = ob.data
+    at = layers.ensure(me, s.paint_layer)
+    try:
+        me.color_attributes.active_color = at
+    except (AttributeError, TypeError):
+        pass
+    ts = context.tool_settings
+    vp = ts.vertex_paint
+    brush = getattr(vp, "brush", None)
+    want_blur = s.paint_mode == "SMOOTH"
+    is_blur = getattr(brush, "vertex_brush_type", "DRAW") in ("BLUR", "AVERAGE", "SMEAR")
+    if brush is None or want_blur != is_blur:
+        try:
+            bpy.ops.brush.asset_activate(asset_library_type="ESSENTIALS",
+                                         relative_asset_identifier=_BRUSHES + ("Blur" if want_blur else "Paint Hard"))
+        except (RuntimeError, TypeError, AttributeError):
+            pass
+        brush = getattr(vp, "brush", None)
+    if brush is None:
+        return False
+    rgba, blend = layers.target(s.paint_layer, s.paint_mode, tuple(s.paint_colour))
+    ok = True
+    for holder in (getattr(vp, "unified_paint_settings", None), brush):    # 5.2 reads the first, 5.3 the brush
+        if holder is None:
+            continue
+        for attr, val in (("color", rgba[:3]), ("strength", s.paint_strength)):
+            try:
+                setattr(holder, attr, val)
+            except (AttributeError, TypeError):
+                ok = ok and holder is not brush
+    try:
+        if not want_blur:
+            brush.blend = blend
+    except (AttributeError, TypeError):
+        ok = False
+    return ok
+
+
 def _settings_annotations():
     ann = {
         "detail_level": bpy.props.EnumProperty(
@@ -517,8 +610,25 @@ def _settings_annotations():
         "mask_paint": bpy.props.EnumProperty(name="Paint", items=[("GRASS", "Grass", "Paint grass back in"),
                                                                   ("PATH", "Path", "Paint a bare path")],
                                              default="PATH", description="What the brush paints"),
+        "paint_layer": bpy.props.EnumProperty(name="Brush Layer", items=PAINT_LAYERS, default="GRASS",
+                                              description="What the brush paints on the meadow", update=_upd_brush),
+        "paint_mode": bpy.props.EnumProperty(
+            name="Brush", default="PAINT", update=_upd_brush, description="What a brush stroke does",
+            items=[("PAINT", "Paint", "Add with the brush"),
+                   ("ERASE", "Erase", "Remove with the brush"),
+                   ("SMOOTH", "Smooth", "Soften the edges of what you painted")]),
+        "paint_strength": bpy.props.FloatProperty(name="Brush Strength", default=0.6, min=0.0, max=1.0, subtype="FACTOR",
+                                                  update=_upd_brush,
+                                                  description="How much each stroke changes. Lower for soft edges"),
+        "paint_colour": bpy.props.FloatVectorProperty(
+            name="Paint Colour", subtype="COLOR", size=3, min=0.0, max=1.0, default=srgb("#F2D25C"),
+            update=_upd_brush, description="Pick a paint colour. The swatches match the current season"),
+        "look_name": bpy.props.StringProperty(name="Look", default="",
+                                              description="The look last put on this scene"),
     }
     ann.update(_cloud_props())
+    ann.update(look.props())
+    ann.update(avoid.props())
     defaults = presets.SEASONS["SUMMER"]["palette"]
     for k, label in COLOUR_PROPS:
         ann[k] = bpy.props.FloatVectorProperty(name=label, subtype="COLOR", size=3, min=0.0, max=1.0,
@@ -609,6 +719,7 @@ def _make_hill(context, size=40.0, seed=0):
     bm.to_mesh(me)
     bm.free()
     ob = bpy.data.objects.new("Meadow", me)
+    ob["hrp_hill"] = True                     # Harappa's own hill: already fine enough to paint on
     ob.location = context.scene.cursor.location
     (context.collection or context.scene.collection).objects.link(ob)
     return ob
@@ -698,6 +809,8 @@ class HRP_OT_make_meadow(bpy.types.Operator):
         if sc.get("hrp_cloud_layout") is None and not cumulus.clouds_of(sc):     # behind the farthest ridge
             cumulus.layout(context, s.cloud_count, seed=s.variation, distance=max(160.0, size * 12))
         quality.apply(sc)
+        if avoid.current(sc) is not None:                      # a new meadow avoids what the others avoid
+            avoid.assign(sc, avoid.current(sc))
         if created:
             for o in context.selected_objects:
                 o.select_set(False)
@@ -916,6 +1029,7 @@ def rebuild_tree(context, root):
         delta = float(canopy.get("hrp_value", 0.0)) - float(canopy.get("hrp_value_base", 0.0))
         canopy["hrp_value_base"] = sp.get("value", 0.0)
         canopy["hrp_value"] = sp.get("value", 0.0) + delta
+        look.compose(canopy)
         if mod is not None:
             mod_input(mod, "Leaf Size", sp["leaf"] * height)
             mod_input(mod, "Density", float(sp["dens"]) * (5.0 / max(height, 0.1)) ** 2)
@@ -1060,6 +1174,7 @@ class HRP_OT_make_foliage(bpy.types.Operator):
             ob["hrp_canopy"] = True
             ob["hrp_hue"] = 0.0
             ob["hrp_value"] = 0.0
+            look.compose(ob)
         if not _scene_ready(context.scene):
             setup_scene(context)
         _style_leaves(context.scene, obs)
@@ -1206,7 +1321,9 @@ class HRP_OT_reset(bpy.types.Operator):
         for ob in sc.objects:
             if ob.get("hrp_canopy"):
                 ob["hrp_hue"] = 0.0
-                ob["hrp_value"] = 0.0
+                ob["hrp_value"] = float(ob.get("hrp_value_base", 0.0))
+                look.compose(ob)                           # each object's own colour is the user's: it stays
+        s.look_name = ""
         return {"FINISHED"}
 
 
@@ -1327,11 +1444,466 @@ class HRP_OT_set_enum(bpy.types.Operator):
         return {"FINISHED"}
 
 
+# ---------------------------------------------------------------------------------------------
+# brush layers
+# ---------------------------------------------------------------------------------------------
+def _paint_target(context):
+    """The meadow to paint on: the active object when it is one, else the only meadow of the scene."""
+    ob = meadow_of(context.active_object)
+    if ob is not None:
+        return ob
+    ms = avoid.meadows(context.scene)
+    return ms[0] if len(ms) == 1 else None
+
+
+class HRP_OT_paint_layer(bpy.types.Operator):
+    bl_idname = "harappa.paint_layer"
+    bl_label = "Paint Layer"
+    bl_description = "Paint this layer on the meadow with the brush (click again to stop painting)"
+    bl_options = {"REGISTER", "UNDO"}
+    layer: bpy.props.EnumProperty(items=PAINT_LAYERS, options={"SKIP_SAVE"})
+
+    @classmethod
+    def description(cls, context, props):
+        it = next((i for i in PAINT_LAYERS if i[0] == props.layer), None)
+        return i18n.t(it[2]) if it else ""
+
+    @classmethod
+    def poll(cls, context):
+        if _paint_target(context) is not None:
+            return True
+        cls.poll_message_set(i18n.t("Select a meadow to paint on"))
+        return False
+
+    def execute(self, context):
+        s = context.scene.harappa
+        ob = _paint_target(context)
+        if context.mode == "PAINT_VERTEX" and context.active_object == ob and s.paint_layer == self.layer:
+            return bpy.ops.harappa.paint_done()                     # the same button again: done
+        if context.mode != "OBJECT" and context.active_object != ob:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        if context.active_object != ob:
+            for o in context.selected_objects:
+                o.select_set(False)
+            ob.select_set(True)
+            context.view_layer.objects.active = ob
+        layers.ensure(ob.data, self.layer)
+        _busy["on"] = True
+        s.paint_layer = self.layer
+        if s.paint_mode == "SMOOTH":
+            s.paint_mode = "PAINT"
+        _busy["on"] = False
+        if context.mode != "PAINT_VERTEX":
+            bpy.ops.object.mode_set(mode="VERTEX_PAINT")
+        layers.set_preview(ob, True)
+        _painting.add(ob.name)
+        if not apply_brush(context):
+            self.report({"WARNING"}, report("Pick the brush colour by hand: this Blender's brush can't be set"))
+        return {"FINISHED"}
+
+
+class HRP_OT_paint_done(bpy.types.Operator):
+    bl_idname = "harappa.paint_done"
+    bl_label = "Done Painting"
+    bl_description = "Leave paint mode and go back to moving objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        layers.end_previews(context.scene)
+        _painting.clear()
+        return {"FINISHED"}
+
+
+class HRP_OT_paint_fill(bpy.types.Operator):
+    bl_idname = "harappa.paint_fill"
+    bl_label = "Fill Layer"
+    bl_description = ("Fill the whole layer with what the brush paints (grass everywhere / flowers everywhere / "
+                      "tallest / one colour; with Erase: the opposite)")
+    bl_options = {"REGISTER", "UNDO"}
+    clear: bpy.props.BoolProperty(name="Clear", default=False, options={"SKIP_SAVE"},
+                                  description="Reset the layer to its starting state instead")
+
+    @classmethod
+    def description(cls, context, props):
+        if props.clear:
+            return i18n.t("Reset this layer to its starting state. Other layers are not touched")
+        return i18n.t(cls.bl_description)
+
+    @classmethod
+    def poll(cls, context):
+        return _paint_target(context) is not None
+
+    def execute(self, context):
+        s = context.scene.harappa
+        ob = _paint_target(context)
+        mode = context.mode
+        if mode == "PAINT_VERTEX":
+            bpy.ops.object.mode_set(mode="OBJECT")              # data written in Object Mode is undoable
+        if self.clear:
+            layers.clear(ob, s.paint_layer)
+        else:
+            m = "PAINT" if s.paint_mode == "SMOOTH" else s.paint_mode
+            layers.fill(ob, s.paint_layer, layers.target(s.paint_layer, m, tuple(s.paint_colour))[0])
+        if mode == "PAINT_VERTEX":
+            bpy.ops.object.mode_set(mode="VERTEX_PAINT")
+            apply_brush(context)
+        return {"FINISHED"}
+
+
+class HRP_OT_paint_swatch(bpy.types.Operator):
+    bl_idname = "harappa.paint_swatch"
+    bl_label = "Use Colour"
+    bl_description = "Paint with this colour of the current season"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+    key: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        s = context.scene.harappa
+        if hasattr(s, self.key):
+            s.paint_colour = tuple(getattr(s, self.key))
+            s.paint_mode = "PAINT"
+        return {"FINISHED"}
+
+
+SWATCHES = ("grass_lit2", "grass_tip", "grass_shadow", "dirt_lit", "flower_c")
+
+
+class HRP_OT_ground_finer(bpy.types.Operator):
+    bl_idname = "harappa.ground_finer"
+    bl_label = "Make Ground Finer"
+    bl_description = "Adds more points to the ground so strokes get smooth edges. Your painting is kept"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = meadow_of(context.active_object)
+        return ob is not None and not ob.get("hrp_hill")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=360)
+
+    def draw(self, context):
+        ob = meadow_of(context.active_object)
+        now, after = len(ob.data.vertices), layers.finer_count(ob)
+        col = self.layout.column(align=True)
+        col.label(text=i18n.report(f"Ground points: {now:,} (about {layers.spacing(ob):.2f} m apart)"),
+                  translate=False)
+        col.label(text=i18n.report(f"After: {after:,} points"), translate=False)
+        if after > layers.HEAVY:
+            col.label(text=i18n.t("This ground is very large. Painting may be slow"), icon="ERROR", translate=False)
+
+    def execute(self, context):
+        ob = meadow_of(context.active_object)
+        mode = context.mode
+        if mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        n = layers.make_finer(ob)
+        if mode == "PAINT_VERTEX":
+            bpy.ops.object.mode_set(mode="VERTEX_PAINT")
+            apply_brush(context)
+        self.report({"WARNING"} if n > layers.HEAVY else {"INFO"}, report(f"Ground now has {n:,} points"))
+        return {"FINISHED"}
+
+
+_painting = set()                      # meadows drawn lighter while they are painted
+
+
+# ---------------------------------------------------------------------------------------------
+# avoid objects
+# ---------------------------------------------------------------------------------------------
+class HRP_OT_avoid_add(bpy.types.Operator):
+    bl_idname = "harappa.avoid_add"
+    bl_label = "Avoid Selected"
+    bl_description = "Grass and flowers will make room for the selected objects (characters, props, buildings)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        if not avoid.meadows(context.scene):
+            cls.poll_message_set(i18n.t("Make a meadow first"))
+            return False
+        return bool(context.selected_objects)
+
+    def execute(self, context):
+        added, skipped, heavy = avoid.add(context, list(context.selected_objects))
+        for name, why in skipped[:3]:
+            self.report({"WARNING"}, f"{name}: {i18n.t(why)}")
+        if heavy and not context.scene.harappa.avoid_box:
+            self.report({"WARNING"}, i18n.t('This model is heavy. Turn on "Use Simple Box" if the viewport gets slow'))
+        col = avoid.current(context.scene)
+        self.report({"INFO"}, report(f"Grass now avoids {len(col.objects) if col else 0} object(s)"))
+        return {"FINISHED"} if added or not skipped else {"CANCELLED"}
+
+
+class HRP_OT_avoid_remove(bpy.types.Operator):
+    bl_idname = "harappa.avoid_remove"
+    bl_label = "Stop Avoiding"
+    bl_description = "Let grass grow through the selected objects again"
+    bl_options = {"REGISTER", "UNDO"}
+    name: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    @classmethod
+    def description(cls, context, props):
+        return i18n.t("Stop avoiding this object") if props.name else i18n.t(cls.bl_description)
+
+    def execute(self, context):
+        obs = [bpy.data.objects.get(self.name)] if self.name else list(context.selected_objects)
+        n = avoid.remove(context, [o for o in obs if o is not None])
+        col = avoid.current(context.scene)
+        self.report({"INFO"}, report(f"Grass now avoids {len(col.objects) if col else 0} object(s)"))
+        return {"FINISHED"} if n else {"CANCELLED"}
+
+
+class HRP_OT_avoid_select(bpy.types.Operator):
+    bl_idname = "harappa.avoid_select"
+    bl_label = "Select"
+    bl_description = "Select this object"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+    name: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        ob = context.scene.objects.get(self.name)
+        if ob is None:
+            return {"CANCELLED"}
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        for o in context.selected_objects:
+            o.select_set(False)
+        ob.select_set(True)
+        context.view_layer.objects.active = ob
+        return {"FINISHED"}
+
+
+# ---------------------------------------------------------------------------------------------
+# this object's colour
+# ---------------------------------------------------------------------------------------------
+class HRP_OT_tint_reset(bpy.types.Operator):
+    bl_idname = "harappa.tint_reset"
+    bl_label = "Follow the Scene"
+    bl_description = "Give the selected objects back the scene's colours (their own colour and shifts are removed)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return look.is_harappa(context.active_object)
+
+    def execute(self, context):
+        done = set()
+        for ob in {*context.selected_objects, context.active_object}:
+            for o in look.targets(ob):
+                if o not in done:
+                    look.reset(o)
+                    done.add(o)
+        return {"FINISHED"}
+
+
+class HRP_OT_tint_copy(bpy.types.Operator):
+    bl_idname = "harappa.tint_copy"
+    bl_label = "Copy to Selected"
+    bl_description = "Give the other selected Harappa objects this object's colour settings"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return look.is_harappa(context.active_object) and len(context.selected_objects) > 1
+
+    def execute(self, context):
+        src = look.targets(context.active_object)[-1]
+        h, s_, v, col, amt = look.user(src)
+        n = 0
+        for ob in context.selected_objects:
+            if ob == context.active_object or not look.is_harappa(ob):
+                continue
+            for o in look.targets(ob):
+                look.set_user(o, h, s_, v, col, amt)
+            n += 1
+        self.report({"INFO"}, report(f"Colour copied to {n} object(s)"))
+        return {"FINISHED"}
+
+
+# ---------------------------------------------------------------------------------------------
+# my looks
+# ---------------------------------------------------------------------------------------------
+def _look_report(op, name, n):
+    op.report({"INFO"}, report(f"Look applied: {name}"))
+    if n["missing"]:
+        op.report({"INFO"}, report(f"{n['missing']} setting(s) not in the look kept their value"))
+    if n["unknown"] or n["bad"] or n["clamped"]:
+        op.report({"WARNING"}, report(f"Ignored {n['unknown']} unknown and {n['bad']} unreadable setting(s), "
+                                      f"limited {n['clamped']} to their range"))
+
+
+class HRP_OT_look_save(bpy.types.Operator):
+    bl_idname = "harappa.look_save"
+    bl_label = "Save Look"
+    bl_description = "Save the colours, light, sky and paint style of this scene as a look you can use anywhere"
+    bl_options = {"REGISTER"}
+    name: bpy.props.StringProperty(name="Name", default="My Look", description="Name of the look")
+    grass: bpy.props.BoolProperty(name="Grass and Wind Settings", default=False,
+                                  description="Also keep the grass, flower and wind settings of the meadow")
+
+    def invoke(self, context, event):
+        self.name = context.scene.harappa.look_name or i18n.t("My Look")
+        return context.window_manager.invoke_props_dialog(self, width=340)
+
+    def draw(self, context):
+        col = self.layout.column()
+        col.prop(self, "name", text=i18n.t("Name"), translate=False)
+        col.label(text=i18n.t("Colours, light, sky and paint style"), icon="CHECKMARK", translate=False)
+        col.prop(self, "grass", text=i18n.t("Grass and Wind Settings"), translate=False)
+        if os.path.exists(looks.path_of(self.name.strip() or "Look")):
+            col.label(text=i18n.report(f'Replaces the look "{self.name.strip()}"'), icon="ERROR", translate=False)
+
+    def execute(self, context):
+        name = self.name.strip()
+        if not name:
+            self.report({"WARNING"}, report("Give the look a name"))
+            return {"CANCELLED"}
+        try:
+            looks.save(context, name, grass=self.grass)
+        except OSError as e:
+            self.report({"ERROR"}, f"{e}")
+            return {"CANCELLED"}
+        context.scene.harappa.look_name = name
+        self.report({"INFO"}, report(f"Look saved: {name}"))
+        return {"FINISHED"}
+
+
+class HRP_OT_look_apply(bpy.types.Operator):
+    bl_idname = "harappa.look_apply"
+    bl_label = "Apply Look"
+    bl_description = "Put this look on the scene: colours, light, sky and paint style"
+    bl_options = {"REGISTER", "UNDO"}
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH", options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        try:
+            data = looks.read(self.filepath)
+        except ValueError as e:
+            self.report({"ERROR"}, report(f"Not a look: {e}"))
+            return {"CANCELLED"}
+        n = looks.apply(context, data)
+        _look_report(self, context.scene.harappa.look_name, n)
+        return {"FINISHED"}
+
+
+class HRP_OT_look_season(bpy.types.Operator):
+    bl_idname = "harappa.look_season"
+    bl_label = "Season Default"
+    bl_description = "Back to the colours of the current season and paint style"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        s = context.scene.harappa
+        _busy["on"] = True
+        s.variation = 0
+        _busy["on"] = False
+        if "hrp_base" in context.scene:
+            del context.scene["hrp_base"]
+        apply_season(s, context)
+        apply_style(s, context)
+        return {"FINISHED"}
+
+
+class HRP_OT_look_delete(bpy.types.Operator):
+    bl_idname = "harappa.look_delete"
+    bl_label = "Delete Look"
+    bl_description = "Delete a saved look. This can't be undone"
+    bl_options = {"REGISTER"}
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH", options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        folder = os.path.realpath(looks.folder())
+        p = os.path.realpath(self.filepath)
+        if os.path.dirname(p) != folder or not p.endswith(looks.EXT) or not os.path.isfile(p):
+            return {"CANCELLED"}
+        os.remove(p)
+        self.report({"INFO"}, report("Look deleted"))
+        return {"FINISHED"}
+
+
+class HRP_OT_look_import(bpy.types.Operator):
+    bl_idname = "harappa.look_import"
+    bl_label = "Import Look"
+    bl_description = "Add look files someone shared with you to My Looks"
+    bl_options = {"REGISTER"}
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    directory: bpy.props.StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
+    files: bpy.props.CollectionProperty(type=bpy.types.OperatorFileListElement, options={"HIDDEN", "SKIP_SAVE"})
+    filter_glob: bpy.props.StringProperty(default="*.json", options={"HIDDEN"})
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        paths = [os.path.join(self.directory, f.name) for f in self.files if f.name] or [self.filepath]
+        ok, bad = 0, 0
+        for p in paths:
+            try:
+                data = looks.read(p)
+            except ValueError:
+                bad += 1
+                continue
+            name = str(data.get("name") or os.path.basename(p).split(".")[0])[:64]
+            dst = looks.path_of(name)
+            if os.path.realpath(dst) != os.path.realpath(p):
+                with open(p, encoding="utf-8") as fi, open(dst, "w", encoding="utf-8") as fo:
+                    fo.write(fi.read())
+            ok += 1
+        self.report({"WARNING"} if bad else {"INFO"}, report(f"Imported {ok} look(s), skipped {bad}"))
+        return {"FINISHED"} if ok else {"CANCELLED"}
+
+
+class HRP_OT_look_export(bpy.types.Operator):
+    bl_idname = "harappa.look_export"
+    bl_label = "Export Look"
+    bl_description = "Save the scene's look as a file to share"
+    bl_options = {"REGISTER"}
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.json", options={"HIDDEN"})
+
+    def invoke(self, context, event):
+        name = context.scene.harappa.look_name or "My Look"
+        self.filepath = looks.file_name(name)
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        p = self.filepath
+        if not p.endswith(".json"):
+            p += looks.EXT
+        name = context.scene.harappa.look_name or os.path.basename(p).split(".")[0]
+        looks.save(context, name, path=p)
+        self.report({"INFO"}, report(f"Look saved: {name}"))
+        return {"FINISHED"}
+
+
+class HRP_OT_look_folder(bpy.types.Operator):
+    bl_idname = "harappa.look_folder"
+    bl_label = "Open Looks Folder"
+    bl_description = "Show the folder the looks are kept in (drop shared look files here)"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        bpy.ops.wm.path_open(filepath=looks.folder())
+        return {"FINISHED"}
+
+
 CLASSES = (
     HRP_Settings, HRP_TreeSettings, HRP_OT_make_meadow, HRP_OT_add_tree, HRP_OT_plant_trees,
     HRP_OT_rebuild_tree, HRP_OT_set_tree_enum, HRP_OT_edit_canopy,
     HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_add_ridges, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
     HRP_OT_revert, HRP_OT_set_enum, HRP_OT_set_detail, HRP_OT_cloud_give_back, HRP_OT_cloud_new_shape,
+    HRP_OT_paint_layer, HRP_OT_paint_done, HRP_OT_paint_fill, HRP_OT_paint_swatch, HRP_OT_ground_finer,
+    HRP_OT_avoid_add, HRP_OT_avoid_remove, HRP_OT_avoid_select, HRP_OT_tint_reset, HRP_OT_tint_copy,
+    HRP_OT_look_save, HRP_OT_look_apply, HRP_OT_look_season, HRP_OT_look_delete, HRP_OT_look_import,
+    HRP_OT_look_export, HRP_OT_look_folder,
 )
 
 
@@ -1341,6 +1913,7 @@ _sky_seen = {}
 @bpy.app.handlers.persistent
 def _follow_camera(scene, _depsgraph=None):
     """Keep the sky gradient fitted to the camera when the user moves it, changes the lens or the format."""
+    _paint_watch()
     try:
         hscene.aim_view(scene, _depsgraph)                 # the clouds' painter's light, whatever the world
         w = scene.world
@@ -1356,8 +1929,32 @@ def _follow_camera(scene, _depsgraph=None):
 
 @bpy.app.handlers.persistent
 def _forget_cameras(*_args):
-    """A newly opened file has its own cameras: fit its skies afresh."""
+    """A newly opened file has its own cameras: fit its skies afresh. Bring its objects' colours up to date and
+    give back the full grass of a meadow that was saved while it was being painted."""
     _sky_seen.clear()
+    _painting.clear()
+    try:
+        look.migrate()
+        layers.end_previews()
+    except (AttributeError, ReferenceError, RuntimeError):
+        pass
+
+
+def _paint_watch():
+    """Painting ended some other way than Done Painting (Tab, the mode menu): give the grass back."""
+    if not _painting:
+        return
+    try:
+        if bpy.context.mode == "PAINT_VERTEX":
+            return
+    except AttributeError:
+        return
+    names = list(_painting)
+    _painting.clear()
+    for name in names:
+        ob = bpy.data.objects.get(name)
+        if ob is not None:
+            layers.set_preview(ob, False)
 
 
 def register():

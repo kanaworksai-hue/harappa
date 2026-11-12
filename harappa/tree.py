@@ -368,6 +368,8 @@ def add_tree(context, shape="ROUND", height=5.0, seed=0, location=(0, 0, 0), lea
     canopy["hrp_evergreen"] = 1.0 if (sp.get("conifer") or sp.get("pads")) else 0.0
     canopy["hrp_value"] = sp.get("value", 0.0)
     canopy["hrp_value_base"] = sp.get("value", 0.0)
+    from . import look
+    look.compose(canopy)
     mod = canopy.modifiers.new("Harappa Foliage", "NODES")
     mod.node_group = scatter.foliage_group()
     mod_input(mod, "Card", card)
