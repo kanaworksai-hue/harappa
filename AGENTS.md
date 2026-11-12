@@ -41,7 +41,23 @@ Success = last line starts with `HARAPPA OK`.
     --render preview.png --preview-size 50 --save meadow.blend
 ```
 A 40 m hill, grass + flowers, a winding bare path through the given world points, eight trees off the path,
-painted clouds, an anime sky with depth haze, a key sun and a camera. Show the human `preview.png`.
+solid cumulus clouds, distant mountains, an anime sky with depth haze, a key sun and a camera. Show the human
+`preview.png`.
+
+Painting, avoiding and looks (same command, any order):
+```bash
+<blender> -b meadow.blend --python agent/harappa_agent.py -- \
+    --paint grass:erase@0,-6,1.2 --paint flowers:paint@-4,2,3 --paint height:1@6,4,3 \
+    --paint colour:#F2D25C@-2,6,3 --fill flowers:0.5 --avoid Hero,Bench \
+    --preset-file golden.harappa-look.json --save-preset "My Golden" --save meadow.blend --render preview.png
+```
+`--paint LAYER:VALUE@X,Y,RADIUS` paints a round spot on a brush layer, exactly like the panel's brush:
+`grass` (paint = grass, erase = bare path), `flowers` (paint = dense flower bed, erase = none, 0.5 = natural patches),
+`height` (paint = up to ×2, erase = flat, 0.5 = normal), `colour` (`#RRGGBB` = that colour at full brightness,
+erase = none). `--paint-strength F` for softer strokes, `--fill LAYER:VALUE` / `--clear LAYER` for a whole layer.
+`--avoid A,B` makes grass and flowers room for those meshes (an armature adds its meshes; `--avoid-box` for heavy
+models). `--preset NAME` / `--preset-file PATH` apply a saved look (colours, light, sky, paint style),
+`--save-preset NAME` saves the current one, `--list-presets` prints them.
 
 ### b) On the human's own ground in a .blend
 ```bash
@@ -49,7 +65,8 @@ painted clouds, an anime sky with depth haze, a key sun and a camera. Show the h
     --meadow --objects Ground --tree ROUND --at 3,4 --tree WIDE --at -5,8 --blossom 0.5 \
     --save scene_meadow.blend --render preview.png
 ```
-The ground needs some vertices for the path mask (subdivide a single plane first). Save to a new file unless
+The ground needs some vertices for the brush layers (subdivide a single plane first, or run
+`bpy.ops.harappa.ground_finer()` with the ground active). Save to a new file unless
 they asked to overwrite.
 
 ### c) Into a running Blender (e.g. through a Blender MCP / Python console)
@@ -61,7 +78,9 @@ bpy.context.scene.cursor.location = (3, 4, 0)
 bpy.ops.harappa.add_tree(shape="ROUND", height=5.0, seed=12)   # stands on the ground under the cursor
 bpy.ops.harappa.plant_trees(count=8)          # active object must be a meadow
 bpy.ops.harappa.make_foliage()                # selected meshes -> hedges / bushes of leaf dabs
-bpy.ops.harappa.add_clouds(count=6)           # painted cumulus in front of the scene camera
+bpy.ops.harappa.add_clouds(count=6)           # solid cumulus in front of the scene camera (0 removes them)
+bpy.ops.harappa.add_ridges(layers=3)          # distant mountain layers (0 removes them)
+s.detail_level = "BEST"                       # FAST / BALANCED / BEST
 s.season = "GOLDEN"                           # colour, sun and sky
 s.style = "PAINTERLY"                         # how light and shadow are painted
 s.variation = 918                             # or bpy.ops.harappa.shuffle()
@@ -72,17 +91,19 @@ bpy.ops.harappa.revert()                      # selected objects: remove grass/f
 Grass density, height and wind live on each meadow's **Harappa Grass** / **Harappa Flowers** modifiers; leaves on the
 **Harappa Foliage** modifier of a tree's canopy object (`harappa.util.mod_input(mod, "Wind Strength", 0.3)`).
 
-To keep grass out of a character, a rock or a house, put those objects in a collection and give it to both meadow
-modifiers. Nothing grows under them, and grass beside them gets shorter and leans away (no blades through the model):
+Brush layers, Avoid, per-object colour and looks from Python:
 ```python
-from harappa.util import mod_input
-props = bpy.data.collections["Props"]                    # the objects to grow around
-for m in meadow.modifiers:
-    if m.name in ("Harappa Grass", "Harappa Flowers"):
-        mod_input(m, "Avoid", props)
-        mod_input(m, "Avoid Margin", 0.16)               # metres of shorter grass around them
-        mod_input(m, "Avoid Floor", 0.3)                 # grass height right against them (Grass only matters)
+from harappa import avoid, layers, look, looks
+layers.paint_disc(meadow, "GRASS", (0, -6), 1.2, layers.target("GRASS", "ERASE")[0])     # a bare path spot
+layers.paint_disc(meadow, "COLOUR", (2, 6), 3.0, layers.target("COLOUR", "PAINT", (0.9, 0.7, 0.2))[0])
+avoid.add(bpy.context, [hero, bench])          # grass and flowers make room (refusals come back with a reason)
+s.avoid_box = True                             # each avoided object as its box (heavy models)
+look.set_user(tree_canopy, colour=(1.0, 0.7, 0.8), amount=0.9)   # this tree pink; look.reset(ob) undoes it
+looks.save(bpy.context, "My Golden")           # into the extension's looks folder
+looks.apply(bpy.context, looks.read(path))     # a .harappa-look.json
 ```
+Avoid is continuous: nothing grows inside the objects, grass beside them gets shorter and leans away, and under an
+object that hangs above the ground (a bench, a bridge) grass grows up to just below it — nothing pops when it moves.
 
 ## 4. Turning the human's words into options
 
@@ -108,10 +129,16 @@ On later tweaks, omit what they didn't mention: the current season, style and va
 | They say | option |
 |---|---|
 | a path, a road, 道, 小道, 小路 | `--path X,Y:X,Y:…` (world points; width `--path-width 1.2`) |
+| a flower bed here, 花畑, 花坛 | `--paint flowers:paint@X,Y,3` |
+| tall grass there / a mown lawn, 草を高く, 草坪 | `--paint height:1@X,Y,4` / `--paint height:erase@X,Y,4` |
+| a sunlit / dry patch, 陽だまり, 枯れ草, 阳光斑 | `--paint colour:#F2D25C@X,Y,3` / `--paint colour:#C9A15A@X,Y,3` |
+| grass through my character, 草がキャラを突き抜ける, 草穿模 | `--avoid CharacterMesh` |
+| save these colours, この色を保存, 保存这个配色 | `--save-preset "Name"`; reuse with `--preset "Name"` |
 | more / fewer trees, 木を増やして, 多种点树 | `--trees N` |
 | one big tree, 一本の木, 一棵大树 | `--tree ROUND --at 0,5 --tree-height 7` |
-| cherry tree, blossoms, 桜の木, 樱花树 | `--tree WIDE --blossom 0.55 --season SPRING` |
-| pine, cedar, evergreen, 杉, 松, 针叶树 | `--tree CONIFER` |
+| cherry tree, blossoms, 桜の木, 樱花树 | `--tree SAKURA` (always in blossom) |
+| pine, Japanese pine, 松, 松树 / cedar, evergreen, 杉, 针叶树 | `--tree PINE` / `--tree CONIFER` |
+| willow, weeping, 柳, 柳树 / poplar, slim, ポプラ, 杨树 | `--tree WILLOW` / `--tree COLUMN` |
 | bushes, hedge, 茂み, 生け垣, 灌木 | `--tree BUSH`, or `--foliage --objects Hedge` on their own mesh |
 | taller / shorter grass, 草を高く, 草长一点 | `--grass-height 0.6` |
 | denser grass, 草を濃く, 草密一点 | `--density 70` |

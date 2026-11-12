@@ -20,7 +20,8 @@ Options:
   --density N           grass tufts per m² (default 40)        --grass-height M   grass height in metres (0.35)
   --path X0,Y0:X1,Y1:…  paint a bare path through the meadow along these world points (width --path-width, 1.2 m)
   --trees N             plant N trees over the meadow (mixed shapes, off the path)
-  --tree SHAPE          add one tree: ROUND TALL WIDE BUSH CONIFER (repeatable; positions from --at, repeatable)
+  --tree SHAPE          add one tree: ROUND TALL WIDE BUSH CONIFER SAKURA PINE WILLOW COLUMN (repeatable;
+                        positions from --at, repeatable)
   --at X,Y              where the matching --tree stands (it is dropped onto the ground)
   --tree-height M       tree height in metres (default 5)        --blossom F   share of blossoms 0..1
   --foliage             cover --objects with anime leaf dabs (hedges, bushes)
@@ -335,8 +336,9 @@ def main():
         ats = args("--at")
         for i, shape in enumerate(args("--tree")):
             shape = shape.upper()
-            if shape not in ("ROUND", "TALL", "WIDE", "BUSH", "CONIFER"):
-                fail(f"unknown tree shape {shape!r} (ROUND TALL WIDE BUSH CONIFER)")
+            shapes = list(H.tree.SHAPES)
+            if shape not in shapes:
+                fail(f"unknown tree shape {shape!r} ({' '.join(shapes)})")
             if i < len(ats):
                 x, y = (float(v) for v in ats[i].split(","))
                 scene.cursor.location = (x, y, 0.0)

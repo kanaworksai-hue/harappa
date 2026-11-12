@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.1.0 — 2026-11-12
+
+A bigger, brighter meadow you can make your own. Works on Blender 5.0, 5.1, 5.2 LTS and 5.3.
+
+**A new look**
+- **Sky:** the deep top colour now reaches the frame, with a sun disc and glow, painted high cirrus and brushy
+  bands that follow the camera (move or zoom the camera and the gradient refits itself).
+- **Solid cumulus clouds:** every cloud is its own object (move, scale or delete it) with a lit top, blue shade and
+  a flat base, a golden rim against the sun and moonlit edges at night; big, middle and small clouds in three
+  layers that stay clear of tree crowns. *Active Cloud* panel: New Shape, Tower, Width, Bump Size.
+- **Distant mountains:** three layers of ridges fading into the haze (*Distant Mountains*, 0–3 layers).
+- **Vivid seasons:** all six seasons repainted for strong, clear anime colour; golden hour is backlit, the misty
+  morning keeps its fog in the distance. *Vividness* and *Picture Contrast* on the main panel survive season
+  changes.
+- **Paint styles reach everything:** sky, clouds, mountains and leaf dabs change with the style (Crisp Cel: big
+  blocks; Painterly: small broken dabs; Soft Pastel: airy sky).
+- **Nine tree shapes:** cherry blossom, Japanese pine, willow and poplar join round, tall, wide, bush and conifer.
+  Plant Trees puts a round focal tree on a third of the frame.
+- **Detail Level:** Fast / Balanced / Best — less or more grass, flowers and cloud detail, and the render samples.
+
+**Make it yours**
+- **Paint the Meadow:** four brush layers painted with Blender's own brush — Grass (Make Path / Grow Grass),
+  Flowers (dense flower beds / none), Grass Height (up to twice as tall / mown) and Colour (sunlit patches, dry
+  spots…). Fill All, Erase All, Reset Layer and Ctrl+Z work; seasons, Shuffle and Reset keep what you painted.
+  The viewport draws fewer blades while you paint. *Make Ground Finer* for your own coarse ground.
+- **Avoid Objects:** *Make Grass Avoid It* on any selected mesh (or a character's armature): grass and flowers
+  make room, grow up to just below objects that hang above them (benches, bridges) and never pop as things move.
+  *Use Simple Box* for heavy models.
+- **This Object's Colour:** hue, saturation and brightness shift and an own colour for any meadow, tree, cloud or
+  mountain range; Shuffle keeps it. *Blossom on This Tree* makes a cherry tree in one step.
+- **My Looks:** save the colours, light, sky and paint style as a small JSON file, apply it to any scene, import /
+  export to share it.
+- **Agent CLI:** `--paint`, `--fill`, `--clear`, `--avoid`, `--preset`, `--preset-file`, `--save-preset`.
+
+**Under the hood**
+- Rebuilding node groups keeps every value set on the modifiers; scenes from 1.0 open and upgrade with their
+  colours.
+- Customisation costs nothing until it is used: the default landscape renders as fast as before.
+- Tests on Blender 5.0, 5.1, 5.2 LTS and 5.3 (two test files, every node link checked, pictures compared).
+
 ## 1.0.1 — 2026-11-10
 
 Blender 5.3 compatibility.
