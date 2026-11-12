@@ -18,7 +18,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 34
+GN_VER = 35
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -313,12 +313,16 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     inside = g.math("MULTIPLY", x + 860, y - 1150, g.out(in_up), g.out(in_dn))
     room = g.math("MULTIPLY", x + 700, y - 1350, g.out(g.math("SUBTRACT", x + 600, y - 1350, g.out(rc, "Hit Distance"),
                                                               0.02)), 0.8)
-    # an object higher above the root than Avoid Reach leaves the grass under it alone
-    within = g.math("MULTIPLY", x + 600, y - 1500, g.out(rc, "Is Hit"),
-                    g.out(g.math("LESS_THAN", x + 500, y - 1550, g.out(rc, "Hit Distance"), g.out(gi, "Avoid Reach"))))
-    no_hit = g.math("MULTIPLY", x + 700, y - 1450, g.out(g.math("SUBTRACT", x + 600, y - 1450, 1.0, g.out(within))), 1e6)
-    ceiling = g.math("MAXIMUM", x + 860, y - 1400, g.out(g.math("MAXIMUM", x + 780, y - 1350, g.out(room), 0.0)),
-                     g.out(no_hit))
+    # an object higher above the root than Avoid Reach leaves the grass under it alone: the ceiling fades out over
+    # the last fifth of the reach (no jump when an object rises through it)
+    fade = g.maprange(x + 500, y - 1550, g.out(rc, "Hit Distance"), g.out(g.math("MULTIPLY", x + 400, y - 1600,
+                      g.out(gi, "Avoid Reach"), 0.8)), g.out(gi, "Avoid Reach"), smooth=True)
+    fade2 = g.math("MULTIPLY", x + 600, y - 1550, g.out(fade, "Result"), g.out(fade, "Result"))
+    miss = g.math("SUBTRACT", x + 600, y - 1450, 1.0, g.out(rc, "Is Hit"))
+    lift_c = g.math("MULTIPLY_ADD", x + 700, y - 1500, g.out(fade2), 1e3, g.out(g.math("MULTIPLY", x + 650, y - 1450,
+                                                                                      g.out(miss), 1e6)))
+    ceiling = g.math("ADD", x + 860, y - 1400, g.out(g.math("MAXIMUM", x + 780, y - 1350, g.out(room), 0.0)),
+                     g.out(lift_c))
     squeezed = g.math("LESS_THAN", x + 1000, y - 1400, g.out(ceiling), 0.01)
     under_any = g.math("MAXIMUM", x + 700, y - 200, g.out(g.math("MAXIMUM", x + 1000, y - 1250, g.out(inside),
                                                                   g.out(squeezed))), g.out(rcd, "Is Hit"))
@@ -647,7 +651,14 @@ def flowers_group():
     lh0 = g.math("MULTIPLY", -200, -1500, lift, g.out(gi, "Height"))
     lh1 = g.math("MULTIPLY", -150, -1550, g.out(lh0), _height_layer(g, -700, -1700))  # painted Height layer
     lh1 = g.math("MULTIPLY", -120, -1500, g.out(lh1), g.out(g.math("MULTIPLY_ADD", -250, -1450, g.out(hi), 0.35, 1.0)))
-    lh = g.math("MULTIPLY", -100, -1600, g.out(lh1), avf)
+    lh2 = g.math("MULTIPLY", -100, -1600, g.out(lh1), avf)
+    # under / next to an avoided object the head stays below it (the same room the grass gets) and shrinks away
+    # where there is no room for it - smoothly, so nothing pops
+    head = g.math("MULTIPLY", -300, -1700, g.out(gi, "Size"), 0.5)
+    room_f = g.math("SUBTRACT", -200, -1700, _cone, g.out(head))
+    lh = g.math("MINIMUM", -50, -1650, g.out(lh2), g.out(g.math("MAXIMUM", -100, -1700, g.out(room_f), 0.0)))
+    fits = g.maprange(-50, -1750, g.out(room_f), 0.0, g.out(g.math("MULTIPLY", -150, -1800, g.out(gi, "Size"), 1.0)),
+                      smooth=True)
     up = g.vmath("SCALE", 0, -1500, g.out(dp, "Normal"), scale=g.out(lh))
     wind = _wind_node(g, gi, -200, -1800, g.out(pos))
     sway = g.math("MULTIPLY", 0, -1800, g.out(wind, "Angle"), g.out(lh))
@@ -666,6 +677,7 @@ def flowers_group():
     ss = g.math("MULTIPLY", 800, -800, g.mixout(smix), g.out(gi, "Size"))
     # a painted flower bed stands above the grass with bigger heads, so it reads as a bed from afar
     ss = g.math("MULTIPLY", 850, -850, g.out(ss), g.out(g.math("MULTIPLY_ADD", 700, -900, g.out(hi), 0.4, 1.0)))
+    ss = g.math("MULTIPLY", 900, -900, g.out(ss), g.out(fits, "Result"))
     card = g.n("GeometryNodeObjectInfo", 400, 300)
     g.link(gi, "Card", card, "Object")
     iop = g.n("GeometryNodeInstanceOnPoints", 1000, 0)

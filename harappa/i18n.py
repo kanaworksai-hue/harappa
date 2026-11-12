@@ -626,7 +626,7 @@ UI.update({
 })
 OPS.update({
     "Paint Layer": ("レイヤーを塗る", "绘制图层", "레이어 칠하기"),
-    "Done Painting": ("塗り終わり", "画完了", "칠하기 완료"),
+    "Done Painting": ("塗り終える", "画完了", "칠하기 완료"),
     "Leave paint mode and go back to moving objects": ("塗るモードを終えて、オブジェクトを動かす操作に戻ります", "退出绘制模式，回到移动物体",
                                                        "칠하기 모드를 끝내고 오브젝트 이동으로 돌아갑니다"),
     "Fill Layer": ("レイヤーを塗りつぶす", "填满本层", "레이어 채우기"),
@@ -783,6 +783,24 @@ UI.update({
     "Not saved: painting, each object's own colour, avoided objects": (
         "保存されないもの：塗った内容、オブジェクトごとの色、よけるオブジェクト", "不会保存：画过的内容、每个物体自己的颜色、避开的物体",
         "저장되지 않는 것: 칠한 내용, 오브젝트별 색, 피할 오브젝트"),
+})
+
+UI.update({
+    "Make Path clears the grass": ("「道を作る」で草が消えます", "「开小路」会清掉草", "「길 만들기」로 풀이 사라집니다"),
+    "Fill All": ("全部塗る", "全部填满", "모두 채우기"),
+    "Erase All": ("全部消す", "全部擦除", "모두 지우기"),
+    "Not saved: painting, each object's own colour,": ("保存されないもの：塗った内容、オブジェクトごとの色、",
+                                                       "不会保存：画过的内容、每个物体自己的颜色、", "저장되지 않는 것: 칠한 내용, 오브젝트별 색,"),
+    "avoided objects": ("よけるオブジェクト", "避开的物体", "피할 오브젝트"),
+    "Select the objects the grass should avoid": ("草によけさせるオブジェクトを選んでください", "请选择要让草避开的物体",
+                                                  "풀이 피할 오브젝트를 선택하세요"),
+    "Pick a paint colour. It is painted at full brightness; light and shade still fall on it. The swatches match "
+    "the current season": ("塗る色を選びます。いちばん明るい色で塗られ、光と影はその上に落ちます。下の見本は今の季節の色です",
+                           "选择画笔颜色。会以最亮的状态画上，光和影照常落在上面。下面的色块是当前季节的颜色",
+                           "칠할 색을 고릅니다. 가장 밝은 상태로 칠해지고 빛과 그림자는 그 위에 집니다. 아래 견본은 지금 계절의 색입니다"),
+})
+OPS.update({
+    "Back to Scene Colours": ("シーンの色に戻す", "恢复场景颜色", "장면 색으로 되돌리기"),
 })
 
 LANGS = ("JA", "ZH", "KO")

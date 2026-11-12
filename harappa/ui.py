@@ -195,17 +195,21 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
         layout = self.layout
         gm = ob.modifiers.get(build.GRASS_MOD)
         col = layout.column(align=True)
-        col.label(text=t("Grass"), translate=False)
-        _mod_inputs(col, gm, ("Density", "Height", "Height Random", "Width", "Edge Shrink", "LOD Distance",
-                              "Seed"))
-        col = layout.column(align=True)
-        col.label(text=t("Wind"), translate=False)
-        _mod_inputs(col, gm, ("Wind Strength", "Wind Speed", "Wind Scale", "Wind Direction", "Edge Wind"))
-        fm = ob.modifiers.get(build.FLOWER_MOD)
-        if fm is not None:
-            col = layout.column(align=True)
-            col.label(text=t("Flowers"), translate=False)
-            _mod_inputs(col, fm, ("Density", "Patch Size", "Patch Amount", "Size", "Height", "Seed"))
+        _mod_inputs(col, gm, ("Density", "Height", "Wind Strength"))
+        head, body = layout.panel("hrp_meadow_more", default_closed=True)       # the rest, folded away
+        head.label(text=t("More"), translate=False)
+        if body is not None:
+            col = body.column(align=True)
+            col.label(text=t("Grass"), translate=False)
+            _mod_inputs(col, gm, ("Height Random", "Width", "Edge Shrink", "LOD Distance", "Seed"))
+            col = body.column(align=True)
+            col.label(text=t("Wind"), translate=False)
+            _mod_inputs(col, gm, ("Wind Speed", "Wind Scale", "Wind Direction", "Edge Wind"))
+            fm = ob.modifiers.get(build.FLOWER_MOD)
+            if fm is not None:
+                col = body.column(align=True)
+                col.label(text=t("Flowers"), translate=False)
+                _mod_inputs(col, fm, ("Density", "Patch Size", "Patch Amount", "Size", "Height", "Seed"))
 
 
 _previews = {"coll": None}
@@ -230,7 +234,7 @@ def _swatch_icon(key, rgb):
     return pv.icon_id
 
 
-LAYER_ICONS = {"GRASS": "OUTLINER_OB_POINTCLOUD", "FLOWERS": "OUTLINER_OB_FORCE_FIELD", "HEIGHT": "SORT_ASC",
+LAYER_ICONS = {"GRASS": "OUTLINER_OB_POINTCLOUD", "FLOWERS": "OUTLINER_OB_FORCE_FIELD", "HEIGHT": "EMPTY_SINGLE_ARROW",
                "COLOUR": "COLOR"}
 
 
@@ -241,7 +245,7 @@ MODE_LABELS = {                                    # what Paint / Erase mean on 
     "COLOUR": ("Paint", "Remove"),
 }
 LAYER_HINTS = {
-    "GRASS": "Make Path clears, Grow Grass brings back",
+    "GRASS": "Make Path clears the grass",
     "FLOWERS": "Paints dense flower beds",
     "HEIGHT": "Up to twice as tall, or bare",
     "COLOUR": "Sunlit grass takes this colour",
@@ -298,9 +302,6 @@ def _brush_panel(layout, context, ob):
     if not painting:
         layout.label(text=t("Click a layer to paint it"), icon="INFO", translate=False)
     else:
-        row = layout.row()
-        row.scale_y = 1.4
-        _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK", depress=True)
         paint_l, erase_l = MODE_LABELS[s.paint_layer]
         row = layout.row(align=True)
         for ident, label in (("PAINT", paint_l), ("ERASE", erase_l)):
@@ -315,7 +316,7 @@ def _brush_panel(layout, context, ob):
                 op = row.operator("harappa.paint_swatch", text="", icon_value=_swatch_icon(k, getattr(s, k)))
                 op.key = k
         row = layout.row(align=True)
-        fill = "Erase Whole Layer" if s.paint_mode == "ERASE" else "Fill Whole Layer"
+        fill = "Erase All" if s.paint_mode == "ERASE" else "Fill All"
         _op(row, "harappa.paint_fill", fill, icon="SNAP_FACE").clear = False
         _op(row, "harappa.paint_fill", "Reset Layer", icon="LOOP_BACK").clear = True
         layout.label(text=t(LAYER_HINTS[s.paint_layer]), icon="INFO", translate=False)
@@ -441,7 +442,7 @@ class HRP_PT_tint(HrpSub, bpy.types.Panel):
             _mod_inputs(layout.column(align=True), mod, ("Blossom",), labels={"Blossom": "Blossom on This Tree"})
         row = layout.row(align=True)
         _op(row, "harappa.tint_copy", "Copy to Selected", icon="COPYDOWN")
-        _op(row, "harappa.tint_reset", "Follow the Scene", icon="LOOP_BACK")
+        _op(row, "harappa.tint_reset", "Back to Scene Colours", icon="LOOP_BACK")
 
 
 class HRP_MT_looks(bpy.types.Menu):
@@ -558,13 +559,19 @@ class HRP_PT_tree(HrpSub, bpy.types.Panel):
         mod = canopy.modifiers.get("Harappa Foliage")
         if mod is not None:
             col = layout.column(align=True)
-            col.label(text=t("Leaves"), translate=False)
-            _mod_inputs(col, mod, ("Density", "Leaf Size", "Size Random", "Inflate", "Roundness", "Blossom",
-                                   "Blossom Scale", "Fill Inside", "Seed"))
-            col = layout.column(align=True)
-            col.label(text=t("Wind"), translate=False)
-            _mod_inputs(col, mod, ("Wind Strength", "Wind Speed", "Wind Scale", "Wind Direction"))
+            _mod_inputs(col, mod, ("Density", "Leaf Size"))
         _op(layout, "harappa.edit_canopy", "Shape Canopy", icon="EDITMODE_HLT")
+        if mod is not None:
+            head, body = layout.panel("hrp_tree_more", default_closed=True)       # the rest, folded away
+            head.label(text=t("More"), translate=False)
+            if body is not None:
+                col = body.column(align=True)
+                col.label(text=t("Leaves"), translate=False)
+                _mod_inputs(col, mod, ("Size Random", "Inflate", "Roundness", "Blossom", "Blossom Scale",
+                                       "Fill Inside", "Seed"))
+                col = body.column(align=True)
+                col.label(text=t("Wind"), translate=False)
+                _mod_inputs(col, mod, ("Wind Strength", "Wind Speed", "Wind Scale", "Wind Direction"))
 
 
 class HRP_PT_light(HrpSub, bpy.types.Panel):

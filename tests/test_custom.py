@@ -519,6 +519,52 @@ for k_ in range(8):
 check(len(set(counts)) == 1, f"a plank moving above the grass makes no blade appear or vanish ({set(counts)})")
 avoid.remove(ctx, [pl])
 bpy.data.objects.remove(pl)
+# flowers make room the same way: no flower head above a blanket on the grass
+layers.fill(m2, "FLOWERS", (1, 1, 1, 1))
+def heads_above(z_off):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(-4, -6, 0))
+    bl_ = ctx.active_object
+    bl_.scale = (1.6, 1.6, 0.01)
+    gz_ = max(ground_z(m2, -4 + dx, -6 + dy) for dx in (-0.8, 0, 0.8) for dy in (-0.8, 0, 0.8))
+    bl_.location.z = gz_ + z_off
+    avoid.add(ctx, [bl_])
+    dg = ctx.evaluated_depsgraph_get()
+    n_ = 0
+    for i in dg.object_instances:
+        if (i.is_instance and i.parent and i.parent.original == m2 and i.object.data is not None
+                and i.object.data.name.startswith("HRP Flower")):
+            p0 = i.matrix_world.translation
+            if abs(p0.x + 4) < 0.75 and abs(p0.y + 6) < 0.75 and p0.z > bl_.location.z and i.matrix_world.to_scale().x > 1e-3:
+                n_ += 1
+    avoid.remove(ctx, [bl_])
+    bpy.data.objects.remove(bl_)
+    return n_
+above = {z_: heads_above(z_) for z_ in (0.02, 0.05, 0.1, 0.4)}
+layers.clear(m2, "FLOWERS")
+check(not any(above.values()), f"no flower head above a blanket or bench on the grass ({above})")
+# an object rising through 'Reaches Down From' changes the grass under it smoothly
+s.avoid_reach = 0.3
+pl2 = plank(0.29)
+pl = pl2
+avoid.add(ctx, [pl2])
+hs_a = under()
+z0_ = pl2.location.z
+pl2.location.z = z0_ + 0.02
+m2.update_tag()
+hs_b = under()
+s.avoid_reach = 100.0
+avoid.remove(ctx, [pl2])
+bpy.data.objects.remove(pl2)
+# under() gives height / room; compare absolute heights: rising 2 cm through the reach must not jump
+rel = abs(np.mean(hs_b) * (0.29 + 0.02) - np.mean(hs_a) * 0.29) / max(np.mean(hs_a) * 0.29, 1e-6) if hs_a and hs_b else 1.0
+check(hs_a and hs_b and rel < 0.15, f"an object rising through 'Reaches Down From' changes the grass smoothly "
+      f"({rel * 100:.0f}% for 2 cm)")
+# the paint colour field shows the colour as it will be painted (full brightness)
+s.paint_colour = H.srgb("#6B4A2A")
+check(abs(max(s.paint_colour) - 1.0) < 1e-4, f"a dark paint colour shows at the brightness it paints ({tuple(round(c, 3) for c in s.paint_colour)})")
+# a collection with the meadow in it is refused even when set from a script
+s.avoid_collection = m2.users_collection[0]
+check(s.avoid_collection is None or avoid.collection_ok(s.avoid_collection), "a script can't make a meadow avoid itself")
 # an armature is avoided through its meshes
 bpy.ops.object.armature_add(location=(-3, 3, 0))
 arm = ctx.active_object

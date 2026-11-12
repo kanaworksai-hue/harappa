@@ -217,7 +217,15 @@ def _set(name, scale=1.0):
 
 
 def _upd_collection(self, context):
-    assign(self.id_data, self.avoid_collection)
+    sc = self.id_data
+    col = self.avoid_collection
+    if col is not None and not collection_ok(col):     # set from a script or the CLI: the picker's rule still holds
+        prev = bpy.data.collections.get(sc.get("hrp_avoid_prev", ""))
+        print(f"[Harappa] Avoid collection {col.name!r} holds Harappa scenery: kept {prev.name if prev else None!r}")
+        self.avoid_collection = prev if prev is not None and collection_ok(prev) else None
+        return
+    sc["hrp_avoid_prev"] = col.name if col is not None else ""
+    assign(sc, col)
 
 
 def _poll_collection(self, col):

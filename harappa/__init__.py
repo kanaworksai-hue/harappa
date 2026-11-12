@@ -520,6 +520,18 @@ PAINT_LAYERS = [
 _BRUSHES = "brushes/essentials_brushes-mesh_vertex.blend/Brush/"
 
 
+def _upd_paint_colour(self, context):
+    """The Colour layer paints a colour at full brightness: the field shows exactly what will be painted."""
+    if _busy["on"]:
+        return
+    fv = layers.full_value(tuple(self.paint_colour))
+    if max(abs(a - b) for a, b in zip(fv, self.paint_colour)) > 1e-4:
+        _busy["on"] = True
+        self.paint_colour = fv
+        _busy["on"] = False
+    _upd_brush(self, context)
+
+
 def _upd_brush(self, context):
     if not _busy["on"] and context.mode == "PAINT_VERTEX" and meadow_of(context.active_object) is not None:
         apply_brush(context)                    # never on the user's own mesh they are vertex painting
@@ -623,8 +635,10 @@ def _settings_annotations():
                                                   update=_upd_brush,
                                                   description="How much each stroke changes. Lower for soft edges"),
         "paint_colour": bpy.props.FloatVectorProperty(
-            name="Paint Colour", subtype="COLOR", size=3, min=0.0, max=1.0, default=srgb("#F2D25C"),
-            update=_upd_brush, description="Pick a paint colour. The swatches match the current season"),
+            name="Paint Colour", subtype="COLOR", size=3, min=0.0, max=1.0, default=layers.full_value(srgb("#F2D25C")),
+            update=_upd_paint_colour,
+            description="Pick a paint colour. It is painted at full brightness; light and shade still fall on it. "
+                        "The swatches match the current season"),
         "look_name": bpy.props.StringProperty(name="Look", default="",
                                               description="The look last put on this scene"),
     }
@@ -1705,7 +1719,10 @@ class HRP_OT_avoid_add(bpy.types.Operator):
         if not avoid.meadows(context.scene):
             cls.poll_message_set(i18n.t("Make a meadow first"))
             return False
-        return bool(context.selected_objects)
+        if not context.selected_objects:
+            cls.poll_message_set(i18n.t("Select the objects the grass should avoid"))
+            return False
+        return True
 
     def execute(self, context):
         scatter.grass_group()                                   # an older file: bring the nodes up first
@@ -1765,7 +1782,7 @@ class HRP_OT_avoid_select(bpy.types.Operator):
 # ---------------------------------------------------------------------------------------------
 class HRP_OT_tint_reset(bpy.types.Operator):
     bl_idname = "harappa.tint_reset"
-    bl_label = "Follow the Scene"
+    bl_label = "Back to Scene Colours"
     bl_description = "Give the selected objects back the scene's colours (their own colour and shifts are removed)"
     bl_options = {"REGISTER", "UNDO"}
 
@@ -1837,15 +1854,15 @@ class HRP_OT_look_save(bpy.types.Operator):
     def invoke(self, context, event):
         if not self.properties.is_property_set("name"):
             self.name = context.scene.harappa.look_name or i18n.t("My Look")
-        return context.window_manager.invoke_props_dialog(self, width=340)
+        return context.window_manager.invoke_props_dialog(self, width=420)
 
     def draw(self, context):
         col = self.layout.column()
         col.prop(self, "name", text=i18n.t("Name"), translate=False)
         col.label(text=i18n.t("Colours, light, sky and paint style"), icon="CHECKMARK", translate=False)
         col.prop(self, "grass", text=i18n.t("Grass and Wind Settings"), translate=False)
-        col.label(text=i18n.t("Not saved: painting, each object's own colour, avoided objects"), icon="INFO",
-                  translate=False)
+        col.label(text=i18n.t("Not saved: painting, each object's own colour,"), icon="INFO", translate=False)
+        col.label(text=i18n.t("avoided objects"), icon="BLANK1", translate=False)
         if os.path.exists(looks.path_of(self.name.strip() or "Look")):
             col.label(text=i18n.report(f'Replaces the look "{self.name.strip()}"'), icon="ERROR", translate=False)
 
