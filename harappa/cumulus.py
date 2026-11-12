@@ -476,6 +476,11 @@ def layout(context, count=5, seed=0, distance=0.0):
     return made
 
 
+def _args(ob):
+    a = list(ob.get("hrp_cloud_args", [0, 0.0]))
+    return int(a[0]), float(a[1])
+
+
 def clear_trees(context):
     """After trees are planted: each cloud of the layout that a tree crown now covers slides sideways (or up) along
     the sky until it is clear; every other cloud stays exactly where it is."""
@@ -508,8 +513,14 @@ def clear_trees(context):
         half = 0.5 * w / max(flat, 1e-6)
         az0 = math.atan2(v.y, v.x)
         lift = math.degrees(math.atan2(v.z, flat)) - skyline(az0, half, flat)      # its foot against the ridge
-        others = [(world_to_camera_view(scene, cam, o.location).x, 0.5 * o.scale.x / max((o.location - origin).length, 1e-6)
-                   * per_rad) for o in clouds_of(scene) if o is not ob]
+        def rect(o, c=None):                                     # rough frame box of a cloud (x0, x1, y0, y1)
+            c = o.location if c is None else c
+            q = world_to_camera_view(scene, cam, c)
+            hw = 0.5 * o.scale.x / max((c - origin).length, 1e-6) * per_rad
+            hh = max(c_.z + r for c_, r in lobes(1.0, *_args(o))) * o.scale.z / max((c - origin).length, 1e-6) * per_rad * 1.78
+            return q.x - hw, q.x + hw, q.y, q.y + hh
+
+        others = [rect(o) for o in clouds_of(scene) if o is not ob]
         best = None
         for step in (3, -3, 6, -6, 9, -9, 12, -12, 16, -16, 20, -20, 25, -25, 30, -30):
             a = math.radians(step)
@@ -517,8 +528,8 @@ def clear_trees(context):
             ridge = skyline(az, half, flat)
             el = math.radians(ridge + lift) if ridge > 0.0 else math.atan2(v.z, flat)
             p = origin + Vector((math.cos(az) * flat, math.sin(az) * flat, math.tan(el) * flat))
-            q = world_to_camera_view(scene, cam, p)
-            if any(abs(q.x - ox) < half * per_rad + oh for ox, oh in others):
+            x0, x1, y0, y1 = rect(ob, p)
+            if any(x0 < ox1 and ox0 < x1 and y0 < oy1 and oy0 < y1 for ox0, ox1, oy0, oy1 in others):
                 continue                                         # not onto another cloud
             if not hit(p):
                 best = (p, a)

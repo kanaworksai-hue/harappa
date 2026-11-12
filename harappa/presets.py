@@ -147,7 +147,7 @@ STYLES = {
                            "clump_small": 1.1, "root_dark": 0.5, "tip_light": 0.75, "leaf_ao": 0.9,
                            "leaf_hi_amount": 0.9,
                        "style_sat": 0.94, "style_contrast": 1.06, "cloud_jitter": 2.4,
-                       "sky_brush": 0.7, "sky_bands": 0.0, "cirrus_mult": 1.7, "ridge_soft": 0.1, "sky_curve": 0.44, "leaf_scale": 0.85, "cloud_res": 1.0, "leaf_break": 1.0}},
+                       "sky_brush": 0.7, "sky_bands": 0.0, "cirrus_mult": 1.7, "ridge_soft": 0.1, "sky_curve": 0.44, "leaf_scale": 0.9, "cloud_res": 1.0, "leaf_break": 1.0}},
     "CRISP": {"name": "Crisp Cel", "desc": "Hard two-tone edges, big graphic shapes",
               "keys": {"softness": 0.0, "brush_jitter": 0.04, "clump_size": 3.2, "clump_strength": 1.5,
                        "clump_small": 0.12, "root_dark": 0.15, "tip_light": 0.0, "leaf_ao": 0.5,
