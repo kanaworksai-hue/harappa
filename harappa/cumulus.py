@@ -429,8 +429,9 @@ def layout(context, count=5, seed=0, distance=0.0):
             ridge = skyline(az, 0.5 * rel, d)                   # only the mountains in front of it
             if role == "hero":                                  # the foot hides even where the ridge dips
                 dips = [skyline(az + k * 0.08 * rel, 0.04 * rel, d) for k in range(-6, 7)]
-                dips = [e for e in dips if e > 0.0]
-                ridge = min([ridge] + dips)
+                dips = sorted(e for e in dips if e > 0.0)
+                if dips:                                        # behind the dips, but no deep notch in a valley
+                    ridge = min(ridge, max(dips[0], dips[len(dips) // 2] - 0.1 * height_deg))
             if role == "hero":                          # its foot hidden behind the mountain tops
                 if ridge > 0.0:
                     low = max(low, ridge - 0.25 * height_deg)
@@ -450,7 +451,8 @@ def layout(context, count=5, seed=0, distance=0.0):
             gap = 0.5 * rel / hfov + (0.025 if role != "band" else 0.0)
             if role == "band" or attempt >= 50:
                 gap *= 0.6                              # the band may crowd; and rather close than a cloud short
-            if attempt < 80 and any(abs(sx - qx) < gap + qg and (role != "band" or qr != "band")
+            if attempt < 80 and any(abs(sx - qx) < gap + qg + (0.03 if "hero" in (qr, role) else 0.0)
+                                    and (role != "band" or qr != "band")
                                     for qx, qg, qr in placed if qr == role or "hero" in (qr, role)):
                 continue                                # the last tries take any free-ish spot: never a cloud short
             hw = max(c_.z + r for c_, r in lobes(1.0, cseed, tower)) * w          # its height in metres
@@ -486,7 +488,11 @@ def clear_trees(context):
     boxes = old._tree_boxes(scene, cam)
     if not boxes:
         return 0
+    from bpy_extras.object_utils import world_to_camera_view
     origin = cam.matrix_world.translation
+    skyline = _skyline(scene, origin)
+    tr, _br, _bl, tl = cam.data.view_frame(scene=scene)
+    per_rad = 1.0 / max(1e-6, 2.0 * math.atan(abs(tr.x - tl.x) * 0.5 / max(abs(tr.z), 1e-6)))   # frame per radian
     moved = 0
     for ob in clouds_of(scene):
         if not is_auto(ob):
@@ -498,10 +504,22 @@ def clear_trees(context):
         if not hit(ob.location):
             continue
         v = ob.location - origin
+        flat = v.xy.length
+        half = 0.5 * w / max(flat, 1e-6)
+        az0 = math.atan2(v.y, v.x)
+        lift = math.degrees(math.atan2(v.z, flat)) - skyline(az0, half, flat)      # its foot against the ridge
+        others = [(world_to_camera_view(scene, cam, o.location).x, 0.5 * o.scale.x / max((o.location - origin).length, 1e-6)
+                   * per_rad) for o in clouds_of(scene) if o is not ob]
         best = None
         for step in (3, -3, 6, -6, 9, -9, 12, -12, 16, -16, 20, -20, 25, -25, 30, -30):
             a = math.radians(step)
-            p = origin + Vector((v.x * math.cos(a) - v.y * math.sin(a), v.x * math.sin(a) + v.y * math.cos(a), v.z))
+            az = az0 + a
+            ridge = skyline(az, half, flat)
+            el = math.radians(ridge + lift) if ridge > 0.0 else math.atan2(v.z, flat)
+            p = origin + Vector((math.cos(az) * flat, math.sin(az) * flat, math.tan(el) * flat))
+            q = world_to_camera_view(scene, cam, p)
+            if any(abs(q.x - ox) < half * per_rad + oh for ox, oh in others):
+                continue                                         # not onto another cloud
             if not hit(p):
                 best = (p, a)
                 break

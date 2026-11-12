@@ -1046,7 +1046,10 @@ class HRP_OT_make_foliage(bpy.types.Operator):
             mod = ob.modifiers.get("Harappa Foliage") or ob.modifiers.new("Harappa Foliage", "NODES")
             mod.node_group = scatter.foliage_group()
             mod_input(mod, "Card", tree.card_object(context.scene, "leaf", "ROUND"))
-            size = max(ob.dimensions) or 1.0
+            sc_ = ob.matrix_world.to_scale()                     # the mesh itself, not the leaves on it
+            vs = [v.co for v in ob.data.vertices] if ob.type == "MESH" and len(ob.data.vertices) else None
+            size = (max((max(c[i] for c in vs) - min(c[i] for c in vs)) * abs(sc_[i]) for i in range(3))
+                    if vs else max(ob.dimensions)) or 1.0
             mod_input(mod, "Leaf Size", max(0.02, size * 0.09))
             mod_input(mod, "Density", 45.0 * (4.0 / size) ** 2)
             mod_input(mod, "Inflate", size * 0.02)

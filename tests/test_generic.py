@@ -239,7 +239,11 @@ sc.frame_end = 60
 a = render("wind_f1", 1)
 b = render("wind_f1b", 1)
 # stable = no visible change: < 0.01 % of pixels move more than 2 %, none more than 5 % (EEVEE may differ on a pixel)
-check((np.abs(a - b) > 0.02).mean() < 1e-4 and np.abs(a - b).max() < 0.05, "same frame renders the same")
+_d = np.abs(a - b)
+if (_d > 0.02).mean() >= 1e-4 or _d.max() >= 0.05:
+    np.save(os.path.join(OUT, "same_frame_diff.npy"), _d.max(axis=2))
+check((_d > 0.02).mean() < 1e-4 and _d.max() < 0.05,
+      f"same frame renders the same ({(_d > 0.02).mean() * 100:.3f}% px > 2%, max {_d.max():.3f})")
 c = render("wind_f30", 30)
 diff = (np.abs(a - c).max(axis=2) > 0.05).mean()
 check(diff > 0.01, f"wind animates the grass ({diff * 100:.1f}% pixels change)")
@@ -599,7 +603,7 @@ bpy.context.view_layer.objects.active = ground
 bpy.ops.harappa.plant_trees(count=6, seed=2)
 cam = sc.camera
 # the Make Clouds button keeps the clouds behind the mountains: the big one's foot hides behind those in front of it
-bpy.ops.harappa.add_clouds("INVOKE_DEFAULT")
+bpy.ops.harappa.add_clouds("INVOKE_DEFAULT", seed=3)
 hero = next(o for o in sc.objects if o.get("hrp_cloud_auto") and o.name.startswith("Cloud Hero"))
 _o = cam.matrix_world.translation
 _v = hero.location - _o
