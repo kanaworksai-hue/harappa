@@ -120,7 +120,7 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
             row = box.row()
             row.scale_y = 1.6
             _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK", depress=True)
-            box.label(text=t("The other settings come back when you are done"), translate=False)
+            box.label(text=t("More settings after Done"), translate=False)
             return
         col = layout.column(align=True)
         col.scale_y = 1.5
@@ -143,9 +143,11 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         _enum(col, s, "style")
         row = col.split(factor=0.36, align=True)
         row.label(text=t("Look"), translate=False)
+        row.menu("HRP_MT_looks", text=_look_label(context), translate=False)
+        row = col.split(factor=0.36, align=True)
+        row.label(text="")
         sub = row.row(align=True)
-        sub.menu("HRP_MT_looks", text=_look_label(context), translate=False)
-        sub.operator("harappa.look_save", text=t("Save"), translate=False, icon="ADD")
+        sub.operator("harappa.look_save", text=t("Save Look"), translate=False, icon="ADD")
         sub.menu("HRP_MT_look_more", text="", icon="DOWNARROW_HLT")
         col = layout.column(align=True)
         _prop(col, s, "grade_sat")
@@ -236,13 +238,13 @@ MODE_LABELS = {                                    # what Paint / Erase mean on 
     "GRASS": ("Grow Grass", "Make Path"),
     "FLOWERS": ("More Flowers", "No Flowers"),
     "HEIGHT": ("Taller", "Shorter"),
-    "COLOUR": ("Paint Colour", "Remove Colour"),
+    "COLOUR": ("Paint", "Remove"),
 }
 LAYER_HINTS = {
-    "GRASS": "Make Path clears the grass, Grow Grass brings it back",
-    "FLOWERS": "More Flowers paints dense flower beds",
-    "HEIGHT": "Up to twice as tall, down to bare ground",
-    "COLOUR": "The sunlit grass takes the colour; shade still falls on it",
+    "GRASS": "Make Path clears, Grow Grass brings back",
+    "FLOWERS": "Paints dense flower beds",
+    "HEIGHT": "Up to twice as tall, or bare",
+    "COLOUR": "Sunlit grass takes this colour",
 }
 SWATCH_NAMES = {"grass_tip": "Sunlit Tips", "grass_lit2": "Fresh Green", "flower_b": "Flower Yellow",
                 "flower_c": "Flower Pink", "flower_d": "Flower Violet"}
@@ -301,8 +303,9 @@ def _brush_panel(layout, context, ob):
         _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK", depress=True)
         paint_l, erase_l = MODE_LABELS[s.paint_layer]
         row = layout.row(align=True)
-        for ident, label in (("PAINT", paint_l), ("ERASE", erase_l), ("SMOOTH", "Smooth")):
+        for ident, label in (("PAINT", paint_l), ("ERASE", erase_l)):
             row.prop_enum(s, "paint_mode", ident, text=t(label), translate=False)
+        row.prop_enum(s, "paint_mode", "SMOOTH", text="", icon="SMOOTHCURVE")
         col = layout.column(align=True)
         _prop(col, s, "paint_strength")
         if s.paint_layer == "COLOUR":
@@ -317,7 +320,7 @@ def _brush_panel(layout, context, ob):
         _op(row, "harappa.paint_fill", "Reset Layer", icon="LOOP_BACK").clear = True
         layout.label(text=t(LAYER_HINTS[s.paint_layer]), icon="INFO", translate=False)
         layout.label(text=t("F = brush size, Shift+F = strength"), icon="MOUSE_MOVE", translate=False)
-        layout.label(text=t("Fewer grass blades shown while painting"), icon="HIDE_OFF", translate=False)
+        layout.label(text=t("Fewer blades shown while painting"), icon="HIDE_OFF", translate=False)
     if layers.spacing(ob) > 0.5:
         layout.label(text=t("Ground is coarse: strokes will look blocky"), icon="ERROR", translate=False)
         if not ob.get("hrp_hill"):

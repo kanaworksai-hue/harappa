@@ -1507,6 +1507,8 @@ class HRP_OT_paint_layer(bpy.types.Operator):
         fresh = layers.attr_name(self.layer) not in ob.data.color_attributes or not layers.painted(ob)
         layers.ensure(ob.data, self.layer)
         _busy["on"] = True
+        if s.paint_layer != self.layer or context.mode != "PAINT_VERTEX":
+            s.paint_mode = "PAINT"                  # a new layer starts with its Paint action (More Flowers, Taller...)
         s.paint_layer = self.layer
         if s.paint_mode == "SMOOTH":
             s.paint_mode = "PAINT"
@@ -1833,7 +1835,8 @@ class HRP_OT_look_save(bpy.types.Operator):
                                   description="Also keep the grass, flower and wind settings of the meadow")
 
     def invoke(self, context, event):
-        self.name = context.scene.harappa.look_name or i18n.t("My Look")
+        if not self.properties.is_property_set("name"):
+            self.name = context.scene.harappa.look_name or i18n.t("My Look")
         return context.window_manager.invoke_props_dialog(self, width=340)
 
     def draw(self, context):
@@ -1841,6 +1844,8 @@ class HRP_OT_look_save(bpy.types.Operator):
         col.prop(self, "name", text=i18n.t("Name"), translate=False)
         col.label(text=i18n.t("Colours, light, sky and paint style"), icon="CHECKMARK", translate=False)
         col.prop(self, "grass", text=i18n.t("Grass and Wind Settings"), translate=False)
+        col.label(text=i18n.t("Not saved: painting, each object's own colour, avoided objects"), icon="INFO",
+                  translate=False)
         if os.path.exists(looks.path_of(self.name.strip() or "Look")):
             col.label(text=i18n.report(f'Replaces the look "{self.name.strip()}"'), icon="ERROR", translate=False)
 

@@ -18,7 +18,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 33
+GN_VER = 34
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -646,6 +646,7 @@ def flowers_group():
     lift = _rand(g, -400, -1500, 0.45, 0.95, g.out(gi, "Seed"), 81)
     lh0 = g.math("MULTIPLY", -200, -1500, lift, g.out(gi, "Height"))
     lh1 = g.math("MULTIPLY", -150, -1550, g.out(lh0), _height_layer(g, -700, -1700))  # painted Height layer
+    lh1 = g.math("MULTIPLY", -120, -1500, g.out(lh1), g.out(g.math("MULTIPLY_ADD", -250, -1450, g.out(hi), 0.35, 1.0)))
     lh = g.math("MULTIPLY", -100, -1600, g.out(lh1), avf)
     up = g.vmath("SCALE", 0, -1500, g.out(dp, "Normal"), scale=g.out(lh))
     wind = _wind_node(g, gi, -200, -1800, g.out(pos))
@@ -663,6 +664,8 @@ def flowers_group():
     g.link(s0, 0, smix, "A", bkind="VALUE")
     g.inp(smix, "B", "VALUE").default_value = 1.0
     ss = g.math("MULTIPLY", 800, -800, g.mixout(smix), g.out(gi, "Size"))
+    # a painted flower bed stands above the grass with bigger heads, so it reads as a bed from afar
+    ss = g.math("MULTIPLY", 850, -850, g.out(ss), g.out(g.math("MULTIPLY_ADD", 700, -900, g.out(hi), 0.4, 1.0)))
     card = g.n("GeometryNodeObjectInfo", 400, 300)
     g.link(gi, "Card", card, "Object")
     iop = g.n("GeometryNodeInstanceOnPoints", 1000, 0)
