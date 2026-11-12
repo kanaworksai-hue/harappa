@@ -151,6 +151,7 @@ class G:
 
 
 _KEPT = {}      # group name -> identifiers of the interface sockets the running rebuild has claimed, in order
+_NEW = {}       # group name -> identifiers of inputs a rebuild added to an existing group
 
 
 def _sockets(ng):
@@ -174,6 +175,8 @@ def iface(ng, name, in_out, stype, default=None, lo=None, hi=None, desc=None, su
             s = next(i for i in _sockets(ng) if i.in_out == in_out and i.name == name and i.identifier not in kept)
     if s is None:
         s = ng.interface.new_socket(name, in_out=in_out, socket_type=stype)
+        if kept is not None and in_out == "INPUT":
+            _NEW.setdefault(ng.name, []).append(s.identifier)     # stamp() gives users its default
     if kept is not None:
         kept.append(s.identifier)
     if default is not None and hasattr(s, "default_value"):
@@ -252,11 +255,33 @@ def fresh_group(name, kind, version, renames=None):
 def stamp(idblock, version):
     """Mark a node group / material / world as completely built at this version."""
     kept = _KEPT.pop(getattr(idblock, "name", None), None) if isinstance(idblock, bpy.types.NodeTree) else None
+    new = _NEW.pop(getattr(idblock, "name", None), []) if isinstance(idblock, bpy.types.NodeTree) else []
     if kept is not None:                                     # ... and what is no longer declared goes here
         for i in [i for i in _sockets(idblock) if i.identifier not in kept]:
             idblock.interface.remove(i)
         _reorder(idblock, kept)
+    if new:
+        _default_new_inputs(idblock, new)
     idblock[VERSION_KEY] = version
+
+
+def _default_new_inputs(ng, idents):
+    """Modifiers that already used the group got the new inputs with the value they had when they were created
+    (0), not their declared default: write the default into each of them (a meadow from an older version would
+    otherwise lose its grass in the viewport, Preview Factor 0)."""
+    items = {i.identifier: i for i in _sockets(ng) if i.in_out == "INPUT" and i.identifier in idents}
+    for ob in bpy.data.objects:
+        for mod in getattr(ob, "modifiers", []):
+            if mod.type != "NODES" or mod.node_group != ng:
+                continue
+            for ident, item in items.items():
+                if not hasattr(item, "default_value"):
+                    continue
+                try:
+                    mod_input(mod, item.name, item.default_value)
+                except (KeyError, TypeError, AttributeError):
+                    pass
+            ob.update_tag()
 
 
 def _reorder(ng, order):

@@ -704,6 +704,72 @@ REPORTS += [
     (r"and (\d+) more", ("ほか {0} 個", "还有 {0} 个", "외 {0}개")),
 ]
 
+UI.update({
+    "Paint the Meadow": ("草原に塗る", "绘制草地", "초원에 칠하기"),
+    "Grow Grass": ("草を生やす", "长草", "풀 키우기"),
+    "Make Path": ("道を作る", "开小路", "길 만들기"),
+    "More Flowers": ("花を増やす", "多开花", "꽃 늘리기"),
+    "No Flowers": ("花をなくす", "去掉花", "꽃 없애기"),
+    "Taller": ("高く", "变高", "높게"),
+    "Shorter": ("低く", "变矮", "낮게"),
+    "Remove Colour": ("色を消す", "去掉颜色", "색 지우기"),
+    "Make Path clears the grass, Grow Grass brings it back": ("「道を作る」で草が消え、「草を生やす」で戻ります",
+                                                              "「开小路」清掉草，「长草」把草长回来",
+                                                              "「길 만들기」로 풀이 사라지고 「풀 키우기」로 돌아옵니다"),
+    "More Flowers paints dense flower beds": ("「花を増やす」で花畑のように密に咲きます", "「多开花」画出茂密的花坛",
+                                              "「꽃 늘리기」로 꽃밭처럼 빽빽하게 핍니다"),
+    "Up to twice as tall, down to bare ground": ("最大 2 倍の高さから、地面すれすれまで", "最高到两倍，最矮到贴地",
+                                                 "최대 2배 높이부터 땅에 붙을 만큼 낮게까지"),
+    "The sunlit grass takes the colour; shade still falls on it": ("日の当たる草がその色になり、影はそのまま落ちます",
+                                                                   "受光的草变成这个颜色，阴影照常",
+                                                                   "햇빛 받는 풀이 그 색이 되고 그림자는 그대로 집니다"),
+    "Sunlit Tips": ("日に透ける穂先", "受光的草尖", "햇빛 받은 풀끝"),
+    "Fresh Green": ("若草色", "嫩绿", "연둣빛"),
+    "Flower Yellow": ("花の黄", "花黄", "꽃 노랑"),
+    "Flower Pink": ("花のピンク", "花粉", "꽃 분홍"),
+    "Flower Violet": ("花の紫", "花紫", "꽃 보라"),
+    "Erase Whole Layer": ("レイヤー全体を消す", "擦除整层", "레이어 전체 지우기"),
+    "Fill Whole Layer": ("レイヤー全体を塗る", "填满整层", "레이어 전체 채우기"),
+    "Reset Layer": ("レイヤーを元に戻す", "重置本层", "레이어 되돌리기"),
+    "Fewer grass blades shown while painting": ("塗っている間は草を減らして表示します", "绘制时少显示一些草",
+                                                "칠하는 동안은 풀을 줄여서 표시합니다"),
+    "The other settings come back when you are done": ("ほかの設定は塗り終わると戻ります", "画完后其他设置会回来",
+                                                       "다른 설정은 칠하기를 끝내면 돌아옵니다"),
+    "New Tree": ("新しい木", "新的树", "새 나무"),
+    "Save": ("保存", "保存", "저장"),
+    "Let Grass Grow Through It": ("草がよけるのをやめる", "不再让草避开它", "풀이 피하지 않게 하기"),
+    "Make Grass Avoid It": ("草にこれをよけさせる", "让草避开它", "풀이 이것을 피하게 하기"),
+    "More": ("詳細", "更多", "더 보기"),
+    "(changed)": ("（変更あり）", "（已修改）", "(변경됨)"),
+    "Blossom on This Tree": ("この木の花", "这棵树的花", "이 나무의 꽃"),
+    "Meadows can't avoid themselves or each other": ("草原は自分自身もほかの草原もよけられません", "草地不能避开自己或其他草地",
+                                                     "초원은 자기 자신도 다른 초원도 피할 수 없습니다"),
+    "An armature is avoided through its meshes: they are added instead": (
+        "アーマチュアはそのメッシュでよけます。代わりにメッシュを加えました", "骨架通过它的网格来避开：改为加入网格",
+        "아마추어는 그 메시로 피합니다. 대신 메시를 추가했습니다"),
+    "How short grass gets right next to the object, as a share of its normal height": (
+        "オブジェクトのすぐ横で草がどこまで低くなるか（ふだんの高さに対する割合）", "紧挨物体处的草有多矮（占正常高度的比例）",
+        "오브젝트 바로 옆에서 풀이 얼마나 낮아지는지 (보통 높이에 대한 비율)"),
+    "Reaches Down From": ("下に届く高さ", "向下作用高度", "아래로 닿는 높이"),
+    "Grass under an avoided object (a bridge, a bench, a branch) grows only up to just below it. Objects higher above "
+    "the ground than this leave the grass under them alone": (
+        "よけるオブジェクト（橋、ベンチ、枝）の下では、草はそのすぐ下までしか伸びません。地面からこれより高い物は下の草に影響しません",
+        "被避开物体（桥、长椅、树枝）下面的草只长到它下方为止；离地面高于这个值的物体不影响下方的草",
+        "피할 오브젝트(다리, 벤치, 가지) 아래의 풀은 그 바로 밑까지만 자랍니다. 땅에서 이보다 높은 것은 아래 풀에 영향을 주지 않습니다"),
+    "Grass and flowers make room for the objects in this collection (collections that hold a meadow, trees, clouds "
+    "or mountains are not offered)": ("このコレクションのオブジェクトの所は草と花がよけます（草原・木・雲・山を含むコレクションは選べません）",
+                                       "草和花会给这个集合里的物体让出空间（含有草地、树、云或山的集合不会列出）",
+                                       "이 컬렉션의 오브젝트 자리는 풀과 꽃이 비켜 줍니다 (초원·나무·구름·산이 든 컬렉션은 고를 수 없습니다)"),
+    "Select the other objects too, then this one last": ("ほかのオブジェクトも選び、最後にこれを選んでください",
+                                                         "先选其他物体，最后再选这个", "다른 오브젝트도 선택하고 마지막에 이것을 선택하세요"),
+    "Delete": ("削除", "删除", "삭제"),
+})
+REPORTS += [
+    (r'Delete the look "(.*)"\? This can\'t be undone', ("ルック「{0}」を削除しますか？元に戻せません",
+                                                          "要删除外观「{0}」吗？无法撤销", "룩 「{0}」을 삭제할까요? 되돌릴 수 없습니다")),
+    (r"Painting (.*) on (.*)", ("{1} に「{0}」を塗っています", "正在 {1} 上绘制「{0}」", "{1}에 「{0}」을 칠하는 중")),
+]
+
 LANGS = ("JA", "ZH", "KO")
 _IDX = {"JA": 0, "ZH": 1, "KO": 2}
 
@@ -752,7 +818,7 @@ def report(msg):
         m = re.fullmatch(pattern, msg)
         if m:
             return templates[_IDX[lang]].format(*m.groups())
-    return msg
+    return t(msg)                     # a fixed sentence from the UI table
 
 
 class HarappaPreferences(bpy.types.AddonPreferences):

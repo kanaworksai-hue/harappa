@@ -9,6 +9,7 @@ never mean sharing a script.
 Reading is forgiving: unknown keys are ignored (and counted), missing keys keep the current value, numbers are
 clamped to their slider range, colours that do not parse are skipped."""
 import json
+import math
 import os
 import re
 
@@ -47,6 +48,17 @@ def file_name(name):
 
 def path_of(name):
     return os.path.join(folder(), file_name(name))
+
+
+def free_name(name):
+    """name, or 'name (2)', 'name (3)'... when a look of that name is already saved (import never overwrites)."""
+    taken = {n for n, _p in all_looks()}
+    if name not in taken and not os.path.exists(path_of(name)):
+        return name
+    k = 2
+    while f"{name} ({k})" in taken or os.path.exists(path_of(f"{name} ({k})")):
+        k += 1
+    return f"{name} ({k})"
 
 
 def all_looks():
@@ -107,6 +119,12 @@ def collect(context, name, grass=False):
     return data
 
 
+def fingerprint(context):
+    """What the look panel compares to tell whether the scene still looks like the named look."""
+    d = collect(context, "")
+    return json.dumps([d["season"], d["style"], d["palette"], d["values"], d["sun"]], sort_keys=True)
+
+
 def save(context, name, grass=False, path=None):
     data = collect(context, name, grass)
     path = path or path_of(name)
@@ -134,8 +152,11 @@ def read(path):
 def _clamp(rna, v):
     lo = getattr(rna, "hard_min", None)
     hi = getattr(rna, "hard_max", None)
-    out = float(v)
-    if out != out:                                        # NaN
+    try:
+        out = float(v)
+    except OverflowError as e:                            # a huge integer in the file
+        raise ValueError from e
+    if not math.isfinite(out):
         raise ValueError
     if lo is not None:
         out = max(lo, out)
@@ -194,7 +215,7 @@ def apply(context, data):
                     n["clamped"] += 1
                 setattr(s, k, c)
                 n["set"] += 1
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 n["bad"] += 1
         n["missing"] += len(value_keys - {RENAMES.get(k, k) for k in vals})
         sun = data.get("sun") if isinstance(data.get("sun"), dict) else {}
@@ -207,7 +228,7 @@ def apply(context, data):
                     n["clamped"] += 1
                 setattr(s, prop, c)
                 n["set"] += 1
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 n["bad"] += 1
         s.variation = 0                                     # the look is what it says, not look + a shuffle
     finally:
@@ -219,6 +240,7 @@ def apply(context, data):
         _apply_layers(sc, layers, n)
     after_look(context)
     s.look_name = str(data.get("name") or "")[:64]
+    sc["hrp_look_fp"] = fingerprint(context)
     return n
 
 
@@ -241,12 +263,16 @@ def _apply_layers(sc, layers, n):
                            and i.in_out == "INPUT" and i.name == k), None)
                 try:
                     c = float(v)
-                    if c != c:
+                    if not math.isfinite(c):
                         raise ValueError
-                    if it is not None and hasattr(it, "min_value"):
-                        c = min(max(c, it.min_value), it.max_value)
-                    mod_input(m, k, c)
+                    lim = [it.min_value, it.max_value] if it is not None and hasattr(it, "min_value") else [c, c]
+                    if k == "Density" and key == "grass" and ob.get("hrp_max_density"):
+                        lim[1] = min(lim[1], float(ob["hrp_max_density"]))     # never more tufts than Make Meadow allows
+                    c2 = min(max(c, lim[0]), lim[1])
+                    if abs(c2 - c) > 1e-9:
+                        n["clamped"] += 1
+                    mod_input(m, k, c2)
                     n["set"] += 1
-                except (ValueError, TypeError, KeyError):
+                except (ValueError, TypeError, KeyError, OverflowError):
                     n["bad"] += 1
             ob.update_tag()

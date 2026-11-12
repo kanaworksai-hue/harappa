@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import BUILDING, G, VERSION_KEY, fresh_group, iface, only, srgb, stamp
 
-SHADER_VER = 39
+SHADER_VER = 40
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -468,24 +468,25 @@ def _attr_amount(g, x, y, attr_node):
     return g.out(g.math("MULTIPLY", x, y, g.out(attr_node, "Alpha"), g.out(there), clamp=True))
 
 
-def _paint_tint(g, pal, x, y, attr_node, color_sock, lit_sock):
-    """A colour painted on the ground's Colour layer (hrp_tint: colour + alpha amount) on the finished cel colour:
-    the lit tone becomes the painted colour, the shadow tones follow at their usual brightness below it (lit_sock is
-    the lit colour of the cel trio).
+def _paint_tint(g, pal, x, y, attr_node, color_sock, lit_sock, mask_sock=None):
+    """A colour painted on the ground's Colour layer (hrp_tint) on the finished cel colour: the lit tone becomes the
+    painted colour, the shadow tones follow at their usual brightness below it (lit_sock is the lit colour of the
+    cel trio). mask_sock: how much of this is grass (bare paths keep their colour).
 
-    The layer starts white with alpha 0 and the brush mixes colour and alpha with the same weight, so what is stored
-    is the painted colour laid over white: the colour itself is (rgb - (1 - a)) / a. Without this a half-strength
-    stroke would be the colour mixed with white (pale and grey) instead of the colour at half strength."""
-    a = g.math("MAXIMUM", x - 250, y + 250, g.out(attr_node, "Alpha"), 1e-3)
-    off = g.math("SUBTRACT", x - 250, y + 350, g.out(attr_node, "Alpha"), 1.0)
-    offc = g.n("ShaderNodeCombineColor", x - 120, y + 350)
-    ac = g.n("ShaderNodeCombineColor", x - 120, y + 250)
+    The layer stores the painted colour at full value times the amount painted (black = nothing, which is also
+    what EEVEE reads where the layer is missing): amount = the brightest channel, colour = rgb / amount."""
+    sep = g.n("ShaderNodeSeparateColor", x - 300, y + 200)
+    g.link(attr_node, "Color", sep, "Color")
+    mx = g.math("MAXIMUM", x - 150, y + 200, g.out(g.math("MAXIMUM", x - 220, y + 260, g.out(sep, "Red"),
+                                                           g.out(sep, "Green"))), g.out(sep, "Blue"))
+    den = g.n("ShaderNodeCombineColor", x - 20, y + 300)
+    dm = g.math("MAXIMUM", x - 80, y + 300, g.out(mx), 1e-3)
     for ch in ("Red", "Green", "Blue"):
-        g.link(off, 0, offc, ch)
-        g.link(a, 0, ac, ch)
-    num = g.mix(x, y + 350, "ADD", fac=1.0, a=g.out(attr_node, "Color"), b=g.out(offc))
-    col = g.mix(x + 120, y + 300, "DIVIDE", fac=1.0, a=g.mixout(num), b=g.out(ac), clamp=True)
-    amt = g.math("MULTIPLY", x, y, _attr_amount(g, x - 100, y + 150, attr_node), g.out(pal, "tint_amount"), clamp=True)
+        g.link(dm, 0, den, ch)
+    col = g.mix(x + 120, y + 300, "DIVIDE", fac=1.0, a=g.out(attr_node, "Color"), b=g.out(den), clamp=True)
+    amt = g.math("MULTIPLY", x, y, g.out(mx), g.out(pal, "tint_amount"), clamp=True)
+    if mask_sock is not None:
+        amt = g.math("MULTIPLY", x + 60, y - 60, g.out(amt), mask_sock)
     return _colourise(g, x + 200, y, color_sock, g.mixout(col), g.out(amt), ref_sock=lit_sock)
 
 
@@ -760,7 +761,7 @@ def ground_material():
     camt = g.math("MULTIPLY", 1050, 1400, g.out(camt), g.out(pal, "cloud_shade"), clamp=True)
     cv = g.mix(1100, 300, fac=g.out(camt), a=g.mixout(cv), b=sh)
     tint = _attr(g, "hrp_tint", "GEOMETRY", 900, -400)
-    cvt = _paint_tint(g, pal, 1100, -400, tint, g.mixout(cv), g.mixout(lit_p))
+    cvt = _paint_tint(g, pal, 1100, -400, tint, g.mixout(cv), g.mixout(lit_p), mask_sock=f)
     _emit_out(g, cvt, 1300, 200, pal=pal, haze=g.out(hz))
     _done(mat, "ground")
     return mat

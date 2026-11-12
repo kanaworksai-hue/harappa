@@ -109,14 +109,26 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
             self.layout.prop(prefs, "ui_language", text="", icon="WORLD_DATA")
 
     def draw(self, context):
+        from . import _painting_target
         s = context.scene.harappa
         layout = self.layout
+        painting = _painting_target(context)
+        if painting is not None:                     # while painting: only what painting needs, Done at the top
+            box = layout.box()
+            box.label(text=i18n.report(f"Painting {t(_layer_name(s.paint_layer))} on {painting.name}"),
+                      icon="BRUSH_DATA", translate=False)
+            row = box.row()
+            row.scale_y = 1.6
+            _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK", depress=True)
+            box.label(text=t("The other settings come back when you are done"), translate=False)
+            return
         col = layout.column(align=True)
         col.scale_y = 1.5
         _op(col, "harappa.make_meadow", "Make Anime Meadow", icon="OUTLINER_OB_POINTCLOUD")
+        _avoid_this(layout, context)
         box = layout.box()
         col = box.column(align=True)
-        _enum(col, s, "new_shape")
+        _enum(col, s, "new_shape", "New Tree")
         row = col.row(align=True)
         _prop(row, s, "new_height", "Height")
         _prop(row, s, "new_blossom")
@@ -132,8 +144,8 @@ class HRP_PT_main(HrpPanel, bpy.types.Panel):
         row = col.split(factor=0.36, align=True)
         row.label(text=t("Look"), translate=False)
         sub = row.row(align=True)
-        sub.menu("HRP_MT_looks", text=s.look_name or t("Season Default"), translate=False)
-        sub.operator("harappa.look_save", text="", icon="ADD")
+        sub.menu("HRP_MT_looks", text=_look_label(context), translate=False)
+        sub.operator("harappa.look_save", text=t("Save"), translate=False, icon="ADD")
         sub.menu("HRP_MT_look_more", text="", icon="DOWNARROW_HLT")
         col = layout.column(align=True)
         _prop(col, s, "grade_sat")
@@ -179,7 +191,6 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
         from . import build
         ob = context.active_object
         layout = self.layout
-        _brush_layers(layout, context, ob)
         gm = ob.modifiers.get(build.GRASS_MOD)
         col = layout.column(align=True)
         col.label(text=t("Grass"), translate=False)
@@ -221,13 +232,60 @@ LAYER_ICONS = {"GRASS": "OUTLINER_OB_POINTCLOUD", "FLOWERS": "OUTLINER_OB_FORCE_
                "COLOUR": "COLOR"}
 
 
-def _brush_layers(layout, context, ob):
+MODE_LABELS = {                                    # what Paint / Erase mean on each layer
+    "GRASS": ("Grow Grass", "Make Path"),
+    "FLOWERS": ("More Flowers", "No Flowers"),
+    "HEIGHT": ("Taller", "Shorter"),
+    "COLOUR": ("Paint Colour", "Remove Colour"),
+}
+LAYER_HINTS = {
+    "GRASS": "Make Path clears the grass, Grow Grass brings it back",
+    "FLOWERS": "More Flowers paints dense flower beds",
+    "HEIGHT": "Up to twice as tall, down to bare ground",
+    "COLOUR": "The sunlit grass takes the colour; shade still falls on it",
+}
+SWATCH_NAMES = {"grass_tip": "Sunlit Tips", "grass_lit2": "Fresh Green", "flower_b": "Flower Yellow",
+                "flower_c": "Flower Pink", "flower_d": "Flower Violet"}
+
+
+def _layer_name(key):
+    from . import PAINT_LAYERS
+    return next((n for k, n, _d in PAINT_LAYERS if k == key), key)
+
+
+def _look_label(context):
+    from . import looks
+    s = context.scene.harappa
+    if not s.look_name:
+        return t("Season Default")
+    try:
+        same = context.scene.get("hrp_look_fp") == looks.fingerprint(context)
+    except (AttributeError, KeyError, TypeError):
+        same = True
+    return s.look_name + ("" if same else " *")
+
+
+def _avoid_this(layout, context):
+    """The user's own object is selected and there is a meadow: offer to make the grass avoid it right here."""
+    from . import avoid, look
+    ob = context.active_object
+    if ob is None or look.is_harappa(ob) or ob.type not in ("MESH", "ARMATURE") or ob.get("hrp_card") \
+            or ob.name.startswith("HRP ") or not avoid.meadows(context.scene):
+        return
+    col = avoid.current(context.scene)
+    row = layout.row(align=True)
+    if col is not None and col.objects.get(ob.name) is ob:
+        op = _op(row, "harappa.avoid_remove", "Let Grass Grow Through It", icon="REMOVE")
+        op.name = ob.name
+    else:
+        _op(row, "harappa.avoid_add", "Make Grass Avoid It", icon="MOD_PHYSICS")
+
+
+def _brush_panel(layout, context, ob):
     from . import SWATCHES, layers
     s = context.scene.harappa
-    painting = context.mode == "PAINT_VERTEX"
-    box = layout.box()
-    col = box.column(align=True)
-    col.label(text=t("Brush Layers"), translate=False)
+    painting = context.mode == "PAINT_VERTEX" and context.active_object == ob
+    col = layout.column(align=True)
     grid = col.grid_flow(row_major=True, columns=2, even_columns=True, align=True)
     grid.scale_y = 1.3
     prop = s.bl_rna.properties["paint_layer"]
@@ -236,12 +294,16 @@ def _brush_layers(layout, context, ob):
                            depress=painting and s.paint_layer == it.identifier)
         op.layer = it.identifier
     if not painting:
-        box.label(text=t("Click a layer to paint it"), icon="INFO", translate=False)
+        layout.label(text=t("Click a layer to paint it"), icon="INFO", translate=False)
     else:
-        row = box.row(align=True)
-        for it in s.bl_rna.properties["paint_mode"].enum_items:
-            row.prop_enum(s, "paint_mode", it.identifier, text=t(it.name), translate=False)
-        col = box.column(align=True)
+        row = layout.row()
+        row.scale_y = 1.4
+        _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK", depress=True)
+        paint_l, erase_l = MODE_LABELS[s.paint_layer]
+        row = layout.row(align=True)
+        for ident, label in (("PAINT", paint_l), ("ERASE", erase_l), ("SMOOTH", "Smooth")):
+            row.prop_enum(s, "paint_mode", ident, text=t(label), translate=False)
+        col = layout.column(align=True)
         _prop(col, s, "paint_strength")
         if s.paint_layer == "COLOUR":
             _prop(col, s, "paint_colour", "Paint Colour")
@@ -249,26 +311,49 @@ def _brush_layers(layout, context, ob):
             for k in SWATCHES:
                 op = row.operator("harappa.paint_swatch", text="", icon_value=_swatch_icon(k, getattr(s, k)))
                 op.key = k
-            _prop(col, s, "tint_amount")
-        row = box.row(align=True)
-        _op(row, "harappa.paint_fill", "Fill Layer", icon="SNAP_FACE").clear = False
-        _op(row, "harappa.paint_fill", "Clear Layer", icon="X").clear = True
-        row = box.row()
-        row.scale_y = 1.5
-        row.alert = True
-        _op(row, "harappa.paint_done", "Done Painting", icon="CHECKMARK")
-        box.label(text=t("F = brush size, Shift+F = strength"), icon="INFO", translate=False)
-        box.label(text=t("Lighter preview while painting"), icon="HIDE_OFF", translate=False)
+        row = layout.row(align=True)
+        fill = "Erase Whole Layer" if s.paint_mode == "ERASE" else "Fill Whole Layer"
+        _op(row, "harappa.paint_fill", fill, icon="SNAP_FACE").clear = False
+        _op(row, "harappa.paint_fill", "Reset Layer", icon="LOOP_BACK").clear = True
+        layout.label(text=t(LAYER_HINTS[s.paint_layer]), icon="INFO", translate=False)
+        layout.label(text=t("F = brush size, Shift+F = strength"), icon="MOUSE_MOVE", translate=False)
+        layout.label(text=t("Fewer grass blades shown while painting"), icon="HIDE_OFF", translate=False)
     if layers.spacing(ob) > 0.5:
-        box.label(text=t("Ground is coarse: strokes will look blocky"), icon="ERROR", translate=False)
+        layout.label(text=t("Ground is coarse: strokes will look blocky"), icon="ERROR", translate=False)
         if not ob.get("hrp_hill"):
-            _op(box, "harappa.ground_finer", "Make Ground Finer", icon="MOD_SUBSURF")
+            _op(layout, "harappa.ground_finer", "Make Ground Finer", icon="MOD_SUBSURF")
+
+
+class HRP_PT_brush(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_brush"
+    title = "Paint the Meadow"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        from . import avoid
+        return bool(avoid.meadows(context.scene))
+
+    def draw_header(self, context):
+        from . import _paint_target
+        ob = _paint_target(context)
+        self.layout.label(text=t(self.title) + (f": {ob.name}" if ob is not None else ""), translate=False)
+
+    def draw(self, context):
+        from . import _paint_target
+        ob = _paint_target(context)
+        if ob is None:
+            self.layout.label(text=t("Select a meadow to paint on"), icon="INFO", translate=False)
+            return
+        _brush_panel(self.layout, context, ob)
 
 
 class HRP_PT_avoid(HrpSub, bpy.types.Panel):
     bl_label = ""
     bl_idname = "HRP_PT_avoid"
     title = "Avoid Objects"
+    bl_options = set()
 
     @classmethod
     def poll(cls, context):
@@ -285,26 +370,39 @@ class HRP_PT_avoid(HrpSub, bpy.types.Panel):
         _op(row, "harappa.avoid_add", "Avoid Selected", icon="ADD")
         _op(row, "harappa.avoid_remove", "Stop Avoiding", icon="REMOVE")
         coll = avoid.current(context.scene)
+        notes = avoid.NOTES.get(context.scene.name) or []
+        if notes:
+            nb = layout.box()
+            for name, why in notes[:3]:
+                nb.label(text=f"{name}: {t(why)}", icon="ERROR", translate=False)
         box = layout.box()
         objs = list(coll.objects) if coll is not None else []
         if not objs:
             box.label(text=t("Select your character, then click Avoid Selected"), icon="INFO", translate=False)
         for ob in objs[:12]:
+            why = avoid.check(context.scene, ob)
             row = box.row(align=True)
-            op = row.operator("harappa.avoid_select", text=ob.name, translate=False, icon="OBJECT_DATA", emboss=False)
+            row.alert = why is not None
+            op = row.operator("harappa.avoid_select", text=ob.name, translate=False,
+                              icon="ERROR" if why else "OBJECT_DATA", emboss=False)
             op.name = ob.name
             op = row.operator("harappa.avoid_remove", text="", icon="X", emboss=False)
             op.name = ob.name
+            if why:
+                box.label(text=t(why[0]), translate=False)
         if len(objs) > 12:
             box.label(text=i18n.report(f"and {len(objs) - 12} more"), translate=False)
         col = layout.column(align=True)
         _prop(col, s, "avoid_margin")
         _prop(col, s, "avoid_floor")
-        _prop(col, s, "avoid_reach")
         _prop(col, s, "avoid_box")
-        col = layout.column(align=True)
-        col.label(text=t("Collection"), translate=False)
-        col.prop(s, "avoid_collection", text="")
+        head, body = layout.panel("hrp_avoid_more", default_closed=True)
+        head.label(text=t("More"), translate=False)
+        if body is not None:
+            col = body.column(align=True)
+            _prop(col, s, "avoid_reach")
+            col.label(text=t("Avoid Collection"), translate=False)
+            col.prop(s, "avoid_collection", text="")
 
 
 class HRP_PT_tint(HrpSub, bpy.types.Panel):
@@ -321,7 +419,7 @@ class HRP_PT_tint(HrpSub, bpy.types.Panel):
     def draw_header(self, context):
         from . import look
         mark = any(look.overridden(o) for o in look.targets(context.active_object))
-        self.layout.label(text=t(self.title) + ("  \u25CF" if mark else ""), translate=False)
+        self.layout.label(text=t(self.title) + (" " + t("(changed)") if mark else ""), translate=False)
 
     def draw(self, context):
         s = context.scene.harappa
@@ -332,6 +430,12 @@ class HRP_PT_tint(HrpSub, bpy.types.Panel):
         col = layout.column(align=True)
         _prop(col, s, "obj_tint")
         _prop(col, s, "obj_tint_amount", "Amount", slider=True)
+        from . import tree_canopy, tree_root
+        root = tree_root(context.active_object)
+        canopy = tree_canopy(root) if root is not None else None
+        mod = canopy.modifiers.get("Harappa Foliage") if canopy is not None else None
+        if mod is not None:                          # the quick way to a cherry tree: blossom on this one
+            _mod_inputs(layout.column(align=True), mod, ("Blossom",), labels={"Blossom": "Blossom on This Tree"})
         row = layout.row(align=True)
         _op(row, "harappa.tint_copy", "Copy to Selected", icon="COPYDOWN")
         _op(row, "harappa.tint_reset", "Follow the Scene", icon="LOOP_BACK")
@@ -523,6 +627,7 @@ class HRP_PT_colours(HrpSub, bpy.types.Panel):
             ("Mountains", ("mountain_1", "mountain_2", "mountain_3")),
             ("Flowers", ("flower_a", "flower_b", "flower_c", "flower_d", "flower_centre", "flower_shade")),
         )
+        _prop(self.layout, s, "tint_amount")
         for title, keys in groups:
             col = self.layout.column(align=True)
             col.label(text=t(title), translate=False)
@@ -547,8 +652,8 @@ class HRP_PT_links(HrpSub, bpy.types.Panel):
 
 MENUS = ([_enum_menu(n) for n in ENUMS] + [_tree_enum_menu(n) for n in ("shape", "leaf_style")]
          + [HRP_MT_looks, HRP_MT_look_delete, HRP_MT_look_more])
-PANELS = (HRP_PT_main, HRP_PT_meadow, HRP_PT_tint, HRP_PT_cloud, HRP_PT_tree, HRP_PT_avoid, HRP_PT_light,
-          HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
+PANELS = (HRP_PT_main, HRP_PT_brush, HRP_PT_meadow, HRP_PT_tree, HRP_PT_cloud, HRP_PT_tint, HRP_PT_avoid,
+          HRP_PT_light, HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
 
 
 def register():

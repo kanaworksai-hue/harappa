@@ -39,8 +39,9 @@ def targets(ob):
     if not is_harappa(ob):
         return []
     root = _tree_root(ob)
-    if root is not None:
-        return [root] + [c for c in root.children if c.type == "MESH"]
+    if root is not None:                         # a tree's colour is its crown (the trunk stays bark brown)
+        crowns = [c for c in root.children if c.get("hrp_canopy")]
+        return crowns or [root]
     return [ob]
 
 
@@ -127,25 +128,30 @@ def _setter(key):
         if ob is None:
             return
         for o in targets(ob):
-            set_user(o, **{key: tuple(value) if key == "colour" else value})
+            if key == "colour":
+                # picking a colour should show it: an amount of 0 becomes 0.9
+                amt = None if user(o)[4] > 1e-6 else 0.9
+                set_user(o, colour=tuple(value), amount=amt)
+            else:
+                set_user(o, **{key: value})
     return f
 
 
 def props():
     return {
         "obj_hue": bpy.props.FloatProperty(
-            name="Hue Shift", min=-0.5, max=0.5, get=_getter(0), set=_setter("h"),
+            name="Hue Shift", min=-0.5, max=0.5, get=_getter(0), set=_setter("h"), options=set(),
             description="Shift this object's colours around the colour wheel"),
         "obj_sat": bpy.props.FloatProperty(
-            name="Saturation Shift", min=-1.0, max=1.0, get=_getter(1), set=_setter("s"),
+            name="Saturation Shift", min=-1.0, max=1.0, get=_getter(1), set=_setter("s"), options=set(),
             description="More vivid or more muted than the rest of the scene"),
         "obj_value": bpy.props.FloatProperty(
-            name="Brightness Shift", min=-1.0, max=1.0, get=_getter(2), set=_setter("v"),
+            name="Brightness Shift", min=-1.0, max=1.0, get=_getter(2), set=_setter("v"), options=set(),
             description="Lighter or darker than the rest of the scene"),
         "obj_tint": bpy.props.FloatVectorProperty(
-            name="Own Colour", subtype="COLOR", size=3, min=0.0, max=1.0, get=_getter(3), set=_setter("colour"),
+            name="Own Colour", subtype="COLOR", size=3, min=0.0, max=1.0, get=_getter(3), set=_setter("colour"), options=set(),
             description="This object's own colour. It keeps it when the season changes"),
         "obj_tint_amount": bpy.props.FloatProperty(
-            name="Own Colour Amount", min=0.0, max=1.0, subtype="FACTOR", get=_getter(4), set=_setter("amount"),
+            name="Own Colour Amount", min=0.0, max=1.0, subtype="FACTOR", get=_getter(4), set=_setter("amount"), options=set(),
             description="How much of the own colour the object takes (0 = the scene's colours)"),
     }

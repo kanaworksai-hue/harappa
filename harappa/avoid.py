@@ -13,6 +13,7 @@ from .util import mod_input
 TAG = "hrp_avoid"
 NAME = "Harappa Avoid"
 HEAVY_FACES = 50_000
+NOTES = {}                   # scene name -> [(object, reason)] of the last Avoid Selected, shown in the panel
 SETTINGS = (("Avoid Margin", "avoid_margin"), ("Avoid Floor", "avoid_floor"), ("Avoid Box", "avoid_box"),
             ("Avoid Reach", "avoid_reach"))
 
@@ -96,6 +97,8 @@ def check(scene, ob):
     """None when ob can be avoided, else (reason, replacement objects or [])."""
     ms = meadows(scene)
     if ob in ms or ob.get("hrp_ground"):
+        if len(ms) > 1:
+            return "Meadows can't avoid themselves or each other", []
         return "A meadow can't avoid itself", []
     if ob.get("hrp_canopy"):
         trunk = [c for c in (ob.parent.children if ob.parent else []) if c.type == "MESH" and not c.get("hrp_canopy")]
@@ -107,6 +110,11 @@ def check(scene, ob):
         return "Clouds and distant mountains never touch the grass", []
     if ob.name.startswith("HRP ") or ob.get("hrp_card"):
         return "Harappa's own parts can't be avoided", []
+    if ob.type == "ARMATURE":
+        meshes = [o for o in scene.objects if o.type == "MESH" and (o.parent == ob or any(
+            m.type == "ARMATURE" and m.object == ob for m in o.modifiers))]
+        if meshes:
+            return "An armature is avoided through its meshes: they are added instead", meshes
     if ob.type != "MESH":
         return "Only mesh objects (for a character, pick its mesh, not the armature)", []
     if _refers_to(ob, set(ms)):
@@ -119,6 +127,7 @@ def add(context, obs):
     scene = context.scene
     col = ensure(scene)
     added, skipped, heavy = [], [], False
+    prune(scene)
     todo = list(obs)
     seen = set()
     while todo:
@@ -139,7 +148,32 @@ def add(context, obs):
                 heavy = True
     for m in _mods(scene):
         m.id_data.update_tag()
+    NOTES[scene.name] = skipped[:6]
     return added, skipped, heavy
+
+
+def prune(scene):
+    """Objects deleted from the scene stay alive inside the (unlinked) avoid collection and would go on clearing
+    grass: take them out. Cheap, called from the depsgraph handler."""
+    col = scene.harappa.avoid_collection
+    if col is None or not len(col.objects):
+        return 0
+    gone = [o for o in col.objects if not o.users_scene]
+    for o in gone:
+        col.objects.unlink(o)
+    if gone:
+        for m in _mods(scene):
+            m.id_data.update_tag()
+    return len(gone)
+
+
+def collection_ok(col):
+    """The collection picker only offers collections that hold nothing the grass must not avoid."""
+    for ob in col.all_objects:
+        if (ob.get("hrp_ground") or ob.get("hrp_canopy") or ob.get(cumulus.TAG) or ob.get("hrp_ridge")
+                or ob.get("hrp_far_hills") or (ob.type == "MESH" and ob.modifiers.get(build.GRASS_MOD))):
+            return False
+    return True
 
 
 def remove(context, obs):
@@ -159,23 +193,23 @@ def remove(context, obs):
 # --------------------------------------------------------------------------------------------------
 # panel settings: read the first meadow, write all of them
 # --------------------------------------------------------------------------------------------------
-def _get(name, default):
+def _get(name, default, scale=1.0):
     def g(self):
         for m in _mods(self.id_data):
             try:
                 v = mod_input(m, name)
-                return bool(v) if isinstance(default, bool) else float(v)
+                return bool(v) if isinstance(default, bool) else float(v) * scale
             except KeyError:
                 continue
-        return default
+        return default * scale if not isinstance(default, bool) else default
     return g
 
 
-def _set(name):
+def _set(name, scale=1.0):
     def s(self, value):
         for m in _mods(self.id_data):
             try:
-                mod_input(m, name, value)
+                mod_input(m, name, value / scale if not isinstance(value, bool) else value)
             except KeyError:
                 continue
             m.id_data.update_tag()
@@ -186,23 +220,31 @@ def _upd_collection(self, context):
     assign(self.id_data, self.avoid_collection)
 
 
+def _poll_collection(self, col):
+    return collection_ok(col)
+
+
 def props():
     return {
         "avoid_collection": bpy.props.PointerProperty(
-            name="Avoid Collection", type=bpy.types.Collection, update=_upd_collection,
-            description="Grass and flowers make room for the objects in this collection"),
+            name="Avoid Collection", type=bpy.types.Collection, update=_upd_collection, poll=_poll_collection,
+            options=set(),
+            description="Grass and flowers make room for the objects in this collection (collections that hold a "
+                        "meadow, trees, clouds or mountains are not offered)"),
         "avoid_margin": bpy.props.FloatProperty(
             name="Clear Space", min=0.0, max=10.0, subtype="DISTANCE", get=_get("Avoid Margin", 0.16),
-            set=_set("Avoid Margin"), description="How far from the object the grass starts getting shorter"),
+            set=_set("Avoid Margin"), options=set(),
+            description="How far from the object the grass starts getting shorter"),
         "avoid_floor": bpy.props.FloatProperty(
-            name="Shortest Grass", min=0.0, max=1.0, subtype="FACTOR", get=_get("Avoid Floor", 0.3),
-            set=_set("Avoid Floor"), description="How short grass gets right next to the object"),
+            name="Shortest Grass", min=0.0, max=100.0, subtype="PERCENTAGE", get=_get("Avoid Floor", 0.3, 100.0),
+            set=_set("Avoid Floor", 100.0), options=set(),
+            description="How short grass gets right next to the object, as a share of its normal height"),
         "avoid_box": bpy.props.BoolProperty(
-            name="Use Simple Box", get=_get("Avoid Box", False), set=_set("Avoid Box"),
+            name="Use Simple Box", get=_get("Avoid Box", False), set=_set("Avoid Box"), options=set(),
             description="Faster: treats each object as a box. Good for heavy models or crowds"),
         "avoid_reach": bpy.props.FloatProperty(
-            name="Reach Above", min=0.0, max=100000.0, subtype="DISTANCE", get=_get("Avoid Reach", 100.0),
-            set=_set("Avoid Reach"),
-            description="Grass under an avoided object is cleared up to this height below it: lower it for a bridge "
-                        "or a branch the grass should grow under"),
+            name="Reaches Down From", min=0.0, max=100000.0, subtype="DISTANCE", get=_get("Avoid Reach", 100.0),
+            set=_set("Avoid Reach"), options=set(),
+            description="Grass under an avoided object (a bridge, a bench, a branch) grows only up to just below "
+                        "it. Objects higher above the ground than this leave the grass under them alone"),
     }

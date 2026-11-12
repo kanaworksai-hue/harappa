@@ -18,11 +18,13 @@ LAYERS = {
     "GRASS": (scatter.MASK_ATTR, (1.0, 1.0, 1.0, 1.0), (1.0, 1.0, 1.0, 1.0), (0.0, 0.0, 0.0, 1.0)),
     "FLOWERS": (scatter.FLOWERS_ATTR, (0.5, 0.5, 0.5, 1.0), (1.0, 1.0, 1.0, 1.0), (0.0, 0.0, 0.0, 1.0)),
     "HEIGHT": (scatter.HEIGHT_ATTR, (0.5, 0.5, 0.5, 1.0), (1.0, 1.0, 1.0, 1.0), (0.0, 0.0, 0.0, 1.0)),
-    "COLOUR": (scatter.TINT_ATTR, (1.0, 1.0, 1.0, 0.0), None, None),     # paint = the chosen colour, alpha 1
+    # Colour: black = nothing painted. The chosen colour is painted at full value (its brightest channel 1), so
+    # what is stored is that colour times how much of it was painted: amount = the brightest channel, colour =
+    # rgb / amount. Blender's brush, Blur, Fill and painting black (erase) all keep that exact; alpha is not used.
+    "COLOUR": (scatter.TINT_ATTR, (0.0, 0.0, 0.0, 1.0), None, (0.0, 0.0, 0.0, 1.0)),
 }
 PREVIEW = 0.3                 # share of the grass drawn in the viewport while painting
 HEAVY = 1_000_000             # ground points above which painting gets slow
-MIN_TINT = 0.002
 
 
 def attr_name(layer):
@@ -39,21 +41,23 @@ def ensure(me, layer):
     if at is None:
         at = me.color_attributes.new(name, "FLOAT_COLOR", "POINT")
         at.data.foreach_set("color", list(start) * len(me.vertices))
-        if layer == "COLOUR":                           # the meadow's grass needs the material that shows it
-            from . import build
-            for ob in bpy.data.objects:
-                if ob.data == me:
-                    build.refresh_custom(ob)
     return at
+
+
+def full_value(colour):
+    """The colour at its brightest (largest channel 1): how the Colour layer stores a colour."""
+    m = max(colour[:3])
+    if m < 1e-4:
+        return (1.0, 1.0, 1.0)                       # black can't be painted: it means 'nothing' (white instead)
+    return tuple(c / m for c in colour[:3])
 
 
 def target(layer, mode, colour=(1.0, 1.0, 1.0)):
     """(RGBA the brush moves towards, blend mode) for Paint / Erase on a layer."""
     if layer == "COLOUR":
-        colour = tuple(min(max(c, MIN_TINT), 1.0 - MIN_TINT) for c in colour[:3])   # pure black / white = none
         if mode == "ERASE":
-            return (*colour, 0.0), "ERASE_ALPHA"
-        return (*colour, 1.0), "MIX"
+            return (0.0, 0.0, 0.0, 1.0), "MIX"
+        return (*full_value(colour), 1.0), "MIX"
     _n, _s, paint, erase = LAYERS[layer]
     return (paint if mode != "ERASE" else erase), "MIX"
 
@@ -68,34 +72,35 @@ def fill(ob, layer, rgba):
     me = ob.data
     at = ensure(me, layer)
     n = len(me.vertices)
-    if layer == "COLOUR" and rgba[3] <= 0.0:              # erase everything = keep the colour, amount 0
-        vals = _read(at, n)
-        vals[:, 3] = 0.0
-    else:
-        vals = np.tile(np.asarray(rgba, dtype=np.float32), (n, 1))
+    vals = np.tile(np.asarray(rgba, dtype=np.float32), (n, 1))
     at.data.foreach_set("color", vals.ravel())
     me.update()
     ob.update_tag()
+    changed(ob, layer)
 
 
 def clear(ob, layer):
     fill(ob, layer, LAYERS[layer][1])
 
 
+def changed(ob, layer):
+    """After writing a layer: the Colour layer decides which grass material the meadow needs."""
+    if layer == "COLOUR":
+        from . import build
+        build.refresh_custom(ob)
+
+
 def fill_colour(layer, mode, colour=(1.0, 1.0, 1.0), clear_=False):
     """The RGB Blender's own Fill (paint.vertex_color_set, always alpha 1) needs for a Fill or Clear of a layer.
-    The Colour layer's 'none' is pure white, so clearing it that way equals its starting state."""
+    The Colour layer's 'none' is black, the same as its starting state."""
     if clear_:
         return LAYERS[layer][1][:3]
-    if layer == "COLOUR" and mode == "ERASE":
-        return (1.0, 1.0, 1.0)
     return target(layer, mode, colour)[0][:3]
 
 
 def paint_disc(ob, layer, centre, radius, rgba, strength=1.0, soft=0.35):
     """Paint a round spot (world X, Y and radius) the way one dab of the brush would: the layer moves towards rgba
-    by strength, fading out over the outer 'soft' share of the radius. For the Colour layer an rgba alpha of 0
-    erases the amount only. Returns the number of points it changed."""
+    by strength, fading out over the outer 'soft' share of the radius. Returns the number of points it changed."""
     me = ob.data
     at = ensure(me, layer)
     n = len(me.vertices)
@@ -109,13 +114,11 @@ def paint_disc(ob, layer, centre, radius, rgba, strength=1.0, soft=0.35):
     inner = radius * (1.0 - soft)
     w = np.clip((radius - d) / max(radius - inner, 1e-9), 0.0, 1.0)
     w = (w * w * (3.0 - 2.0 * w) * strength).astype(np.float32)          # smooth edge
-    if layer == "COLOUR" and rgba[3] <= 0.0:
-        vals[:, 3] -= vals[:, 3] * w
-    else:
-        vals += (np.asarray(rgba, dtype=np.float32) - vals) * w[:, None]
+    vals += (np.asarray(rgba, dtype=np.float32) - vals) * w[:, None]
     at.data.foreach_set("color", vals.ravel())
     me.update()
     ob.update_tag()
+    changed(ob, layer)
     return int((w > 0).sum())
 
 
@@ -130,9 +133,8 @@ def painted(ob):
         vals = _read(at, len(me.vertices))
         if not len(vals):
             continue
-        if key == "COLOUR":                     # some amount, on a colour that is not the 'none' white / black
-            s = vals[:, :3].sum(axis=1)
-            if ((vals[:, 3] > 1e-3) & (s > 1e-3) & (s < 2.9995)).any():
+        if key == "COLOUR":                     # some colour (black = nothing)
+            if vals[:, :3].max() > 1e-3:
                 out.append(key)
         elif np.abs(vals[:, 0] - start[0]).max() > 1e-3:
             out.append(key)
@@ -150,8 +152,9 @@ def _meadow_mods(ob):
 
 def set_preview(ob, on):
     """Lighter grass and flowers in the viewport (never in renders) while this meadow is painted."""
+    from . import build
     from .util import mod_input
-    for m in _meadow_mods(ob):
+    for m in [m for m in _meadow_mods(ob) if m.name == build.GRASS_MOD]:   # flowers stay: they are what you paint
         try:
             if abs(float(mod_input(m, "Preview Factor")) - (PREVIEW if on else 1.0)) > 1e-6:
                 mod_input(m, "Preview Factor", PREVIEW if on else 1.0)
@@ -181,7 +184,8 @@ _spacing = {}
 def spacing(ob):
     """Average edge length in metres (world scale), cached per mesh state (the panel asks on every redraw)."""
     me = ob.data
-    key = (me.as_pointer(), len(me.vertices), len(me.edges), tuple(round(x, 4) for x in ob.matrix_world.to_scale()))
+    key = (me.as_pointer(), len(me.vertices), len(me.edges), tuple(round(x, 4) for x in ob.matrix_world.to_scale()),
+           tuple(me.vertices[0].co) if len(me.vertices) else ())
     hit = _spacing.get(ob.name)
     if hit is not None and hit[0] == key:
         return hit[1]
@@ -198,20 +202,32 @@ def spacing(ob):
     return val
 
 
-def finer_count(ob):
-    """Points after one subdivision (each edge split once, quads get a centre point)."""
+TARGET_SPACING = 0.25          # metres between ground points that gives smooth strokes (Harappa's own hill)
+
+
+def finer_cuts(ob):
+    """How many cuts per edge bring the ground near TARGET_SPACING (1..12)."""
+    return max(1, min(12, round(spacing(ob) / TARGET_SPACING) - 1))
+
+
+def finer_count(ob, cuts=None):
+    """Points after subdividing every edge with this many cuts (quads get a grid inside)."""
+    cuts = finer_cuts(ob) if cuts is None else cuts
     me = ob.data
     quads = sum(1 for p in me.polygons if len(p.vertices) == 4)
-    ngons = sum(1 for p in me.polygons if len(p.vertices) > 4)
-    return len(me.vertices) + len(me.edges) + quads + ngons
+    tris = sum(1 for p in me.polygons if len(p.vertices) == 3)
+    inner_tri = cuts * (cuts - 1) // 2 if cuts > 1 else 0
+    return len(me.vertices) + len(me.edges) * cuts + quads * cuts * cuts + tris * inner_tri
 
 
-def make_finer(ob):
-    """Subdivide the ground once without changing its shape; every painted layer is carried over."""
+def make_finer(ob, cuts=None):
+    """Subdivide the ground without changing its shape, close to TARGET_SPACING; every painted layer is carried
+    over."""
+    cuts = finer_cuts(ob) if cuts is None else cuts
     me = ob.data
     bm = bmesh.new()
     bm.from_mesh(me)
-    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True, smooth=0.0)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=cuts, use_grid_fill=True, smooth=0.0)
     bm.to_mesh(me)
     bm.free()
     me.update()

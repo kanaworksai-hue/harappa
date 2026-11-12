@@ -10,7 +10,7 @@ HRP Foliage  camera-facing leaf / blossom cards on a canopy mesh, with canopy no
 
 Brush layers: point colour attributes on the ground, each one "no change" when it is missing (see layers.py).
 hrp_grass (white = grass), hrp_flowers (0.5 = the natural patches, 1 = flowers everywhere, 0 = none),
-hrp_height (0.5 = x1, 1 = x2, 0 = flat) and hrp_tint (painted colour, alpha = amount; read by the materials).
+hrp_height (0.5 = x1, 1 = x2, 0 = flat) and hrp_tint (painted colour times amount, black = none; read by the materials).
 """
 import math
 
@@ -18,7 +18,7 @@ import bpy
 
 from .util import G, fresh_group, iface, stamp
 
-GN_VER = 31
+GN_VER = 33
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -196,7 +196,7 @@ def _avoid_inputs(ng):
     iface(ng, "Avoid Box", "INPUT", "NodeSocketBool", False,
           desc="Faster: treat each avoided object as its bounding box (heavy models, crowds)")
     iface(ng, "Avoid Reach", "INPUT", "NodeSocketFloat", 100.0, 0.0, 100000.0, subtype="DISTANCE",
-          desc="How far above a root an avoided object still clears the grass under it")
+          desc="Grass under an avoided object grows up to just below it; objects higher than this leave it alone")
     iface(ng, "Preview Factor", "INPUT", "NodeSocketFloat", 1.0, 0.0, 1.0, subtype="FACTOR",
           desc="Share of the grass drawn in the viewport (lowered while painting); renders always draw all of it")
 
@@ -221,14 +221,37 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     zo = g.n("GeometryNodeForeachGeometryElementOutput", x + 540, y + 400)
     zi.pair_with_output(zo)
     zo.domain = "INSTANCE"
-    for item in zo.generation_items:                   # created with a translated name when Blender translates new
-        item.name = "Geometry"                          # data names: name it, and link it by its identifier below
+    zo.generation_items.new("GEOMETRY", "Near")
+    for item, nm in zip(zo.generation_items, ("Geometry", "Near")):   # created with translated names when Blender
+        item.name = nm                                  # translates new data names: name them, link by identifier
     g.link(ci, 0, zi, "Geometry")
     zr = g.n("GeometryNodeRealizeInstances", x + 180, y + 400)
     g.link(zi, "Element", zr, "Geometry")
     bb = g.n("GeometryNodeBoundBox", x + 360, y + 400)
     g.link(zr, 0, bb, "Geometry")
     g.link(bb, "Bounding Box", zo, "Generation_0")
+    # each object's box grown by what can reach it: sideways and up by the margin / blade reach, down by the reach
+    # above. A grass point inside one of these is the only kind that is worked out below.
+    pad = g.math("ADD", x + 200, y + 700, g.out(g.math("MAXIMUM", x + 100, y + 700, g.out(gi, "Avoid Margin"), reach)),
+                 0.05)
+    grow = g.n("ShaderNodeCombineXYZ", x + 360, y + 700)
+    g.link(g.math("MULTIPLY", x + 260, y + 800, g.out(pad), 2.0), 0, grow, "X")
+    g.link(g.math("MULTIPLY", x + 260, y + 850, g.out(pad), 2.0), 0, grow, "Y")
+    g.link(g.math("ADD", x + 260, y + 900, g.out(g.math("MULTIPLY", x + 200, y + 950, g.out(pad), 2.0)),
+                  g.out(gi, "Avoid Reach")), 0, grow, "Z")
+    size = g.vmath("ADD", x + 520, y + 650, g.out(g.vmath("SUBTRACT", x + 440, y + 600, g.out(bb, "Max"),
+                                                          g.out(bb, "Min"))), g.out(grow))
+    mid = g.vmath("SCALE", x + 520, y + 750, g.out(g.vmath("ADD", x + 440, y + 750, g.out(bb, "Max"), g.out(bb, "Min"))),
+                  scale=0.5)
+    down = g.n("ShaderNodeCombineXYZ", x + 520, y + 850)
+    g.link(g.math("MULTIPLY", x + 440, y + 900, g.out(gi, "Avoid Reach"), -0.5), 0, down, "Z")
+    ctr = g.vmath("ADD", x + 660, y + 800, g.out(mid), g.out(down))
+    cube = g.n("GeometryNodeMeshCube", x + 660, y + 650)
+    g.link(size, 0, cube, "Size")
+    tf = g.n("GeometryNodeTransform", x + 800, y + 650)
+    g.link(cube, "Mesh", tf, "Geometry")
+    g.link(ctr, 0, tf, "Translation")
+    g.link(tf, 0, zo, "Generation_1")
     rz = g.n("GeometryNodeSwitch", x + 720, y + 200, input_type="GEOMETRY")
     g.link(gi, "Avoid Box", rz, "Switch")
     g.link(rz0, 0, rz, "False")
@@ -237,31 +260,21 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     g.link(rz, 0, cnt, "Geometry")
     has = g.math("GREATER_THAN", x + 540, y + 200, g.out(cnt, "Face Count"), 0.5)
 
-    # which points can be touched at all: inside the objects' box, grown sideways by the margin / blade reach and
-    # downwards by the reach above
-    box = g.n("GeometryNodeBoundBox", x + 900, y + 600)
-    g.link(rz, 0, box, "Geometry")
-    pad = g.math("ADD", x + 900, y + 800, g.out(g.math("MAXIMUM", x + 800, y + 800, g.out(gi, "Avoid Margin"), reach)),
-                 0.05)
-    padv = g.n("ShaderNodeCombineXYZ", x + 1050, y + 800)
-    g.link(pad, 0, padv, "X")
-    g.link(pad, 0, padv, "Y")
-    g.link(g.math("ADD", x + 950, y + 900, g.out(gi, "Avoid Reach"), g.out(pad)), 0, padv, "Z")
-    lo = g.vmath("SUBTRACT", x + 1200, y + 700, g.out(box, "Min"), g.out(padv))
-    padu = g.n("ShaderNodeCombineXYZ", x + 1050, y + 950)
-    g.link(pad, 0, padu, "X")
-    g.link(pad, 0, padu, "Y")
-    g.link(pad, 0, padu, "Z")
-    hi = g.vmath("ADD", x + 1200, y + 850, g.out(box, "Max"), g.out(padu))
-    pos = g.n("GeometryNodeInputPosition", x + 1200, y + 1000)
-    above = g.vmath("SUBTRACT", x + 1350, y + 750, g.out(pos), g.out(lo))
-    below = g.vmath("SUBTRACT", x + 1350, y + 900, g.out(hi), g.out(pos))
-    mn = g.vmath("MINIMUM", x + 1500, y + 800, g.out(above), g.out(below))
-    ms = g.n("ShaderNodeSeparateXYZ", x + 1650, y + 800)
-    g.link(mn, 0, ms, "Vector")
-    m1 = g.math("MINIMUM", x + 1800, y + 800, g.out(ms, "X"), g.out(ms, "Y"))
-    m2 = g.math("MINIMUM", x + 1950, y + 800, g.out(m1), g.out(ms, "Z"))
-    near_sel = g.math("GREATER_THAN", x + 2100, y + 800, g.out(m2), 0.0)
+    # which points can be touched at all: inside one of the grown boxes (a ray up meets a box face from inside, or a
+    # ray down does), so objects far apart do not make the whole meadow between them count
+    near_boxes = g.out(zo, "Generation_1")
+    ins = []
+    for k, (dz, sign) in enumerate(((1.0, 1.0), (-1.0, -1.0))):
+        r_ = g.n("GeometryNodeRaycast", x + 1000, y + 700 - 250 * k)
+        g.links.new(near_boxes, r_.inputs["Target Geometry"])
+        r_.inputs["Ray Direction"].default_value = (0.0, 0.0, dz)
+        r_.inputs["Ray Length"].default_value = 1e5
+        nz = g.n("ShaderNodeSeparateXYZ", x + 1150, y + 650 - 250 * k)
+        g.link(r_, "Hit Normal", nz, "Vector")
+        facing = g.math("GREATER_THAN", x + 1300, y + 650 - 250 * k, g.out(g.math("MULTIPLY", x + 1250, y + 600 - 250 * k,
+                                                                                     g.out(nz, "Z"), sign)), 0.0)
+        ins.append(g.math("MULTIPLY", x + 1450, y + 700 - 250 * k, g.out(r_, "Is Hit"), g.out(facing)))
+    near_sel = g.math("MAXIMUM", x + 1600, y + 600, g.out(ins[0]), g.out(ins[1]))
     acc = g.n("GeometryNodeAccumulateField", x + 2100, y + 650, data_type="INT", domain="POINT")
     g.link(near_sel, 0, acc, "Value")
     sub_i = g.math("SUBTRACT", x + 2250, y + 650, g.out(acc, "Leading"), 1.0)
@@ -274,7 +287,7 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     rc = g.n("GeometryNodeRaycast", x + 360, y - 100)
     g.link(rz, 0, rc, "Target Geometry")
     rc.inputs["Ray Direction"].default_value = (0.0, 0.0, 1.0)
-    g.link(gi, "Avoid Reach", rc, "Ray Length")            # "under" = anything above the root (also inside big objects)
+    rc.inputs["Ray Length"].default_value = 1e5           # inside or under: what is above the root
     px = g.n("GeometryNodeProximity", x + 360, y - 400, target_element="FACES")
     g.link(rz, 0, px, "Geometry")
     # roots inside a sunken object (e.g. the hollow of an ear lying in the ground) see it right below them
@@ -282,7 +295,33 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     g.link(rz, 0, rcd, "Target Geometry")
     rcd.inputs["Ray Direction"].default_value = (0.0, 0.0, -1.0)
     rcd.inputs["Ray Length"].default_value = 0.15
-    under_any = g.math("MAXIMUM", x + 700, y - 200, g.out(rc, "Is Hit"), g.out(rcd, "Is Hit"))
+    # inside an object (its surface above faces up from here and the one below faces down): no grass. Under an
+    # object that hangs above the root (a bridge, a branch, a belly): the blade may grow up to just below it, so
+    # nothing pops as the object moves; only where that room is under 1 cm the root goes.
+    rcl = g.n("GeometryNodeRaycast", x + 360, y - 1150)
+    g.link(rz, 0, rcl, "Target Geometry")
+    rcl.inputs["Ray Direction"].default_value = (0.0, 0.0, -1.0)
+    rcl.inputs["Ray Length"].default_value = 1e5
+    nup = g.n("ShaderNodeSeparateXYZ", x + 540, y - 1100)
+    g.link(rc, "Hit Normal", nup, "Vector")
+    ndn = g.n("ShaderNodeSeparateXYZ", x + 540, y - 1200)
+    g.link(rcl, "Hit Normal", ndn, "Vector")
+    in_up = g.math("MULTIPLY", x + 700, y - 1100, g.out(rc, "Is Hit"), g.out(g.math("GREATER_THAN", x + 640, y - 1050,
+                                                                                    g.out(nup, "Z"), 0.0)))
+    in_dn = g.math("MULTIPLY", x + 700, y - 1200, g.out(rcl, "Is Hit"), g.out(g.math("LESS_THAN", x + 640, y - 1250,
+                                                                                     g.out(ndn, "Z"), 0.0)))
+    inside = g.math("MULTIPLY", x + 860, y - 1150, g.out(in_up), g.out(in_dn))
+    room = g.math("MULTIPLY", x + 700, y - 1350, g.out(g.math("SUBTRACT", x + 600, y - 1350, g.out(rc, "Hit Distance"),
+                                                              0.02)), 0.8)
+    # an object higher above the root than Avoid Reach leaves the grass under it alone
+    within = g.math("MULTIPLY", x + 600, y - 1500, g.out(rc, "Is Hit"),
+                    g.out(g.math("LESS_THAN", x + 500, y - 1550, g.out(rc, "Hit Distance"), g.out(gi, "Avoid Reach"))))
+    no_hit = g.math("MULTIPLY", x + 700, y - 1450, g.out(g.math("SUBTRACT", x + 600, y - 1450, 1.0, g.out(within))), 1e6)
+    ceiling = g.math("MAXIMUM", x + 860, y - 1400, g.out(g.math("MAXIMUM", x + 780, y - 1350, g.out(room), 0.0)),
+                     g.out(no_hit))
+    squeezed = g.math("LESS_THAN", x + 1000, y - 1400, g.out(ceiling), 0.01)
+    under_any = g.math("MAXIMUM", x + 700, y - 200, g.out(g.math("MAXIMUM", x + 1000, y - 1250, g.out(inside),
+                                                                  g.out(squeezed))), g.out(rcd, "Is Hit"))
     # continuous: zero height right at the surface, full height past the margin (no popping as things move)
     near = g.maprange(x + 700, y - 500, g.out(px, "Distance"), keep_gap * 0.25, g.out(gi, "Avoid Margin"), 1.0, 0.0,
                       smooth=True)                              # 1 at the surface .. 0 past the margin
@@ -303,7 +342,8 @@ def _avoid(g, gi, x, y, pts, reach, keep_gap=0.04):
     # distance cone: a blade may be at most 1.5 x its root's distance to the object tall, so its tip can never
     # reach it whatever the tilt; at the object's edge the height goes to 0. Continuous everywhere, so blades never
     # pop when an object moves (a breathing character) - the upward-ray kill only happens where this is ~0 already.
-    cone = g.math("MULTIPLY", x + 700, y - 1000, g.out(px, "Distance"), 1.5)
+    cone = g.math("MINIMUM", x + 1100, y - 1000, g.out(g.math("MULTIPLY", x + 700, y - 1000, g.out(px, "Distance"), 1.5)),
+                  g.out(ceiling))
 
     def back(sock, kind, xx, yy):
         """The value a near point got in 'sub', for every point (by its index among the near points)."""
@@ -575,6 +615,8 @@ def flowers_group():
     dens = g.math("MULTIPLY", -900, -150, g.out(gi, "Density"), g.out(dfac))
     dens = g.math("MULTIPLY", -750, -150, g.out(dens), g.out(gi, "Detail"))
     dens = g.math("MULTIPLY", -700, -100, g.out(dens), _preview(g, gi, -1000, 150))
+    # a painted flower bed (layer above 0.5) is also denser than the natural patches: up to x2.5 at full
+    dens = g.math("MULTIPLY", -650, -50, g.out(dens), g.out(g.math("MULTIPLY_ADD", -800, -50, g.out(hi), 1.5, 1.0)))
     g.link(dens, 0, dp, "Density")
     sd = g.math("ADD", -1000, -200, g.out(gi, "Seed"), 101)
     g.link(sd, 0, dp, "Seed")
