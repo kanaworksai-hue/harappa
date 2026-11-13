@@ -15,7 +15,7 @@ import bmesh
 import bpy
 from mathutils import Vector, noise
 
-from . import (avoid, build, clouds, cumulus, i18n, layers, look, looks, presets, quality, ridges, scatter,
+from . import (avoid, blend, build, clouds, cumulus, i18n, layers, look, looks, presets, quality, ridges, scatter,
                scene as hscene, shading, tree, ui)
 from .i18n import report
 from .util import mod_input, srgb, to_hex
@@ -1778,6 +1778,48 @@ class HRP_OT_avoid_select(bpy.types.Operator):
 
 
 # ---------------------------------------------------------------------------------------------
+# blend the user's own models into the meadow
+# ---------------------------------------------------------------------------------------------
+class HRP_OT_blend_in(bpy.types.Operator):
+    bl_idname = "harappa.blend_in"
+    bl_label = "Blend Into Meadow"
+    bl_description = ("Paint the selected models like the meadow: no black shadows, shadow colours follow the season "
+                      "and Look. Their own materials are kept and come back with Original Look")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        if not blend.targets(context.selected_objects):
+            cls.poll_message_set(i18n.t("Select your own models (characters, props, buildings)"))
+            return False
+        return True
+
+    def execute(self, context):
+        done, already = blend.apply(list(context.selected_objects))
+        if not done:
+            self.report({"INFO"}, report(f"Already blended: {len(already)} object(s)"))
+            return {"CANCELLED"}
+        self.report({"INFO"}, report(f"Blended {len(done)} object(s) into the meadow"))
+        return {"FINISHED"}
+
+
+class HRP_OT_blend_out(bpy.types.Operator):
+    bl_idname = "harappa.blend_out"
+    bl_label = "Original Look"
+    bl_description = "Give the selected models their own materials back"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return any(blend.blended(o) or o.get(blend.ADDED) for o in blend.targets(context.selected_objects))
+
+    def execute(self, context):
+        done = blend.restore(list(context.selected_objects))
+        self.report({"INFO"}, report(f"Restored {len(done)} object(s)"))
+        return {"FINISHED"} if done else {"CANCELLED"}
+
+
+# ---------------------------------------------------------------------------------------------
 # this object's colour
 # ---------------------------------------------------------------------------------------------
 class HRP_OT_tint_reset(bpy.types.Operator):
@@ -2022,7 +2064,7 @@ CLASSES = (
     HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_add_ridges, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
     HRP_OT_revert, HRP_OT_set_enum, HRP_OT_set_detail, HRP_OT_cloud_give_back, HRP_OT_cloud_new_shape,
     HRP_OT_paint_layer, HRP_OT_paint_done, HRP_OT_paint_fill, HRP_OT_paint_swatch, HRP_OT_ground_finer,
-    HRP_OT_avoid_add, HRP_OT_avoid_remove, HRP_OT_avoid_select, HRP_OT_tint_reset, HRP_OT_tint_copy,
+    HRP_OT_avoid_add, HRP_OT_avoid_remove, HRP_OT_avoid_select, HRP_OT_blend_in, HRP_OT_blend_out, HRP_OT_tint_reset, HRP_OT_tint_copy,
     HRP_OT_look_save, HRP_OT_look_apply, HRP_OT_look_season, HRP_OT_look_delete, HRP_OT_look_import,
     HRP_OT_look_export, HRP_OT_look_folder,
 )

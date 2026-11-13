@@ -49,6 +49,7 @@ Combina **6 estaciones** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Lea
 - **Cielo, nubes y montañas:** un degradado de cielo que sigue a la cámara, un disco solar y cirros altos; cúmulos sólidos (cada uno es un objeto que puedes mover, escalar o borrar) con la parte superior iluminada, sombra azulada y un borde dorado a contraluz; hasta tres capas de montañas lejanas que se funden con la bruma. La noche trae luna y estrellas; la hora dorada llega a contraluz.
 - **Cualquier malla se convierte en arbusto:** Make Foliage (crear follaje) convierte a Suzanne, una caja o cualquier otra cosa en un seto o un arbusto de pinceladas de hojas.
 - **La hierba rodea a tus personajes:** selecciona tu personaje (o su armature) y haz clic en **Make Grass Avoid It** (que la hierba lo evite). No crece nada dentro de él, la hierba de al lado se acorta y se inclina hacia fuera, y bajo lo que queda por encima del suelo (un banco, un puente) crece justo hasta quedar por debajo; todo de forma continua, así que nada salta cuando el personaje se mueve. **Use Simple Box** (usar una caja simple) mantiene rápidos los modelos pesados.
+- **Integra tus propios modelos en el prado (1.1.1):** si un personaje o edificio importado tiene sombras totalmente negras, selecciónalo y haz clic en **Blend Into Meadow** (integrar en el prado). Se pinta igual que el prado y los colores de sus sombras siguen la estación y el Look. Sus materiales originales se conservan: **Original Look** los devuelve cuando quieras.
 - **Cada objeto con su propio color:** desplaza el tono, la saturación y el brillo de un prado, árbol, nube o cordillera concretos, o dale su propio color (un cerezo rosa entre árboles verdes). Shuffle lo conserva.
 - **My Looks:** guarda los colores, la luz, el cielo y el estilo de pintura en un pequeño archivo JSON y aplícalo a cualquier escena; importa y exporta looks para compartirlos.
 - **Detail Level:** Fast / Balanced / Best cambia riqueza por velocidad con un clic (también ajusta las muestras de render).
@@ -175,6 +176,7 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 | Make Clouds / Count | Distribuye nubes nuevas (0 las elimina); las nubes que hayas movido se conservan |
 | Distant Mountains / Layers | Hasta tres capas de montañas alrededor del prado (otra vez para formas nuevas, 0 las elimina) |
 | Make Grass Avoid It | Aparece al seleccionar tu propia malla o armature: la hierba le hace sitio |
+| Blend Into Meadow / Original Look | Aparece al seleccionar tu propio modelo: lo pinta como el prado (sin sombras negras) / le devuelve sus materiales |
 | Make Foliage | Convierte las mallas seleccionadas en arbustos o setos de pinceladas de hojas |
 | Anime Sky & Sun | Cambia a EEVEE, a la vista Standard, al cielo anime y a un sol principal |
 | Remove Grass / Reset to Defaults | Quita la hierba, las flores y las hojas de los objetos seleccionados y restaura sus materiales / Summer, Anime Background, sin variación |

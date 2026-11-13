@@ -49,6 +49,7 @@ Combine **6 estações** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Lea
 - **Céu, nuvens e montanhas:** um degradê de céu que acompanha a câmera, um disco de sol e cirros lá no alto; cúmulos sólidos (cada um é um objeto que você pode mover, escalar ou apagar) com o topo iluminado, sombra azulada e uma borda dourada contra o sol; até três camadas de montanhas ao longe que se dissolvem na névoa. A noite traz lua e estrelas; a golden hour vem em contraluz.
 - **Qualquer malha vira arbusto:** o Make Foliage (criar folhagem) transforma a Suzanne, uma caixa ou qualquer outra coisa em uma cerca viva ou arbusto de pinceladas de folhas.
 - **A grama contorna os seus personagens:** selecione o seu personagem (ou a armature dele) e clique em **Make Grass Avoid It** (fazer a grama desviar). Nada cresce dentro dele, a grama ao lado fica mais curta e se inclina para fora, e debaixo de coisas suspensas acima do chão (um banco, uma ponte) ela cresce até logo abaixo delas — de forma contínua, então nada salta quando o personagem se move. O **Use Simple Box** (usar caixa simples) mantém rápidos os modelos pesados.
+- **Integre os seus próprios modelos ao prado (1.1.1):** se um personagem ou construção importado fica com sombras totalmente pretas, selecione-o e clique em **Blend Into Meadow** (integrar ao prado). Ele passa a ser pintado como o prado, e as cores das sombras acompanham a estação e o Look. Os materiais originais ficam guardados: **Original Look** os traz de volta quando quiser.
 - **Cada objeto com a sua cor:** desloque o matiz, a saturação e o brilho de um único campo, árvore, nuvem ou cadeia de montanhas, ou dê a ele uma cor própria (uma cerejeira rosa entre árvores verdes). O Shuffle preserva isso.
 - **My Looks:** salve as cores, a luz, o céu e o estilo de pintura como um pequeno arquivo JSON e aplique-o em qualquer cena; importe e exporte looks para compartilhá-los.
 - **Detail Level:** Fast / Balanced / Best troca riqueza por velocidade em um clique (e também define as amostras de renderização).
@@ -175,6 +176,7 @@ Depois, faça os ajustes finos em linguagem comum enquanto olha a prévia:
 | Make Clouds / Count | Distribui nuvens novas (0 as remove); as nuvens que você moveu são mantidas |
 | Distant Mountains / Layers | Até três camadas de montanhas ao redor do campo (de novo para novos formatos, 0 as remove) |
 | Make Grass Avoid It | Aparece quando uma malha ou armature sua está selecionada: a grama abre espaço para ela |
+| Blend Into Meadow / Original Look | Aparece quando um modelo seu está selecionado: pinta-o como o prado (sem sombras pretas) / devolve os materiais dele |
 | Make Foliage | Transforma as malhas selecionadas em arbustos ou cercas vivas de pinceladas de folhas |
 | Anime Sky & Sun | Muda para o EEVEE, a visualização Standard, o céu de anime e um sol principal |
 | Remove Grass / Reset to Defaults | Remove grama, flores e folhas dos objetos selecionados e restaura seus materiais / Summer, Anime Background, sem variação |

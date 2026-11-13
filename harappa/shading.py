@@ -202,12 +202,16 @@ def _rebuild_stale():
     old = [name for name in builders
            if bpy.data.materials.get(name) is not None
            and bpy.data.materials[name].get(VERSION_KEY) not in (SHADER_VER, BUILDING)]
-    if not old:
+    from . import blend
+    blends = [m for m in bpy.data.materials if blend.is_blended(m) and m.get(VERSION_KEY) not in (SHADER_VER, BUILDING)]
+    if not old and not blends:
         return
     _stale["busy"] = True
     try:
         for name in old:
             builders[name]()
+        if blends:
+            blend.rebuild_stale()              # the user's models painted like the meadow (blend.py)
         sun = bpy.data.objects.get(SUN)
         if sun is not None and sun.type == "LIGHT":
             drive_light_scale(sun)             # the drivers sat on the old palette nodes

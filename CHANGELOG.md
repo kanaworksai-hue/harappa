@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1 — 2026-11-13
+
+- **Blend Into Meadow:** your own models (a character, a building from any generator or store) no longer get
+  pitch-black shadows in a Harappa scene. Select one and click *Blend Into Meadow* (shown under *Make Grass Avoid
+  It*, also for an imported model's empty parent): it is painted the way the meadow is, with the season's light and
+  shade colours, the Look, the colour strength and contrast, and the haze. Cut-outs and glow are kept. Its own
+  materials stay in the file; *Original Look* brings them back. Agents: `--blend A,B` / `--unblend A,B`.
+  Why the shadows were black: Harappa's materials paint their own light and shade, so the scene gives objects no
+  ambient light, and an ordinary material was lit by the sun alone.
+
 ## 1.1.0 — 2026-11-12
 
 A bigger, brighter meadow you can make your own. Works on Blender 5.0, 5.1, 5.2 LTS and 5.3.

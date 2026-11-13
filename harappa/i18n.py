@@ -803,6 +803,34 @@ OPS.update({
     "Back to Scene Colours": ("シーンの色に戻す", "恢复场景颜色", "장면 색으로 되돌리기"),
 })
 
+# 1.1.1: blend the user's own models into the meadow (blend.py)
+OPS.update({
+    "Blend Into Meadow": ("原っぱになじませる", "融入原野", "들판에 어우러지게"),
+    "Paint the selected models like the meadow: no black shadows, shadow colours follow the season and Look. Their "
+    "own materials are kept and come back with Original Look": (
+        "選択中のモデルを原っぱと同じ塗り方にします。影が真っ黒にならず、影の色は季節とルックに合わせて変わります。"
+        "元のマテリアルは残り、「元の見た目に戻す」で戻せます",
+        "把选中的模型改成和原野一样的画法：阴影不再发黑，阴影颜色跟着季节和外观（Look）变化。原来的材质会保留，"
+        "点「恢复原样」即可还原",
+        "선택한 모델을 들판과 같은 방식으로 칠합니다. 그림자가 새까매지지 않고, 그림자 색은 계절과 룩에 맞춰 바뀝니다. "
+        "원래 머티리얼은 남아 있어 「원래 모습으로」로 되돌릴 수 있습니다"),
+    "Original Look": ("元の見た目に戻す", "恢复原样", "원래 모습으로"),
+    "Give the selected models their own materials back": ("選択中のモデルに元のマテリアルを戻します", "把选中模型原来的材质换回来",
+                                                         "선택한 모델에 원래 머티리얼을 되돌립니다"),
+})
+UI.update({
+    "Select your own models (characters, props, buildings)": (
+        "自分のモデル（キャラクター・小物・建物）を選んでください", "请选择你自己的模型（角色、道具、建筑）",
+        "직접 만든 모델(캐릭터·소품·건물)을 선택하세요"),
+})
+REPORTS += [
+    (r"Blended (\d+) object\(s\) into the meadow", ("{0} 個のオブジェクトを原っぱになじませました", "已让 {0} 个物体融入原野",
+                                                     "오브젝트 {0}개를 들판에 어우러지게 했습니다")),
+    (r"Already blended: (\d+) object\(s\)", ("もうなじませてあります：{0} 個", "已经融入过了：{0} 个", "이미 어우러지게 했습니다: {0}개")),
+    (r"Restored (\d+) object\(s\)", ("{0} 個のオブジェクトを元の見た目に戻しました", "已把 {0} 个物体恢复原样",
+                                        "오브젝트 {0}개를 원래 모습으로 되돌렸습니다")),
+]
+
 LANGS = ("JA", "ZH", "KO")
 _IDX = {"JA": 0, "ZH": 1, "KO": 2}
 

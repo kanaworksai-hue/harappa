@@ -272,19 +272,31 @@ def _look_label(context):
 
 
 def _avoid_this(layout, context):
-    """The user's own object is selected and there is a meadow: offer to make the grass avoid it right here."""
-    from . import avoid, look
+    """The user's own object is selected in a Harappa scene: offer, right here, to make the grass avoid it and to
+    paint it like the meadow (an imported model's empty parent counts: its meshes are blended)."""
+    from . import avoid, blend, look, shading
     ob = context.active_object
-    if ob is None or look.is_harappa(ob) or ob.type not in ("MESH", "ARMATURE") or ob.get("hrp_card") \
-            or ob.name.startswith("HRP ") or not avoid.meadows(context.scene):
+    if ob is None or look.is_harappa(ob) or ob.get("hrp_card") or ob.name.startswith("HRP "):
         return
-    col = avoid.current(context.scene)
+    meadow = bool(avoid.meadows(context.scene))
+    if meadow and ob.type in ("MESH", "ARMATURE"):
+        col = avoid.current(context.scene)
+        row = layout.row(align=True)
+        if col is not None and col.objects.get(ob.name) is ob:
+            op = _op(row, "harappa.avoid_remove", "Let Grass Grow Through It", icon="REMOVE")
+            op.name = ob.name
+        else:
+            _op(row, "harappa.avoid_add", "Make Grass Avoid It", icon="MOD_PHYSICS")
+    if not (meadow or context.scene.objects.get(shading.SUN)):
+        return
+    obs = blend.targets([ob])
+    if not obs:
+        return
     row = layout.row(align=True)
-    if col is not None and col.objects.get(ob.name) is ob:
-        op = _op(row, "harappa.avoid_remove", "Let Grass Grow Through It", icon="REMOVE")
-        op.name = ob.name
+    if any(blend.blended(o) for o in obs):
+        _op(row, "harappa.blend_out", "Original Look", icon="LOOP_BACK")
     else:
-        _op(row, "harappa.avoid_add", "Make Grass Avoid It", icon="MOD_PHYSICS")
+        _op(row, "harappa.blend_in", "Blend Into Meadow", icon="SHADING_TEXTURE")
 
 
 def _brush_panel(layout, context, ob):

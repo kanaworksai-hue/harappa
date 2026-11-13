@@ -46,6 +46,9 @@ Options:
                         1 = x2; colour: painted colour with its amount)
   --avoid A,B           grass and flowers make room for these mesh objects (characters, props)
   --avoid-box           treat each avoided object as its bounding box (faster for heavy models)
+  --blend A,B           paint these models (and their children) like the meadow: no black shadows, shade colours
+                        follow the season and look; their own materials are kept
+  --unblend A,B         give these models their own materials back
   --preset NAME         apply a saved look (colours, light, sky, paint style) from My Looks
   --preset-file PATH    apply a look from a .harappa-look.json file
   --save-preset NAME    save the scene's look into My Looks        --list-presets   print the saved looks
@@ -278,7 +281,7 @@ def main():
     else:
         job = ("--meadow", "--trees", "--tree", "--foliage", "--clouds", "--season", "--style", "--variation",
                "--shuffle", "--set", "--wind", "--path", "--save", "--render", "--paint", "--fill", "--clear",
-               "--avoid", "--preset", "--preset-file", "--save-preset")
+               "--avoid", "--blend", "--unblend", "--preset", "--preset-file", "--save-preset")
         if not any(a in argv for a in job):
             print("HARAPPA OK", "installed" if zip_path else "nothing to do")
             return
@@ -320,6 +323,13 @@ def main():
             if arg("--avoid-box", flag=True):
                 s.avoid_box = True
             print("avoiding:", ", ".join(added) or "nothing new")
+        if arg("--unblend"):
+            done = H.blend.restore(objects_named(scene, [n.strip() for n in arg("--unblend").split(",")]))
+            print("own materials back:", ", ".join(o.name for o in done) or "nothing to restore")
+        if arg("--blend"):
+            done, already = H.blend.apply(objects_named(scene, [n.strip() for n in arg("--blend").split(",")]))
+            print("blended into the meadow:", ", ".join(o.name for o in done) or "nothing new",
+                  f"({len(already)} already)" if already else "")
         if arg("--foliage", flag=True):
             if not objs:
                 fail("--foliage needs --objects")

@@ -49,6 +49,7 @@ Mix **6 seasons** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Leaves, Mo
 - **Sky, clouds and mountains:** a sky gradient that follows the camera, a sun disc and high cirrus; solid cumulus clouds (each one an object you can move, scale or delete) with a lit top, blue shade and a golden rim against the sun; up to three layers of distant mountains fading into the haze. Night brings a moon and stars; golden hour is backlit.
 - **Any mesh becomes a bush:** Make Foliage turns Suzanne, a box or anything else into a hedge or bush of leaf dabs.
 - **Grass grows around your characters:** select your character (or its armature) and click **Make Grass Avoid It**. Nothing grows inside it, grass next to it gets shorter and leans away, and under things that hang above the ground (a bench, a bridge) it grows up to just below them — continuous, so nothing pops when the character moves. **Use Simple Box** keeps heavy models fast.
+- **Blend your own models into the meadow (1.1.1):** if an imported character or building gets pitch-black shadows, select it and click **Blend Into Meadow**. It is painted the way the meadow is, and its shadow colours follow the season and Look. Its own materials are kept: **Original Look** brings them back at any time.
 - **Every object its own colour:** shift the hue, saturation and brightness of one meadow, tree, cloud or mountain range, or give it its own colour (a pink cherry among green trees). Shuffle keeps it.
 - **My Looks:** save the colours, light, sky and paint style as a small JSON file and apply it to any scene; import and export looks to share them.
 - **Detail Level:** Fast / Balanced / Best trades richness for speed in one click (it also sets the render samples).
@@ -175,6 +176,7 @@ Then fine-tune it in plain words while you look at the preview:
 | Make Clouds / Count | Lay out new clouds (0 removes them); clouds you moved are kept |
 | Distant Mountains / Layers | Up to three layers of mountains around the meadow (again for new shapes, 0 removes them) |
 | Make Grass Avoid It | Shown when your own mesh or armature is selected: the grass makes room for it |
+| Blend Into Meadow / Original Look | Shown when your own model is selected: paint it like the meadow (no black shadows) / give it its own materials back |
 | Make Foliage | Turn the selected meshes into bushes or hedges of leaf dabs |
 | Anime Sky & Sun | Switch to EEVEE, the Standard view, the anime sky and a key sun |
 | Remove Grass / Reset to Defaults | Take grass, flowers and leaves off the selected objects and restore their materials / Summer, Anime Background, no variation |

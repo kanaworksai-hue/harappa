@@ -55,7 +55,8 @@ Painting, avoiding and looks (same command, any order):
 `grass` (paint = grass, erase = bare path), `flowers` (paint = dense flower bed, erase = none, 0.5 = natural patches),
 `height` (paint = up to ×2, erase = flat, 0.5 = normal), `colour` (`#RRGGBB` = that colour at full brightness,
 erase = none). `--paint-strength F` for softer strokes, `--fill LAYER:VALUE` / `--clear LAYER` for a whole layer.
-`--avoid A,B` makes grass and flowers room for those meshes (an armature adds its meshes; `--avoid-box` for heavy
+`--blend A,B` paints the human's own models like the meadow (no black shadows, shade colours follow the season and look;
+`--unblend A,B` gives their own materials back). `--avoid A,B` makes grass and flowers room for those meshes (an armature adds its meshes; `--avoid-box` for heavy
 models). `--preset NAME` / `--preset-file PATH` apply a saved look (colours, light, sky, paint style),
 `--save-preset NAME` saves the current one, `--list-presets` prints them.
 
@@ -97,6 +98,8 @@ from harappa import avoid, layers, look, looks
 layers.paint_disc(meadow, "GRASS", (0, -6), 1.2, layers.target("GRASS", "ERASE")[0])     # a bare path spot
 layers.paint_disc(meadow, "COLOUR", (2, 6), 3.0, layers.target("COLOUR", "PAINT", (0.9, 0.7, 0.2))[0])
 avoid.add(bpy.context, [hero, bench])          # grass and flowers make room (refusals come back with a reason)
+from harappa import blend
+blend.apply([hero, house])                     # painted like the meadow, no black shadows; blend.restore([...]) undoes it
 s.avoid_box = True                             # each avoided object as its box (heavy models)
 look.set_user(tree_canopy, colour=(1.0, 0.7, 0.8), amount=0.9)   # this tree pink; look.reset(ob) undoes it
 looks.save(bpy.context, "My Golden")           # into the extension's looks folder
