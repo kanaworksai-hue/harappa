@@ -21,7 +21,7 @@
 
 </div>
 
-**Harappa** (原っぱ, "meadow") is a free Blender add-on that builds an anime-background meadow — grass, trees, flowers and sky — with one click. Every tuft of grass grows on its own and sways in the wind, while light and shadow fall in big painted clumps. Trees are made of brush-dab leaves, and the sky gets solid painted cumulus, layered distant mountains and haze.
+**Harappa** (原っぱ, "meadow") is a free Blender add-on that builds an anime-background meadow — grass, flowers and sky with one click, trees with one more. Every tuft of grass grows on its own and sways in the wind, while light and shadow fall in big painted clumps. Trees are made of brush-dab leaves, and the sky gets solid painted cumulus, layered distant mountains and haze.
 
 Mix **6 seasons** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Leaves, Moonlit Night, Misty Morning) with **4 paint styles** (Anime Background, Painterly, Crisp Cel, Soft Pastel). Every press of **Shuffle** changes the tree shapes, clouds and flower colours, and an AI agent can do everything from the install to the finished scene for you.
 
@@ -148,7 +148,7 @@ Then fine-tune it in plain words while you look at the preview:
 ### Use it
 
 1. In the 3D view press **N** → **Harappa** tab
-2. **Make Anime Meadow** (on the selected ground mesh, or on a new hill when nothing is selected)
+2. **Make Anime Meadow** (on the selected ground mesh, or on a new hill when nothing is selected). A plain plane under 10 m becomes a 40 m hill (a meadow needs room).
 3. **Add Anime Tree** (stands at the 3D cursor) or **Plant Trees** (scatters trees over the meadow)
 4. **Paint the Meadow:** click **Grass** and paint a path (it starts on **Make Path**), **Flowers** for a flower bed, **Grass Height** or **Colour**; then **Done Painting**
 5. Select your character and click **Make Grass Avoid It**; select a tree and pick an **Own Colour** in **This Object's Colour**
@@ -165,7 +165,7 @@ Then fine-tune it in plain words while you look at the preview:
 
 | Setting | What it does |
 |---|---|
-| Make Anime Meadow | Grass and flowers on the selected meshes (or a new hill), plus sky, sun, clouds, far hills and a camera |
+| Make Anime Meadow | Grass and flowers on the selected meshes (or a new hill), plus sky, sun, clouds, far hills and a camera; a plain plane under 10 m becomes a 40 m hill |
 | Tree Shape / Height / Blossom → Add Anime Tree | A tree on the ground under the 3D cursor |
 | Plant Trees / Trees | Scatter trees over the active meadow (keeping off paths and the camera's view) |
 | Season / Paint Style | Colours, light and sky (6) / how light and shadow are painted (4) |
@@ -230,7 +230,7 @@ Leaf, flower and cloud cards face the **scene camera** (the same as the anime-tr
 <details>
 <summary><b>Can I grow grass on my own ground?</b></summary>
 
-Yes. Select your ground mesh and press Make Anime Meadow. Painting needs vertices: if your ground is a coarse plane, **Make Ground Finer** in Paint the Meadow adds them in one step (your painting is kept). Remove Grass gives you your original material back.
+Yes. Select your ground mesh and press Make Anime Meadow. Painting needs vertices: if your ground is a coarse plane, **Make Ground Finer** in Paint the Meadow adds them in one step (your painting is kept). Remove Grass gives you your original material back. The ground should be 30 m or more to read as a meadow: under 10 m you get a patch of grass and the panel says so (an untouched small plane becomes a 40 m hill when you press the button).
 </details>
 
 <details>

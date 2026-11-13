@@ -66,7 +66,8 @@ models). `--preset NAME` / `--preset-file PATH` apply a saved look (colours, lig
     --meadow --objects Ground --tree ROUND --at 3,4 --tree WIDE --at -5,8 --blossom 0.5 \
     --save scene_meadow.blend --render preview.png
 ```
-The ground needs some vertices for the brush layers (subdivide a single plane first, or run
+The ground should be 30 m or more (a plain plane under 10 m becomes the 40 m hill; another small ground stays a
+small patch of grass). The ground needs some vertices for the brush layers (subdivide a single plane first, or run
 `bpy.ops.harappa.ground_finer()` with the ground active). Save to a new file unless
 they asked to overwrite.
 

@@ -194,6 +194,12 @@ class HRP_PT_meadow(HrpSub, bpy.types.Panel):
         ob = context.active_object
         layout = self.layout
         gm = ob.modifiers.get(build.GRASS_MOD)
+        from . import SMALL_GROUND
+        if max(ob.dimensions.x, ob.dimensions.y) < SMALL_GROUND:     # a few metres of grass: say why it looks bare
+            box = layout.box()
+            box.alert = True
+            box.label(text=t("Small ground: only a patch of grass"), icon="ERROR", translate=False)
+            box.label(text=t("Scale it to 30 m or more for a meadow"), translate=False)
         col = layout.column(align=True)
         _mod_inputs(col, gm, ("Density", "Height", "Wind Strength"))
         head, body = layout.panel("hrp_meadow_more", default_closed=True)       # the rest, folded away

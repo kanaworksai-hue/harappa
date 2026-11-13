@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2 — 2026-11-13
+
+- **A meadow needs room.** Make Anime Meadow on Blender's plain plane (Add › Plane, under 10 m) used to grow a 2 m
+  lawn the camera couldn't even see. Now the plane becomes the 40 m rolling hill, in place (same object; Ctrl+Z
+  brings the plane back; *Small Plane to Hill* in the operator panel turns it off). Your own small grounds are never
+  reshaped: the status bar and the Active Meadow panel say the meadow is only that big and to scale it to 30 m or more.
+- README: one click makes the grass, flowers and sky; trees are one more click (the first line said "with one
+  click" for trees too). The ground-size advice is in the FAQ.
+
 ## 1.1.1 — 2026-11-13
 
 - **Blend Into Meadow:** your own models (a character, a building from any generator or store) no longer get

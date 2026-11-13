@@ -21,7 +21,7 @@
 
 </div>
 
-**Harappa** (原っぱ, "prado") es un complemento gratuito para Blender que crea un prado al estilo de los fondos de anime —hierba, árboles, flores y cielo— con un solo clic. Cada mata de hierba crece por su cuenta y se mece con el viento, mientras la luz y la sombra caen en grandes manchas pintadas. Los árboles están hechos de hojas en pinceladas, y el cielo lleva cúmulos sólidos pintados, capas de montañas lejanas y bruma.
+**Harappa** (原っぱ, "prado") es un complemento gratuito para Blender que crea un prado al estilo de los fondos de anime —hierba, flores y cielo— con un solo clic, y árboles con otro más. Cada mata de hierba crece por su cuenta y se mece con el viento, mientras la luz y la sombra caen en grandes manchas pintadas. Los árboles están hechos de hojas en pinceladas, y el cielo lleva cúmulos sólidos pintados, capas de montañas lejanas y bruma.
 
 Combina **6 estaciones** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Leaves, Moonlit Night, Misty Morning) con **4 estilos de pintura** (Anime Background, Painterly, Crisp Cel, Soft Pastel). Cada vez que pulsas **Shuffle** (mezclar) cambian las formas de los árboles, las nubes y los colores de las flores, y un agente de IA puede hacerlo todo por ti, desde la instalación hasta la escena terminada.
 
@@ -148,7 +148,7 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 ### Úsalo
 
 1. En la vista 3D pulsa **N** → pestaña **Harappa**
-2. **Make Anime Meadow** (crear prado anime; sobre la malla de suelo seleccionada, o sobre una colina nueva si no hay nada seleccionado)
+2. **Make Anime Meadow** (crear prado anime; sobre la malla de suelo seleccionada, o sobre una colina nueva si no hay nada seleccionado). Un plano simple de menos de 10 m se convierte en una colina de 40 m (un prado necesita espacio).
 3. **Add Anime Tree** (añadir árbol anime; aparece en el cursor 3D) o **Plant Trees** (plantar árboles; los dispersa por el prado)
 4. **Paint the Meadow** (pintar el prado): haz clic en **Grass** y pinta un camino (empieza en **Make Path**), en **Flowers** para un macizo de flores, o en **Grass Height** o **Colour**; luego **Done Painting** (terminar de pintar)
 5. Selecciona tu personaje y haz clic en **Make Grass Avoid It**; selecciona un árbol y elige un **Own Colour** (color propio) en **This Object's Colour**
@@ -165,7 +165,7 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 
 | Ajuste | Qué hace |
 |---|---|
-| Make Anime Meadow | Hierba y flores en las mallas seleccionadas (o en una colina nueva), además de cielo, sol, nubes, colinas lejanas y una cámara |
+| Make Anime Meadow | Hierba y flores en las mallas seleccionadas (o en una colina nueva), además de cielo, sol, nubes, colinas lejanas y una cámara; un plano simple de menos de 10 m se convierte en una colina de 40 m |
 | Tree Shape / Height / Blossom → Add Anime Tree | Un árbol sobre el suelo bajo el cursor 3D |
 | Plant Trees / Trees | Dispersa árboles por el prado activo (evitando los caminos y la vista de la cámara) |
 | Season / Paint Style | Colores, luz y cielo (6) / cómo se pintan la luz y la sombra (4) |
@@ -230,7 +230,7 @@ Las tarjetas de hojas, flores y nubes miran hacia la **cámara de la escena** (i
 <details>
 <summary><b>¿Puedo hacer crecer hierba en mi propio suelo?</b></summary>
 
-Sí. Selecciona tu malla de suelo y pulsa Make Anime Meadow. Para pintar hacen falta vértices: si tu suelo es un plano poco subdividido, **Make Ground Finer** (afinar el suelo) en Paint the Meadow los añade en un solo paso (lo que hayas pintado se conserva). Remove Grass te devuelve tu material original.
+Sí. Selecciona tu malla de suelo y pulsa Make Anime Meadow. Para pintar hacen falta vértices: si tu suelo es un plano poco subdividido, **Make Ground Finer** (afinar el suelo) en Paint the Meadow los añade en un solo paso (lo que hayas pintado se conserva). Remove Grass te devuelve tu material original. Para que parezca un prado, el suelo debería medir 30 m o más: con menos de 10 m solo verás una mancha de hierba y el panel lo avisa (un plano pequeño sin tocar se convierte en una colina de 40 m al pulsar el botón).
 </details>
 
 <details>

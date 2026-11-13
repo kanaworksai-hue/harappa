@@ -720,7 +720,22 @@ def _hide_startup_objects(sc):
             ob.hide_render = True
 
 
-def _make_hill(context, size=40.0, seed=0):
+SMALL_GROUND = 10.0          # metres: a meadow on less than this shows only a patch of grass from the camera
+HILL_SIZE = 40.0
+
+
+def _ground_size(ob):
+    return max(ob.dimensions.x, ob.dimensions.y)
+
+
+def _is_small_plane(ob):
+    """A plain plane (Blender's Add > Plane, maybe scaled) too small for a meadow: 4 corners, one face, flat, no
+    modifiers, under SMALL_GROUND. Make Anime Meadow turns it into the rolling hill instead of a 2 m lawn."""
+    return (ob.type == "MESH" and len(ob.data.vertices) == 4 and len(ob.data.polygons) == 1 and not ob.modifiers
+            and ob.dimensions.z < 1e-4 and _ground_size(ob) < SMALL_GROUND and not ob.get("hrp_ground"))
+
+
+def _hill_mesh(size=HILL_SIZE, seed=0):
     me = bpy.data.meshes.new("Meadow")
     bm = bmesh.new()
     bmesh.ops.create_grid(bm, x_segments=160, y_segments=160, size=size / 2)
@@ -734,10 +749,28 @@ def _make_hill(context, size=40.0, seed=0):
         f.smooth = True
     bm.to_mesh(me)
     bm.free()
-    ob = bpy.data.objects.new("Meadow", me)
+    return me
+
+
+def _make_hill(context, size=HILL_SIZE, seed=0):
+    ob = bpy.data.objects.new("Meadow", _hill_mesh(size, seed))
     ob["hrp_hill"] = True                     # Harappa's own hill: already fine enough to paint on
     ob.location = context.scene.cursor.location
     (context.collection or context.scene.collection).objects.link(ob)
+    return ob
+
+
+def _plane_to_hill(ob, seed=0):
+    """The small plane becomes the hill where it stands (same object, name and place; Ctrl+Z brings it back)."""
+    old = ob.data
+    ob.data = _hill_mesh(HILL_SIZE, seed)
+    for m in old.materials:
+        ob.data.materials.append(m)
+    if old.users == 0:
+        bpy.data.meshes.remove(old)
+    ob.rotation_euler = (0.0, 0.0, ob.rotation_euler.z)
+    ob.scale = (1.0, 1.0, 1.0)
+    ob["hrp_hill"] = True
     return ob
 
 
@@ -789,17 +822,30 @@ class HRP_OT_make_meadow(bpy.types.Operator):
                                      description="Grass tufts per square metre")
     height: bpy.props.FloatProperty(name="Grass Height", default=0.35, min=0.01, max=50.0, subtype="DISTANCE",
                                     description="Grass height in metres")
+    plane_to_hill: bpy.props.BoolProperty(
+        name="Small Plane to Hill", default=True,
+        description="A plain plane smaller than 10 m becomes a 40 m rolling hill: a meadow needs room. "
+                    "Off: grass only on the plane")
 
     def execute(self, context):
         sc = context.scene
         targets = [o for o in context.selected_objects if o.type == "MESH" and tree_root(o) is None
                    and not o.get("hrp_canopy") and not _is_default_cube(o)]
         created = False
+        grown = None
         if not targets:
             if context.mode != "OBJECT":
                 bpy.ops.object.mode_set(mode="OBJECT")
             _hide_startup_objects(sc)
             targets = [_make_hill(context, seed=sc.harappa.variation)]
+            created = True
+        elif self.plane_to_hill and len(targets) == 1 and _is_small_plane(targets[0]):
+            if context.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            _hide_startup_objects(sc)
+            grown = _ground_size(targets[0])
+            _plane_to_hill(targets[0], seed=sc.harappa.variation)
+            context.view_layer.update()
             created = True
         for ob in targets:
             build.make_meadow(context, ob, density=self.density, height=self.height, flowers=self.flowers,
@@ -832,7 +878,14 @@ class HRP_OT_make_meadow(bpy.types.Operator):
                 o.select_set(False)
             targets[0].select_set(True)
             context.view_layer.objects.active = targets[0]
-        self.report({"INFO"}, report(f"Anime meadow on {len(targets)} object(s)"))
+        small = [o for o in targets if _ground_size(o) < SMALL_GROUND]
+        if grown is not None:
+            self.report({"INFO"}, report(f"The {grown:.1f} m plane became a {HILL_SIZE:.0f} m hill: a meadow needs room"))
+        elif small:
+            self.report({"WARNING"}, report(f"Small ground ({_ground_size(small[0]):.1f} m): the meadow is only that "
+                                            f"big. Scale it to 30 m or more, or click with nothing selected for a hill"))
+        else:
+            self.report({"INFO"}, report(f"Anime meadow on {len(targets)} object(s)"))
         return {"FINISHED"}
 
 

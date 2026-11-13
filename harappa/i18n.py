@@ -831,6 +831,29 @@ REPORTS += [
                                         "오브젝트 {0}개를 원래 모습으로 되돌렸습니다")),
 ]
 
+# 1.1.2: a meadow needs room (small grounds)
+UI.update({
+    "Small Plane to Hill": ("小さい平面は丘に", "小平面变成山丘", "작은 평면은 언덕으로"),
+    "A plain plane smaller than 10 m becomes a 40 m rolling hill: a meadow needs room. Off: grass only on the plane": (
+        "10 m より小さい平らな平面は、40 m のゆるやかな丘になります（原っぱには広さが必要です）。オフなら平面の上だけに草",
+        "小于 10 m 的普通平面会变成 40 m 的起伏山丘（草原需要足够的面积）。关闭则只在平面上长草",
+        "10 m보다 작은 평평한 평면은 40 m의 완만한 언덕이 됩니다 (들판에는 넓이가 필요합니다). 끄면 평면 위에만 풀"),
+    "Small ground: only a patch of grass": ("地面が小さいので、草は小さな一画だけです", "地面太小：只有一小块草",
+                                             "땅이 작아서 풀은 작은 한 구역뿐입니다"),
+    "Scale it to 30 m or more for a meadow": ("原っぱにするには 30 m 以上に拡大してください", "要做成草原，请放大到 30 m 以上",
+                                               "들판을 만들려면 30 m 이상으로 키우세요"),
+})
+REPORTS += [
+    (r"The ([\d.]+) m plane became a (\d+) m hill: a meadow needs room", (
+        "{0} m の平面を {1} m の丘にしました（原っぱには広さが必要です）", "已把 {0} m 的平面变成 {1} m 的山丘（草原需要足够的面积）",
+        "{0} m 평면을 {1} m 언덕으로 만들었습니다 (들판에는 넓이가 필요합니다)")),
+    (r"Small ground \(([\d.]+) m\): the meadow is only that big\. Scale it to 30 m or more, or click with nothing "
+     r"selected for a hill", (
+        "地面が小さい（{0} m）ので、原っぱもその広さだけです。30 m 以上に拡大するか、何も選ばずに押すと丘ができます",
+        "地面太小（{0} m），草原也只有这么大。请放大到 30 m 以上，或者什么都不选再点，会生成一座山丘",
+        "땅이 작아서({0} m) 들판도 그만큼뿐입니다. 30 m 이상으로 키우거나, 아무것도 선택하지 않고 누르면 언덕이 생깁니다")),
+]
+
 LANGS = ("JA", "ZH", "KO")
 _IDX = {"JA": 0, "ZH": 1, "KO": 2}
 

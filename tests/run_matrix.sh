@@ -5,7 +5,7 @@
 # tests/test_generic.py, tests/test_custom.py and tests/test_blend.py.
 cd "$(dirname "$0")/.." || exit 1
 TESTS="$*"
-[ -z "$TESTS" ] && TESTS="tests/test_generic.py tests/test_custom.py tests/test_blend.py"
+[ -z "$TESTS" ] && TESTS="tests/test_generic.py tests/test_custom.py tests/test_blend.py tests/test_ground.py"
 if [ -z "$BLENDERS" ]; then
     for app in /Applications/Blender*.app; do
         [ -x "$app/Contents/MacOS/Blender" ] && BLENDERS="$BLENDERS $app/Contents/MacOS/Blender"

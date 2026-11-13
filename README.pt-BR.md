@@ -21,7 +21,7 @@
 
 </div>
 
-**Harappa** (原っぱ, "campo aberto") é um add-on gratuito para o Blender que monta, com um clique, um campo no estilo dos cenários de anime: grama, árvores, flores e céu. Cada tufo de grama cresce por conta própria e balança ao vento, enquanto a luz e a sombra caem em grandes manchas pintadas. As árvores são feitas de folhas em pinceladas, e o céu ganha cúmulos pintados e sólidos, camadas de montanhas ao longe e névoa.
+**Harappa** (原っぱ, "campo aberto") é um add-on gratuito para o Blender que monta, com um clique, um campo no estilo dos cenários de anime: grama, flores e céu — e as árvores com mais um clique. Cada tufo de grama cresce por conta própria e balança ao vento, enquanto a luz e a sombra caem em grandes manchas pintadas. As árvores são feitas de folhas em pinceladas, e o céu ganha cúmulos pintados e sólidos, camadas de montanhas ao longe e névoa.
 
 Combine **6 estações** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Leaves, Moonlit Night, Misty Morning) com **4 estilos de pintura** (Anime Background, Painterly, Crisp Cel, Soft Pastel). Cada clique em **Shuffle** (embaralhar) muda o formato das árvores, as nuvens e as cores das flores, e um agente de IA pode fazer tudo por você, da instalação à cena pronta.
 
@@ -148,7 +148,7 @@ Depois, faça os ajustes finos em linguagem comum enquanto olha a prévia:
 ### Use
 
 1. Na 3D view, pressione **N** → aba **Harappa**
-2. **Make Anime Meadow** (criar campo de anime; na malha de chão selecionada, ou em uma colina nova quando nada está selecionado)
+2. **Make Anime Meadow** (criar campo de anime; na malha de chão selecionada, ou em uma colina nova quando nada está selecionado). Um plano simples com menos de 10 m vira uma colina de 40 m (um campo precisa de espaço).
 3. **Add Anime Tree** (adicionar árvore de anime; aparece no 3D cursor) ou **Plant Trees** (plantar árvores; espalha árvores pelo campo)
 4. **Paint the Meadow** (pintar o campo): clique em **Grass** e pinte uma trilha (começa em **Make Path**), em **Flowers** para um canteiro de flores, em **Grass Height** ou em **Colour**; depois, **Done Painting** (terminar a pintura)
 5. Selecione o seu personagem e clique em **Make Grass Avoid It**; selecione uma árvore e escolha uma **Own Colour** (cor própria) em **This Object's Colour** (cor deste objeto)
@@ -165,7 +165,7 @@ Depois, faça os ajustes finos em linguagem comum enquanto olha a prévia:
 
 | Opção | O que faz |
 |---|---|
-| Make Anime Meadow | Grama e flores nas malhas selecionadas (ou em uma colina nova), além de céu, sol, nuvens, colinas ao longe e uma câmera |
+| Make Anime Meadow | Grama e flores nas malhas selecionadas (ou em uma colina nova), além de céu, sol, nuvens, colinas ao longe e uma câmera; um plano simples com menos de 10 m vira uma colina de 40 m |
 | Tree Shape / Height / Blossom → Add Anime Tree | Uma árvore no chão, sob o 3D cursor |
 | Plant Trees / Trees | Espalha árvores pelo campo ativo (evitando as trilhas e o campo de visão da câmera) |
 | Season / Paint Style | Cores, luz e céu (6) / como a luz e a sombra são pintadas (4) |
@@ -230,7 +230,7 @@ Os cards de folhas, flores e nuvens ficam voltados para a **câmera da cena** (i
 <details>
 <summary><b>Posso fazer a grama crescer no meu próprio chão?</b></summary>
 
-Sim. Selecione a sua malha de chão e clique em Make Anime Meadow. Pintar exige vértices: se o seu chão é um plano de malha grosseira, o **Make Ground Finer** em Paint the Meadow os adiciona em um passo (o que você pintou é mantido). O Remove Grass devolve o seu material original.
+Sim. Selecione a sua malha de chão e clique em Make Anime Meadow. Pintar exige vértices: se o seu chão é um plano de malha grosseira, o **Make Ground Finer** em Paint the Meadow os adiciona em um passo (o que você pintou é mantido). O Remove Grass devolve o seu material original. Para parecer um campo, o chão deve ter 30 m ou mais: com menos de 10 m você tem só um pedaço de grama e o painel avisa (um plano pequeno sem alterações vira uma colina de 40 m ao clicar no botão).
 </details>
 
 <details>
