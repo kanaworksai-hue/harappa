@@ -15,7 +15,7 @@ import bpy
 from mathutils import Vector, noise
 
 from . import shading
-from .util import G, fresh_group, iface, menu, mod_input
+from .util import G, fresh_group, iface, menu, mod_input, only, sock
 
 ROCK_VER = 18
 MAT_ROCK = "HRP Rock"
@@ -139,7 +139,7 @@ def rock_material():
     pal.node_tree = shading.palette_group()
     geo = g.n("ShaderNodeNewGeometry", -1400, 500)
     nz = g.n("ShaderNodeSeparateXYZ", -1200, 500)
-    g.link(geo, "Normal", nz, 0)
+    g.link(geo, "Normal", nz, "Vector")
     mn = g.n("ShaderNodeTexNoise", -1200, 700, noise_dimensions="3D")
     g.set(mn, "Scale", 2.2)
     g.set(mn, "Detail", 3.0)
@@ -149,8 +149,8 @@ def rock_material():
     moss = g.maprange(-700, 600, g.out(top, 0), 0.72, 0.8, smooth=True)                 # a cap on top, not camo
     mossw = g.math("MULTIPLY", -550, 600, g.out(moss, "Result"), g.out(pal, "rock_moss"))
     nom = g.n("ShaderNodeAttribute", -700, 800, attribute_name="hrp_nomoss", attribute_type="OBJECT")
-    mossw = g.math("MULTIPLY", -450, 650, g.out(mossw, 0), g.math("SUBTRACT", -550, 800, 1.0, g.out(nom, "Fac"))
-                   .outputs[0])
+    mossw = g.math("MULTIPLY", -450, 650, g.out(mossw, 0), only(g.math("SUBTRACT", -550, 800, 1.0, g.out(nom, "Fac"))
+                   .outputs))
     # stone tone varies over the rock in big soft patches
     pn = g.n("ShaderNodeTexNoise", -1200, 200, noise_dimensions="3D")
     g.set(pn, "Scale", 0.9)
@@ -170,18 +170,18 @@ def rock_material():
     cel = shading._cel_node(g, pal, -100, 200, g.out(geo, "Normal"), g.mixout(lit), g.mixout(sh), g.mixout(dp))
     # a thin dark crease where the rock meets the ground
     fz = g.n("ShaderNodeSeparateXYZ", -400, -400)
-    g.link(g.n("ShaderNodeTexCoord", -600, -400), "Object", fz, 0)
+    g.link(g.n("ShaderNodeTexCoord", -600, -400), "Object", fz, "Vector")
     base = g.maprange(-250, -400, g.out(fz, "Z"), 0.0, 0.08, 0.55, 1.0, smooth=True)
     bc = g.n("ShaderNodeCombineColor", -100, -400)
     for c in ("Red", "Green", "Blue"):
         g.link(base, "Result", bc, c)
-    col = g.mix(100, 200, "MULTIPLY", fac=1.0, a=g.out(cel, "Color"), b=bc.outputs[0])
+    col = g.mix(100, 200, "MULTIPLY", fac=1.0, a=g.out(cel, "Color"), b=only(bc.outputs))
     vz = g.maprange(-250, -250, g.out(nz, "Z"), -0.4, 0.9, 0.86, 1.08, smooth=True)
     vg = g.n("ShaderNodeCombineColor", -100, -250)
     g.link(vz, "Result", vg, "Red")
     g.link(vz, "Result", vg, "Green")
     g.link(g.math("MULTIPLY_ADD", -150, -300, g.out(vz, "Result"), 0.7, 0.3), 0, vg, "Blue")
-    col = g.mix(150, 200, "MULTIPLY", fac=1.0, a=g.mixout(col), b=vg.outputs[0])
+    col = g.mix(150, 200, "MULTIPLY", fac=1.0, a=g.mixout(col), b=only(vg.outputs))
     cv = g.n("ShaderNodeTexVoronoi", -400, -800, voronoi_dimensions="3D", feature="DISTANCE_TO_EDGE")
     g.set(cv, "Scale", 2.6)
     g.link(g.n("ShaderNodeTexCoord", -600, -900), "Object", cv, "Vector")
@@ -192,13 +192,13 @@ def rock_material():
     crack = g.math("MULTIPLY", -100, -850, g.out(crack, "Result"), g.out(g.maprange(-250, -1000, g.out(cn, "Fac"),
                    0.6, 0.66, smooth=True), "Result"))                               # a few cracks, not a net
     cnz = g.n("ShaderNodeSeparateXYZ", -400, -1150)
-    g.link(geo, "Normal", cnz, 0)
+    g.link(geo, "Normal", cnz, "Vector")
     crack = g.math("MULTIPLY", -50, -950, g.out(crack, 0), g.out(g.maprange(-250, -1150, g.out(cnz, "Z"), 0.6,
                    0.2, smooth=True), "Result"))                                    # on the sides, not the tops
-    col = g.mix(200, 150, fac=g.math("MULTIPLY", 0, -850, g.out(crack, 0), 0.45).outputs[0], a=g.mixout(col),
+    col = g.mix(200, 150, fac=only(g.math("MULTIPLY", 0, -850, g.out(crack, 0), 0.45).outputs), a=g.mixout(col),
                 b=g.out(pal, "rock_deep"))
     dark = g.n("ShaderNodeAttribute", -100, -600, attribute_name="hrp_dark", attribute_type="OBJECT")
-    col = g.mix(250, 200, fac=g.math("MULTIPLY", 100, -600, g.out(dark, "Fac"), 1.0).outputs[0],
+    col = g.mix(250, 200, fac=only(g.math("MULTIPLY", 100, -600, g.out(dark, "Fac"), 1.0).outputs),
                 a=g.mixout(col), b=g.out(pal, "rock_deep"))                  # a shaded recess (waterfall alcove)
     shading._emit_out(g, g.mixout(col), 500, 200, pal=pal)
     mat["hrp_kind"] = "rock"
@@ -219,22 +219,18 @@ def props_collection(scene):
 
 
 def avoid_props(scene):
-    """Grass and flowers grow around everything in Harappa Props (only when the user set no Avoid of their own)."""
-    from . import build
+    """Grass and flowers make room for rocks and stepping stones: they join the scene's Avoid collection (see
+    avoid.py), next to whatever the user avoids there; nothing the user chose is replaced."""
+    from . import avoid
     coll = props_collection(scene)
-    for gnd in scene.objects:
-        if gnd.type != "MESH" or not gnd.get("hrp_ground"):
-            continue
-        for name in (build.GRASS_MOD, build.FLOWER_MOD):
-            m = gnd.modifiers.get(name)
-            if m is None:
-                continue
-            try:
-                cur = mod_input(m, "Avoid")
-            except KeyError:
-                continue
-            if cur is None or cur == coll:
-                mod_input(m, "Avoid", coll)
+    obs = [o for o in coll.objects if o.type == "MESH"]
+    if obs and avoid.meadows(scene):
+        col = avoid.ensure(scene)
+        for ob in obs:
+            if col.objects.get(ob.name) is None:
+                col.objects.link(ob)
+        for m in avoid._mods(scene):
+            m.id_data.update_tag()
     for gnd in scene.objects:                                    # and reeds keep clear of rocks
         m = gnd.modifiers.get(SHORE_MOD) if gnd.type == "MESH" else None
         if m is not None:
@@ -328,7 +324,7 @@ def shore_group():
     def band(x, y, a, b, c, d):
         r1 = g.maprange(x, y, g.out(sd, "Attribute"), a, b, smooth=True)
         r2 = g.maprange(x, y - 150, g.out(sd, "Attribute"), c, d, 1.0, 0.0, smooth=True)
-        return g.math("MULTIPLY", x + 180, y, g.out(r1, "Result"), g.out(r2, "Result")).outputs[0]
+        return only(g.math("MULTIPLY", x + 180, y, g.out(r1, "Result"), g.out(r2, "Result")).outputs)
 
     def scatter(x, y, weight, dens_sock, seed_off):
         d = g.math("MULTIPLY", x, y, weight, dens_sock)
@@ -336,20 +332,20 @@ def shore_group():
         g.link(gi, "Geometry", dist, "Mesh")
         g.link(d, 0, dist, "Density")
         sa = g.n("FunctionNodeIntegerMath", x + 50, y - 150, operation="ADD")
-        g.link(gi, "Seed", sa, 0)
-        sa.inputs[1].default_value = seed_off
+        g.link(gi, "Seed", sa, ("Value", 0))
+        sock(sa.inputs, ("Value", 1)).default_value = seed_off
         g.link(sa, 0, dist, "Seed")
         return g.out(dist, "Points")
 
     # pebbles: bank 0 .. 0.45 m above the water, in loose groups
     pw = band(-1200, -300, -0.14, -0.04, 0.35, 0.75)                   # some half in the water, some up the bank
     pclump = g.maprange(-1050, -900, g.out(nz, "Fac"), 0.46, 0.58, smooth=True)   # a few gravel spits, not a necklace
-    pw = g.math("MULTIPLY", -900, -400, pw, g.out(pclump, "Result")).outputs[0]
+    pw = only(g.math("MULTIPLY", -900, -400, pw, g.out(pclump, "Result")).outputs)
     nrm0 = g.n("GeometryNodeInputNormal", -1200, -1100)
     nz0 = g.n("ShaderNodeSeparateXYZ", -1050, -1100)
-    g.link(nrm0, 0, nz0, 0)
+    g.link(nrm0, "Normal", nz0, "Vector")
     pflat = g.maprange(-900, -1100, g.out(nz0, "Z"), 0.7, 0.85, smooth=True)       # not stuck on cliff faces
-    pw = g.math("MULTIPLY", -850, -450, pw, g.out(pflat, "Result")).outputs[0]
+    pw = only(g.math("MULTIPLY", -850, -450, pw, g.out(pflat, "Result")).outputs)
     ppts = scatter(-800, -300, pw, g.out(gi, "Pebble Density"), 0)
     ci = g.n("GeometryNodeCollectionInfo", -500, -600)
     g.link(gi, "Pebbles", ci, "Collection")
@@ -367,8 +363,8 @@ def shore_group():
     sc = g.n("FunctionNodeRandomValue", -400, -1000, data_type="FLOAT")
     g.set(sc, "Min", 0.0, "VALUE")
     g.set(sc, "Max", 1.0, "VALUE")
-    skew = g.math("MULTIPLY_ADD", -300, -1000, g.math("POWER", -350, -1100, g.out(sc, "Value", "VALUE"), 3.0)
-                  .outputs[0], 2.0, 0.35)                                       # many small, a few big
+    skew = g.math("MULTIPLY_ADD", -300, -1000, only(g.math("POWER", -350, -1100, g.out(sc, "Value", "VALUE"), 3.0)
+                  .outputs), 2.0, 0.35)                                       # many small, a few big
     psz = g.math("MULTIPLY", -250, -1000, g.out(skew, 0), g.out(gi, "Pebble Size"))
     g.link(psz, 0, pin, "Scale")
     bury = g.n("ShaderNodeCombineXYZ", -150, -900)
@@ -379,7 +375,7 @@ def shore_group():
     fl0 = g.n("GeometryNodeInputNamedAttribute", -1200, 150, data_type="FLOAT")
     fl0.inputs["Name"].default_value = "hrp_flat"                                # slope before the carve
     flat_ = g.maprange(-900, 150, g.out(fl0, "Attribute"), 0.8, 0.92, smooth=True)  # not on hillsides or cliffs
-    rw = g.math("MULTIPLY", -1000, 250, rw, g.out(flat_, "Result")).outputs[0]
+    rw = only(g.math("MULTIPLY", -1000, 250, rw, g.out(flat_, "Result")).outputs)
     en_ = g.n("GeometryNodeInputNamedAttribute", -1200, 0, data_type="FLOAT")
     en_.inputs["Name"].default_value = "hrp_endd"
     lipf = g.maprange(-900, 0, g.out(en_, "Attribute"), 3.0, 4.0, smooth=True)     # clear of a waterfall's lip
@@ -387,64 +383,64 @@ def shore_group():
     g.link(en_, "Exists", has_en, "Switch")
     has_en.inputs["False"].default_value = 1.0
     g.link(lipf, "Result", has_en, "True")
-    rw = g.math("MULTIPLY", -950, 200, rw, g.out(has_en, 0)).outputs[0]
+    rw = only(g.math("MULTIPLY", -950, 200, rw, g.out(has_en, 0)).outputs)
     wci = g.n("GeometryNodeCollectionInfo", -1500, 600, transform_space="RELATIVE")   # straight-line clearance
     g.link(gi, "Water", wci, "Collection")
     wre = g.n("GeometryNodeRealizeInstances", -1350, 600)
-    g.link(wci, 0, wre, 0)
+    g.link(wci, 0, wre, "Geometry")
     falls = g.n("GeometryNodeSeparateGeometry", -1200, 600, domain="FACE")
     g.link(wre, 0, falls, "Geometry")
     wfa = g.n("GeometryNodeInputNamedAttribute", -1350, 750, data_type="FLOAT_VECTOR")
     wfa.inputs["Name"].default_value = "hrp_wf"
     wfs = g.n("ShaderNodeSeparateXYZ", -1300, 850)                     # by value: "Exists" is true for all
-    g.link(wfa, "Attribute", wfs, 0)                                     # faces once the collection is realized
+    g.link(wfa, "Attribute", wfs, "Vector")                                     # faces once the collection is realized
     wsum = g.math("ADD", -1200, 850, g.out(wfs, "Y"), g.out(wfs, "Z"))
     g.link(g.math("GREATER_THAN", -1150, 800, g.out(wsum, 0), 0.0001), 0, falls, "Selection")
     fsz = g.n("GeometryNodeAttributeDomainSize", -1050, 750, component="MESH")
-    g.link(falls, "Selection", fsz, 0)
+    g.link(falls, "Selection", fsz, "Geometry")
     fpx = g.n("GeometryNodeProximity", -1050, 600, target_element="FACES")
-    g.link(falls, "Selection", fpx, 0)
+    g.link(falls, "Selection", fpx, "Geometry")
     fclr = g.maprange(-900, 600, g.out(fpx, "Distance"), 6.5, 8.0, smooth=True)       # not by fast water
     fsw = g.n("GeometryNodeSwitch", -750, 650, input_type="FLOAT")
     g.link(g.math("GREATER_THAN", -900, 750, g.out(fsz, "Face Count"), 0.5), 0, fsw, "Switch")
     fsw.inputs["False"].default_value = 1.0
     g.link(fclr, "Result", fsw, "True")
-    rw = g.math("MULTIPLY", -950, 120, rw, g.out(fsw, 0)).outputs[0]
+    rw = only(g.math("MULTIPLY", -950, 120, rw, g.out(fsw, 0)).outputs)
     ab_ = g.n("GeometryNodeInputNamedAttribute", -1200, -150, data_type="FLOAT")
     ab_.inputs["Name"].default_value = "hrp_above"
     low = g.maprange(-900, -150, g.out(ab_, "Attribute"), 0.3, 0.15, smooth=True)   # only near the waterline
     shal = g.maprange(-900, -250, g.out(ab_, "Attribute"), -0.42, -0.28, smooth=True)  # never in deep water
     low = g.math("MULTIPLY", -800, -200, g.out(low, "Result"), g.out(shal, "Result"))
-    rw = g.math("MULTIPLY", -950, 150, rw, g.out(low, 0)).outputs[0]
+    rw = only(g.math("MULTIPLY", -950, 150, rw, g.out(low, 0)).outputs)
     pci = g.n("GeometryNodeCollectionInfo", -1500, 1000, transform_space="RELATIVE")      # never through a rock
     g.link(gi, "Props", pci, "Collection")
     pre = g.n("GeometryNodeRealizeInstances", -1350, 1000)
-    g.link(pci, 0, pre, 0)
+    g.link(pci, 0, pre, "Geometry")
     psz_ = g.n("GeometryNodeAttributeDomainSize", -1200, 1100, component="MESH")
-    g.link(pre, 0, psz_, 0)
+    g.link(pre, 0, psz_, "Geometry")
     ppx = g.n("GeometryNodeProximity", -1200, 1000, target_element="FACES")
-    g.link(pre, 0, ppx, 0)
+    g.link(pre, 0, ppx, "Geometry")
     pclr = g.maprange(-1050, 1000, g.out(ppx, "Distance"), 0.12, 0.35, smooth=True)
     psw = g.n("GeometryNodeSwitch", -900, 1000, input_type="FLOAT")
     g.link(g.math("GREATER_THAN", -1050, 1100, g.out(psz_, "Face Count"), 0.5), 0, psw, "Switch")
     psw.inputs["False"].default_value = 1.0
     g.link(pclr, "Result", psw, "True")
-    rw = g.math("MULTIPLY", -850, 350, rw, g.out(psw, 0)).outputs[0]
+    rw = only(g.math("MULTIPLY", -850, 350, rw, g.out(psw, 0)).outputs)
     rclump = g.maprange(-1050, 500, g.out(nz, "Fac"), 0.5, 0.62, smooth=True)
-    rw = g.math("MULTIPLY", -900, 300, rw, g.out(rclump, "Result")).outputs[0]
+    rw = only(g.math("MULTIPLY", -900, 300, rw, g.out(rclump, "Result")).outputs)
     rpts = scatter(-800, 300, rw, g.out(gi, "Reeds"), 7)
     oi = g.n("GeometryNodeObjectInfo", -500, 600)
     g.link(gi, "Reed", oi, "Object")
     tm = g.n("GeometryNodeInputSceneTime", -700, 800)
     rp = g.n("GeometryNodeInputPosition", -700, 950)
     rps = g.n("ShaderNodeSeparateXYZ", -550, 950)
-    g.link(rp, 0, rps, 0)
-    phx = g.math("MULTIPLY_ADD", -400, 950, g.out(rps, "X"), 0.7, g.math("MULTIPLY", -550, 800,
-                                                                         g.out(tm, "Seconds"), 1.6).outputs[0])
-    swx = g.math("MULTIPLY", -250, 950, g.math("SINE", -300, 950, g.out(phx, 0)).outputs[0], 0.07)
-    phy = g.math("MULTIPLY_ADD", -400, 1100, g.out(rps, "Y"), 0.6, g.math("MULTIPLY", -550, 1100,
-                                                                         g.out(tm, "Seconds"), 1.1).outputs[0])
-    swy = g.math("MULTIPLY", -250, 1100, g.math("SINE", -300, 1100, g.out(phy, 0)).outputs[0], 0.05)
+    g.link(rp, 0, rps, "Vector")
+    phx = g.math("MULTIPLY_ADD", -400, 950, g.out(rps, "X"), 0.7, only(g.math("MULTIPLY", -550, 800,
+                                                                         g.out(tm, "Seconds"), 1.6).outputs))
+    swx = g.math("MULTIPLY", -250, 950, only(g.math("SINE", -300, 950, g.out(phx, 0)).outputs), 0.07)
+    phy = g.math("MULTIPLY_ADD", -400, 1100, g.out(rps, "Y"), 0.6, only(g.math("MULTIPLY", -550, 1100,
+                                                                         g.out(tm, "Seconds"), 1.1).outputs))
+    swy = g.math("MULTIPLY", -250, 1100, only(g.math("SINE", -300, 1100, g.out(phy, 0)).outputs), 0.05)
     rz = g.n("FunctionNodeRandomValue", -400, 700, data_type="FLOAT")
     g.set(rz, "Max", 6.28, "VALUE")
     rrot = g.n("ShaderNodeCombineXYZ", -100, 800)
@@ -473,7 +469,7 @@ def shore_group():
     # steep bare faces: overlapping angular chunks bedded into the face (a broken rock silhouette, not a wall)
     cn_ = g.n("GeometryNodeInputNormal", -1200, -1500)
     cnz = g.n("ShaderNodeSeparateXYZ", -1050, -1500)
-    g.link(cn_, 0, cnz, 0)
+    g.link(cn_, "Normal", cnz, "Vector")
     cbl = g.n("GeometryNodeBlurAttribute", -950, -1500, data_type="FLOAT")      # the slope of the land, not of
     g.link(cnz, "Z", cbl, "Value")                                              # every little bump in it
     cbl.inputs["Iterations"].default_value = 4
@@ -481,7 +477,7 @@ def shore_group():
     gm_ = g.n("GeometryNodeInputNamedAttribute", -1050, -1650, data_type="FLOAT_COLOR")
     gm_.inputs["Name"].default_value = "hrp_grass"
     gms = g.n("FunctionNodeSeparateColor", -950, -1650)
-    g.link(gm_, "Attribute", gms, 0)
+    g.link(gm_, "Attribute", gms, "Color")
     bare = g.n("GeometryNodeSwitch", -850, -1700, input_type="FLOAT")             # only where the carve left
     g.link(gm_, "Exists", bare, "Switch")                                       # the ground bare
     bare.inputs["False"].default_value = 0.0
@@ -511,8 +507,8 @@ def shore_group():
     g.link(se, 0, spin, "Rotate By")
     spin.rotation_space = "LOCAL"
     csz = g.n("FunctionNodeRandomValue", -650, -1950, data_type="FLOAT")              # a few big anchors, much fill
-    csz2 = g.math("MULTIPLY_ADD", -500, -1950, g.math("POWER", -550, -2000, g.out(csz, "Value", "VALUE"), 2.5)
-                  .outputs[0], 1.25, 0.4)
+    csz2 = g.math("MULTIPLY_ADD", -500, -1950, only(g.math("POWER", -550, -2000, g.out(csz, "Value", "VALUE"), 2.5)
+                  .outputs), 1.25, 0.4)
     cci = g.n("GeometryNodeCollectionInfo", -500, -1400)
     g.link(gi, "Cliff Rocks", cci, "Collection")
     cci.inputs["Separate Children"].default_value = True
@@ -532,11 +528,11 @@ def shore_group():
     g.link(cbz, "Value", cbv, "Z", akind="VALUE")
     g.link(cbv, 0, cbed, "Translation")
     join = g.n("GeometryNodeJoinGeometry", 900, 0)
-    g.link(gi, "Geometry", join, 0)
-    g.link(tpin, 0, join, 0)
-    g.link(rin, 0, join, 0)
-    g.link(cbed, 0, join, 0)
-    g.link(join, 0, go, 0)
+    g.link(gi, "Geometry", join, "Geometry")
+    g.link(tpin, 0, join, "Geometry")
+    g.link(rin, 0, join, "Geometry")
+    g.link(cbed, 0, join, "Geometry")
+    g.link(join, 0, go, "Geometry")
     return ng
 
 

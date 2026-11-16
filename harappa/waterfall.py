@@ -14,7 +14,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 from . import rocks, shading, water
-from .util import G, fresh_group, iface, mod_input
+from .util import G, fresh_group, iface, mod_input, only, sock
 
 FALL_VER = 45
 FALL = "HRP Waterfall"
@@ -38,76 +38,76 @@ def crown_geo(g, x, y, secs, rx, ry, height, open_front=False, life=None):
     cgrid.inputs["Size Y"].default_value = 1.0
     cgrid.inputs["Vertices X"].default_value = 121
     cgrid.inputs["Vertices Y"].default_value = 12
-    cgp = _sep(g, x + 150, y - 150, g.n("GeometryNodeInputPosition", x, y - 150).outputs[0])
-    U = g.math("MULTIPLY", x + 300, y - 150, g.math("ADD", x + 250, y - 150, g.out(cgp, "X"), 0.5).outputs[0], 6.2832)
+    cgp = _sep(g, x + 150, y - 150, only(g.n("GeometryNodeInputPosition", x, y - 150).outputs))
+    U = g.math("MULTIPLY", x + 300, y - 150, only(g.math("ADD", x + 250, y - 150, g.out(cgp, "X"), 0.5).outputs), 6.2832)
     V = g.math("ADD", x + 300, y - 250, g.out(cgp, "Y"), 0.5)
     tl = g.math("MULTIPLY", x + 300, y - 350, secs, 1.4)
     if life is None:
-        pulse = g.math("MULTIPLY_ADD", x + 450, y - 350, g.math("SINE", x + 400, y - 400, g.math("MULTIPLY", x + 350,
-                       y - 400, g.out(tl, 0), 2.2).outputs[0]).outputs[0], 0.5, 0.5).outputs[0]
-        hk = g.math("MULTIPLY_ADD", x + 550, y - 400, pulse, 0.3, 0.85).outputs[0]
+        pulse = only(g.math("MULTIPLY_ADD", x + 450, y - 350, only(g.math("SINE", x + 400, y - 400, only(g.math("MULTIPLY", x + 350,
+                       y - 400, g.out(tl, 0), 2.2).outputs)).outputs), 0.5, 0.5).outputs)
+        hk = only(g.math("MULTIPLY_ADD", x + 550, y - 400, pulse, 0.3, 0.85).outputs)
     else:
         pulse, hk = life, life
     nsp = 14.0
-    spk0 = g.math("MULTIPLY_ADD", x + 450, y - 150, g.math("COSINE", x + 400, y - 150, g.math("MULTIPLY_ADD", x + 350,
-                  y - 150, g.out(U, 0), nsp, g.math("MULTIPLY", x + 300, y - 200, g.out(tl, 0), 0.6).outputs[0])
-                  .outputs[0]).outputs[0], 0.5, 0.5)
-    jitc = g.math("MULTIPLY_ADD", x + 500, y - 250, g.math("SINE", x + 450, y - 250, g.math("MULTIPLY_ADD", x + 400,
-                  y - 250, g.out(U, 0), nsp * 0.37, 2.3).outputs[0]).outputs[0], 0.35, 1.0)
-    jit2 = g.math("MULTIPLY_ADD", x + 550, y - 300, g.math("SINE", x + 500, y - 300, g.math("MULTIPLY_ADD", x + 450,
-                  y - 300, g.out(U, 0), nsp * 1.13, 0.7).outputs[0]).outputs[0], 0.25, 1.0)      # uneven fingers
+    spk0 = g.math("MULTIPLY_ADD", x + 450, y - 150, only(g.math("COSINE", x + 400, y - 150, only(g.math("MULTIPLY_ADD", x + 350,
+                  y - 150, g.out(U, 0), nsp, only(g.math("MULTIPLY", x + 300, y - 200, g.out(tl, 0), 0.6).outputs))
+                  .outputs)).outputs), 0.5, 0.5)
+    jitc = g.math("MULTIPLY_ADD", x + 500, y - 250, only(g.math("SINE", x + 450, y - 250, only(g.math("MULTIPLY_ADD", x + 400,
+                  y - 250, g.out(U, 0), nsp * 0.37, 2.3).outputs)).outputs), 0.35, 1.0)
+    jit2 = g.math("MULTIPLY_ADD", x + 550, y - 300, only(g.math("SINE", x + 500, y - 300, only(g.math("MULTIPLY_ADD", x + 450,
+                  y - 300, g.out(U, 0), nsp * 1.13, 0.7).outputs)).outputs), 0.25, 1.0)      # uneven fingers
     jitc = g.math("MULTIPLY", x + 600, y - 250, g.out(jitc, 0), g.out(jit2, 0))
-    spk = g.math("MULTIPLY", x + 650, y - 150, g.math("POWER", x + 550, y - 150, g.out(spk0, 0), 5.0).outputs[0],
+    spk = g.math("MULTIPLY", x + 650, y - 150, only(g.math("POWER", x + 550, y - 150, g.out(spk0, 0), 5.0).outputs),
                  g.out(jitc, 0))
     rimh = g.math("MULTIPLY_ADD", x + 750, y - 150, g.out(spk, 0), 0.5, 0.6)
     v3 = g.math("POWER", x + 650, y - 300, g.out(V, 0), 3.0)
-    zc = g.math("MULTIPLY", x + 900, y - 200, g.out(V, 0), g.math("MULTIPLY_ADD", x + 800, y - 250, g.out(v3, 0),
-                g.math("SUBTRACT", x + 750, y - 300, g.out(rimh, 0), 1.0).outputs[0], 1.0).outputs[0])
+    zc = g.math("MULTIPLY", x + 900, y - 200, g.out(V, 0), only(g.math("MULTIPLY_ADD", x + 800, y - 250, g.out(v3, 0),
+                only(g.math("SUBTRACT", x + 750, y - 300, g.out(rimh, 0), 1.0).outputs), 1.0).outputs))
     Hc = g.math("MULTIPLY", x + 800, y - 400, height, hk)
     sinU = g.math("SINE", x + 450, y - 600, g.out(U, 0))
     cosU = g.math("COSINE", x + 450, y - 700, g.out(U, 0))
     if open_front:
-        front = g.maprange(x + 600, y - 600, g.math("MULTIPLY", x + 550, y - 600, g.out(sinU, 0), -1.0).outputs[0],
+        front = g.maprange(x + 600, y - 600, only(g.math("MULTIPLY", x + 550, y - 600, g.out(sinU, 0), -1.0).outputs),
                            0.25, 0.8, smooth=True)
-        Hc = g.math("MULTIPLY", x + 950, y - 350, g.out(Hc, 0), g.math("MULTIPLY_ADD", x + 850, y - 650,
-                    g.out(front, "Result"), -1.0, 1.0).outputs[0])
+        Hc = g.math("MULTIPLY", x + 950, y - 350, g.out(Hc, 0), only(g.math("MULTIPLY_ADD", x + 850, y - 650,
+                    g.out(front, "Result"), -1.0, 1.0).outputs))
     if open_front:                                                   # the two sides never mirror each other
         sideb = g.math("GREATER_THAN", x + 600, y - 500, g.out(cosU, 0), 0.0)
-        sph = g.math("MULTIPLY_ADD", x + 700, y - 500, g.out(sideb, 0), 2.6, g.math("MULTIPLY", x + 600, y - 550,
-                     secs, 1.3).outputs[0])
-        samp = g.math("MULTIPLY_ADD", x + 850, y - 500, g.math("SINE", x + 800, y - 500, g.out(sph, 0)).outputs[0],
-                      0.3, g.math("MULTIPLY_ADD", x + 750, y - 450, g.out(sideb, 0), -0.3, 1.0).outputs[0])
+        sph = g.math("MULTIPLY_ADD", x + 700, y - 500, g.out(sideb, 0), 2.6, only(g.math("MULTIPLY", x + 600, y - 550,
+                     secs, 1.3).outputs))
+        samp = g.math("MULTIPLY_ADD", x + 850, y - 500, only(g.math("SINE", x + 800, y - 500, g.out(sph, 0)).outputs),
+                      0.3, only(g.math("MULTIPLY_ADD", x + 750, y - 450, g.out(sideb, 0), -0.3, 1.0).outputs))
         Hc = g.math("MULTIPLY", x + 950, y - 450, g.out(Hc, 0), g.out(samp, 0))
     zc = g.math("MULTIPLY", x + 1050, y - 200, g.out(zc, 0), g.out(Hc, 0))
     flare = g.math("MULTIPLY_ADD", x + 600, y - 800, pulse, 0.5, 0.65)
-    rr = g.math("MULTIPLY_ADD", x + 800, y - 800, g.out(flare, 0), g.math("POWER", x + 700, y - 850, g.out(V, 0), 1.4)
-                .outputs[0], 1.0)
-    rr = g.math("MULTIPLY", x + 900, y - 800, g.out(rr, 0), g.math("MULTIPLY_ADD", x + 800, y - 900, g.math(
-        "SINE", x + 700, y - 950, g.math("MULTIPLY", x + 600, y - 950, g.out(U, 0), 5.0).outputs[0]).outputs[0],
-        0.05, 1.0).outputs[0])
-    rr = g.math("ADD", x + 1000, y - 800, g.out(rr, 0), g.math("MULTIPLY", x + 900, y - 1000, g.math(
-        "MULTIPLY", x + 800, y - 1000, g.out(spk, 0), g.math("POWER", x + 700, y - 1050, g.out(V, 0), 4.0).outputs[0])
-        .outputs[0], g.math("MULTIPLY", x + 800, y - 1100, pulse, 0.25).outputs[0]).outputs[0])
+    rr = g.math("MULTIPLY_ADD", x + 800, y - 800, g.out(flare, 0), only(g.math("POWER", x + 700, y - 850, g.out(V, 0), 1.4)
+                .outputs), 1.0)
+    rr = g.math("MULTIPLY", x + 900, y - 800, g.out(rr, 0), only(g.math("MULTIPLY_ADD", x + 800, y - 900, only(g.math(
+        "SINE", x + 700, y - 950, only(g.math("MULTIPLY", x + 600, y - 950, g.out(U, 0), 5.0).outputs)).outputs),
+        0.05, 1.0).outputs))
+    rr = g.math("ADD", x + 1000, y - 800, g.out(rr, 0), only(g.math("MULTIPLY", x + 900, y - 1000, only(g.math(
+        "MULTIPLY", x + 800, y - 1000, g.out(spk, 0), only(g.math("POWER", x + 700, y - 1050, g.out(V, 0), 4.0).outputs))
+        .outputs), only(g.math("MULTIPLY", x + 800, y - 1100, pulse, 0.25).outputs)).outputs))
     cpv = g.n("ShaderNodeCombineXYZ", x + 1200, y - 700)
-    g.link(g.math("MULTIPLY", x + 1100, y - 650, g.math("MULTIPLY", x + 1000, y - 650, g.out(rr, 0), g.out(cosU, 0))
-                  .outputs[0], rx), 0, cpv, "X")
-    g.link(g.math("MULTIPLY", x + 1100, y - 750, g.math("MULTIPLY", x + 1000, y - 750, g.out(rr, 0), g.out(sinU, 0))
-                  .outputs[0], ry), 0, cpv, "Y")
+    g.link(g.math("MULTIPLY", x + 1100, y - 650, only(g.math("MULTIPLY", x + 1000, y - 650, g.out(rr, 0), g.out(cosU, 0))
+                  .outputs), rx), 0, cpv, "X")
+    g.link(g.math("MULTIPLY", x + 1100, y - 750, only(g.math("MULTIPLY", x + 1000, y - 750, g.out(rr, 0), g.out(sinU, 0))
+                  .outputs), ry), 0, cpv, "Y")
     g.link(zc, 0, cpv, "Z")
-    cst = cgrid.outputs[0]
+    cst = sock(cgrid.outputs, "Mesh")
     for nm_, val in (("hrp_cv", g.out(V, 0)), ("hrp_spk", g.out(spk, 0)),
-                     ("hrp_ang", g.math("DIVIDE", x + 400, y - 1100, g.out(U, 0), 6.2832).outputs[0])):
+                     ("hrp_ang", only(g.math("DIVIDE", x + 400, y - 1100, g.out(U, 0), 6.2832).outputs))):
         st_ = g.n("GeometryNodeStoreNamedAttribute", x + 300, y, data_type="FLOAT", domain="POINT")
         g.links.new(cst, st_.inputs["Geometry"])
         st_.inputs["Name"].default_value = nm_
         g.links.new(val, st_.inputs["Value"])
-        cst = st_.outputs[0]
+        cst = only(st_.outputs)
     cmv = g.n("GeometryNodeSetPosition", x + 1300, y)
     g.links.new(cst, cmv.inputs["Geometry"])
     g.link(cpv, 0, cmv, "Position")
     sm_ = g.n("GeometryNodeSetShadeSmooth", x + 1400, y + 50)
     g.link(cmv, 0, sm_, "Geometry")
-    return sm_.outputs[0]
+    return only(sm_.outputs)
 
 
 def fall_group():
@@ -144,28 +144,28 @@ def fall_group():
     grid.inputs["Vertices Y"].default_value = 90
     pos = g.n("GeometryNodeInputPosition", -1600, -300)
     p = g.n("ShaderNodeSeparateXYZ", -1450, -300)
-    g.link(pos, 0, p, 0)
+    g.link(pos, 0, p, "Vector")
     u = g.math("ADD", -1300, -250, g.out(p, "X"), 0.5)                     # 0..1 across
     sv = g.math("SUBTRACT", -1300, -400, 0.5, g.out(p, "Y"))                # 0 lip .. 1 foot
-    tmax = g.math("SQRT", -1300, -550, g.math("DIVIDE", -1450, -550, g.math("MULTIPLY", -1600, -550,
-                  g.out(gi, "Drop"), 2.0).outputs[0], G_ACC).outputs[0])
+    tmax = g.math("SQRT", -1300, -550, only(g.math("DIVIDE", -1450, -550, only(g.math("MULTIPLY", -1600, -550,
+                  g.out(gi, "Drop"), 2.0).outputs), G_ACC).outputs))
     t = g.math("MULTIPLY", -1150, -450, g.out(sv, 0), g.out(tmax, 0))
-    wid = g.math("MULTIPLY", -1150, -250, g.math("MULTIPLY_ADD", -1250, -150, g.out(sv, 0),
-                 g.out(gi, "Spread"), 1.0).outputs[0], g.out(gi, "Width"))
-    x = g.math("MULTIPLY", -1000, -250, g.math("SUBTRACT", -1100, -200, g.out(u, 0), 0.5).outputs[0], g.out(wid, 0))
+    wid = g.math("MULTIPLY", -1150, -250, only(g.math("MULTIPLY_ADD", -1250, -150, g.out(sv, 0),
+                 g.out(gi, "Spread"), 1.0).outputs), g.out(gi, "Width"))
+    x = g.math("MULTIPLY", -1000, -250, only(g.math("SUBTRACT", -1100, -200, g.out(u, 0), 0.5).outputs), g.out(wid, 0))
     y = g.math("MULTIPLY", -1000, -400, g.out(t, 0), g.out(gi, "Throw"))
     y = g.math("MULTIPLY", -900, -400, g.out(y, 0), -1.0)
-    z = g.math("MULTIPLY", -1000, -550, g.math("MULTIPLY", -1100, -550, g.out(t, 0), g.out(t, 0)).outputs[0],
+    z = g.math("MULTIPLY", -1000, -550, only(g.math("MULTIPLY", -1100, -550, g.out(t, 0), g.out(t, 0)).outputs),
                -0.5 * G_ACC)
     # a soft forward bulge in the middle of the sheet
-    bul = g.math("SUBTRACT", -1000, -700, 1.0, g.math("POWER", -1100, -700, g.math("MULTIPLY_ADD", -1200, -700,
-                 g.out(u, 0), 2.0, -1.0).outputs[0], 2.0).outputs[0])
-    bul = g.math("MULTIPLY", -850, -700, g.out(bul, 0), g.math("MULTIPLY_ADD", -1000, -800, g.out(sv, 0), 0.06,
-                 0.02).outputs[0])
+    bul = g.math("SUBTRACT", -1000, -700, 1.0, only(g.math("POWER", -1100, -700, only(g.math("MULTIPLY_ADD", -1200, -700,
+                 g.out(u, 0), 2.0, -1.0).outputs), 2.0).outputs))
+    bul = g.math("MULTIPLY", -850, -700, g.out(bul, 0), only(g.math("MULTIPLY_ADD", -1000, -800, g.out(sv, 0), 0.06,
+                 0.02).outputs))
     y = g.math("SUBTRACT", -750, -450, g.out(y, 0), g.out(bul, 0))
-    crest = g.math("MULTIPLY", -850, -650, g.math("SUBTRACT", -950, -650, 1.0, g.math("POWER", -1050, -650,
-                   g.math("MULTIPLY_ADD", -1150, -650, g.out(u, 0), 2.0, -1.0).outputs[0], 2.0).outputs[0]).outputs[0],
-                   g.math("MULTIPLY", -950, -750, g.out(gi, "Width"), 0.045).outputs[0])
+    crest = g.math("MULTIPLY", -850, -650, only(g.math("SUBTRACT", -950, -650, 1.0, only(g.math("POWER", -1050, -650,
+                   only(g.math("MULTIPLY_ADD", -1150, -650, g.out(u, 0), 2.0, -1.0).outputs), 2.0).outputs)).outputs),
+                   only(g.math("MULTIPLY", -950, -750, g.out(gi, "Width"), 0.045).outputs))
     crest = g.math("MULTIPLY", -750, -650, g.out(crest, 0), g.out(g.maprange(-850, -800, g.out(sv, 0), 0.12, 0.0,
                    smooth=True), "Result"))
     z = g.math("ADD", -650, -600, g.out(z, 0), g.out(crest, 0))
@@ -179,19 +179,19 @@ def fall_group():
     yz = g.n("ShaderNodeCombineXYZ", -600, -600)
     g.link(y, 0, yz, "Y")
     g.link(z, 0, yz, "Z")
-    arc = g.vmath("LENGTH", -450, -600, yz.outputs[0])
+    arc = g.vmath("LENGTH", -450, -600, only(yz.outputs))
     endv = g.n("ShaderNodeCombineXYZ", -600, -800)
-    g.link(g.math("MULTIPLY", -750, -850, g.math("MULTIPLY", -850, -850, g.out(tmax, 0), g.out(gi, "Throw"))
-                  .outputs[0], -1.0), 0, endv, "Y")
+    g.link(g.math("MULTIPLY", -750, -850, only(g.math("MULTIPLY", -850, -850, g.out(tmax, 0), g.out(gi, "Throw"))
+                  .outputs), -1.0), 0, endv, "Y")
     g.link(g.math("MULTIPLY", -750, -950, g.out(gi, "Drop"), -1.0), 0, endv, "Z")
-    total = g.vmath("LENGTH", -450, -800, endv.outputs[0])
+    total = g.vmath("LENGTH", -450, -800, only(endv.outputs))
     to_end = g.math("ADD", -300, -700, g.out(gi, "Drop"), g.out(z, 0))          # height left to the foot
     pack = g.n("ShaderNodeCombineXYZ", -150, -500)
     g.link(u, 0, pack, "X")
     g.link(arc, "Value", pack, "Y")
     g.link(to_end, 0, pack, "Z")
     st = g.n("GeometryNodeStoreNamedAttribute", -150, 0, data_type="FLOAT_VECTOR", domain="POINT")
-    g.link(grid, 0, st, "Geometry")                                # stored from the flat grid, then moved
+    g.link(grid, "Mesh", st, "Geometry")                                # stored from the flat grid, then moved
     st.inputs["Name"].default_value = "hrp_wf"
     g.link(pack, 0, st, "Value", bkind="VECTOR")
     g.link(st, 0, sp, "Geometry")
@@ -204,8 +204,8 @@ def fall_group():
     bks.inputs["Name"].default_value = "hrp_back"
     bks.inputs["Value"].default_value = 1.0
     bj = g.n("GeometryNodeJoinGeometry", -50, 0)
-    g.link(sp, 0, bj, 0)
-    g.link(bks, 0, bj, 0)
+    g.link(sp, 0, bj, "Geometry")
+    g.link(bks, 0, bj, "Geometry")
     sm = g.n("GeometryNodeSetMaterial", 50, 0)
     g.link(bj, 0, sm, "Geometry")
     g.link(gi, "Material", sm, "Material")
@@ -227,11 +227,11 @@ def fall_group():
     hph = g.n("FunctionNodeRandomValue", -600, -1950, data_type="FLOAT")      # hashed phase: no visible wave
     g.set(hph, "Max", 6.283, "VALUE")
     ph = g.math("MULTIPLY_ADD", -450, -1750, g.out(tm, "Seconds"), 5.0, g.out(hph, "Value", "VALUE"))
-    bob = g.math("MULTIPLY", -300, -1750, g.math("SINE", -350, -1750, g.out(ph, 0)).outputs[0], 0.035)
+    bob = g.math("MULTIPLY", -300, -1750, only(g.math("SINE", -350, -1750, g.out(ph, 0)).outputs), 0.035)
     off = g.n("ShaderNodeCombineXYZ", -150, -1500)
     g.link(g.math("MULTIPLY", -300, -1600, g.out(footy, 0), -1.0), 0, off, "Y")
     g.link(g.math("SUBTRACT", -300, -1900, g.out(bob, 0), g.out(gi, "Drop")), 0, off, "Z")
-    fpos = g.vmath("ADD", 0, -1400, g.out(jit, "Value", "VECTOR"), off.outputs[0])
+    fpos = g.vmath("ADD", 0, -1400, g.out(jit, "Value", "VECTOR"), only(off.outputs))
     fsp = g.n("GeometryNodeSetPosition", 150, -1300)
     g.link(pts, 0, fsp, "Geometry")
     g.link(fpos, 0, fsp, "Offset")
@@ -242,8 +242,8 @@ def fall_group():
     g.set(bs, "Min", 0.08, "VALUE")
     g.set(bs, "Max", 0.16, "VALUE")
     bsc = g.math("MULTIPLY", 300, -1800, g.out(bs, "Value", "VALUE"), g.out(gi, "Foam"))
-    bsc = g.math("MULTIPLY", 400, -1800, g.out(bsc, 0), g.math("MULTIPLY_ADD", 300, -1950, g.out(gi, "Width"), 0.4,
-                 0.6).outputs[0])
+    bsc = g.math("MULTIPLY", 400, -1800, g.out(bsc, 0), only(g.math("MULTIPLY_ADD", 300, -1950, g.out(gi, "Width"), 0.4,
+                 0.6).outputs))
     lump = g.n("FunctionNodeRandomValue", 250, -2050, data_type="FLOAT_VECTOR")
     lump.inputs["Min"].default_value = (1.0, 0.9, 0.7)
     lump.inputs["Max"].default_value = (1.5, 1.3, 0.95)
@@ -272,8 +272,8 @@ def fall_group():
     g.link(msc, 0, mxf, "Scale")
     mt = g.n("ShaderNodeCombineXYZ", 650, -1450)
     g.link(g.math("MULTIPLY", 550, -1450, g.out(footy, 0), -1.0), 0, mt, "Y")
-    g.link(g.math("SUBTRACT", 550, -1500, g.math("MULTIPLY", 450, -1500, g.math("SINE", 350, -1500,
-           g.math("MULTIPLY", 250, -1500, g.out(tm, "Seconds"), 3.1).outputs[0]).outputs[0], 0.02).outputs[0],
+    g.link(g.math("SUBTRACT", 550, -1500, only(g.math("MULTIPLY", 450, -1500, only(g.math("SINE", 350, -1500,
+           only(g.math("MULTIPLY", 250, -1500, g.out(tm, "Seconds"), 3.1).outputs)).outputs), 0.02).outputs),
            g.out(gi, "Drop")), 0, mt, "Z")
     g.link(mt, 0, mxf, "Translation")
     mm = g.n("GeometryNodeSetMaterial", 850, -1600)
@@ -281,7 +281,7 @@ def fall_group():
     g.link(gi, "Foam Material", mm, "Material")
     # splash crown: one continuous wall of thrown-up water round the landing point (ellipse along the impact line),
     # its rim drawn out into fingers, breathing and turning slowly; open in the front so it never hides the curtain
-    Hc = g.math("MULTIPLY", 1800, -1700, g.math("MULTIPLY", 1700, -1750, g.out(gi, "Width"), 0.26).outputs[0],
+    Hc = g.math("MULTIPLY", 1800, -1700, only(g.math("MULTIPLY", 1700, -1750, g.out(gi, "Width"), 0.26).outputs),
                 g.out(gi, "Foam"))
     Rx = g.math("MULTIPLY", 1900, -2500, g.out(gi, "Width"), 0.52)
     Ry = g.math("MULTIPLY", 1900, -2600, g.out(gi, "Width"), 0.32)
@@ -303,30 +303,30 @@ def fall_group():
     dph = g.n("FunctionNodeRandomValue", 1000, -3400, data_type="FLOAT")
     g.set(dph, "Max", 1.0, "VALUE")
     dph.inputs["Seed"].default_value = 9
-    tau = g.math("MULTIPLY", 1300, -3400, g.math("FRACT", 1200, -3400, g.math("MULTIPLY_ADD", 1100, -3450,
-                 g.out(tm, "Seconds"), 1.3, g.out(dph, "Value", "VALUE")).outputs[0]).outputs[0], 0.75)
-    hv = g.math("MULTIPLY", 1450, -3250, g.out(drs, "Y"), g.math("MULTIPLY_ADD", 1350, -3150, g.out(gi, "Foam"), 0.5,
-                0.5).outputs[0])
+    tau = g.math("MULTIPLY", 1300, -3400, only(g.math("FRACT", 1200, -3400, only(g.math("MULTIPLY_ADD", 1100, -3450,
+                 g.out(tm, "Seconds"), 1.3, g.out(dph, "Value", "VALUE")).outputs)).outputs), 0.75)
+    hv = g.math("MULTIPLY", 1450, -3250, g.out(drs, "Y"), only(g.math("MULTIPLY_ADD", 1350, -3150, g.out(gi, "Foam"), 0.5,
+                0.5).outputs))
     dxy = g.math("MULTIPLY", 1550, -3250, g.out(hv, 0), g.out(tau, 0))
-    dz = g.math("SUBTRACT", 1550, -3400, g.math("MULTIPLY", 1450, -3400, g.out(drs, "Z"), g.out(tau, 0)).outputs[0],
-                g.math("MULTIPLY", 1450, -3500, g.math("MULTIPLY", 1350, -3500, g.out(tau, 0), g.out(tau, 0))
-                       .outputs[0], 0.5 * G_ACC).outputs[0])
+    dz = g.math("SUBTRACT", 1550, -3400, only(g.math("MULTIPLY", 1450, -3400, g.out(drs, "Z"), g.out(tau, 0)).outputs),
+                only(g.math("MULTIPLY", 1450, -3500, only(g.math("MULTIPLY", 1350, -3500, g.out(tau, 0), g.out(tau, 0))
+                       .outputs), 0.5 * G_ACC).outputs))
     dp_ = g.n("ShaderNodeCombineXYZ", 1750, -3250)
     r0 = g.math("MULTIPLY", 1550, -3100, g.out(gi, "Width"), 0.3)
     rr_ = g.math("ADD", 1650, -3150, g.out(dxy, 0), g.out(r0, 0))
-    g.link(g.math("MULTIPLY", 1700, -3100, g.math("COSINE", 1600, -3050, g.out(drs, "X")).outputs[0], g.out(rr_, 0)),
+    g.link(g.math("MULTIPLY", 1700, -3100, only(g.math("COSINE", 1600, -3050, g.out(drs, "X")).outputs), g.out(rr_, 0)),
            0, dp_, "X")
-    g.link(g.math("SUBTRACT", 1750, -3150, g.math("MULTIPLY", 1700, -3200, g.math("SINE", 1600, -3200,
-           g.out(drs, "X")).outputs[0], g.out(rr_, 0)).outputs[0], g.out(footy, 0)), 0, dp_, "Y")
+    g.link(g.math("SUBTRACT", 1750, -3150, only(g.math("MULTIPLY", 1700, -3200, only(g.math("SINE", 1600, -3200,
+           g.out(drs, "X")).outputs), g.out(rr_, 0)).outputs), g.out(footy, 0)), 0, dp_, "Y")
     g.link(g.math("SUBTRACT", 1700, -3400, g.out(dz, 0), g.out(gi, "Drop")), 0, dp_, "Z")
     dsp = g.n("GeometryNodeSetPosition", 1900, -3100)
     g.link(dpt, 0, dsp, "Geometry")
     g.link(dp_, 0, dsp, "Position")
     dalive = g.math("GREATER_THAN", 1750, -3550, g.out(dz, 0), -0.02)
-    drad = g.math("MULTIPLY", 1900, -3500, g.out(dalive, 0), g.math("MULTIPLY_ADD", 1800, -3450, g.out(tau, 0), -0.9,
-                  1.0).outputs[0])
-    drad = g.math("MULTIPLY", 2000, -3500, g.out(drad, 0), g.math("MULTIPLY", 1900, -3600, g.out(gi, "Foam"),
-                  0.03).outputs[0])
+    drad = g.math("MULTIPLY", 1900, -3500, g.out(dalive, 0), only(g.math("MULTIPLY_ADD", 1800, -3450, g.out(tau, 0), -0.9,
+                  1.0).outputs))
+    drad = g.math("MULTIPLY", 2000, -3500, g.out(drad, 0), only(g.math("MULTIPLY", 1900, -3600, g.out(gi, "Foam"),
+                  0.03).outputs))
     dball = g.n("GeometryNodeMeshIcoSphere", 1900, -3700)
     dball.inputs["Subdivisions"].default_value = 2
     dball.inputs["Radius"].default_value = 1.0
@@ -337,7 +337,7 @@ def fall_group():
     g.link(dball_s, 0, din, "Instance")
     g.link(drad, 0, din, "Scale")
     real_ = g.n("GeometryNodeRealizeInstances", 2400, -1300)              # hrp_sz reaches the shader
-    g.link(cin, 0, real_, 0)
+    g.link(cin, 0, real_, "Geometry")
     splm0 = g.n("GeometryNodeSetMaterial", 2500, -1300)
     g.link(real_, 0, splm0, "Geometry")
     g.link(gi, "Splash Material", splm0, "Material")
@@ -352,15 +352,15 @@ def fall_group():
     g.link(skd, 0, sks, "Mesh")
     sks.inputs["Level"].default_value = 3
     skp = g.n("GeometryNodeInputPosition", 1000, -2850)
-    skr = g.vmath("LENGTH", 1150, -2850, skp.outputs[0])
+    skr = g.vmath("LENGTH", 1150, -2850, only(skp.outputs))
     skst = g.n("GeometryNodeStoreNamedAttribute", 1300, -2700, data_type="FLOAT", domain="POINT")
     g.link(sks, 0, skst, "Geometry")
     skst.inputs["Name"].default_value = "hrp_r"
     g.link(skr, "Value", skst, "Value", bkind="VALUE")
     skx = g.n("GeometryNodeTransform", 1450, -2700)
     g.link(skst, 0, skx, "Geometry")
-    skw = g.math("MULTIPLY", 1300, -2900, g.out(gi, "Width"), g.math("MULTIPLY_ADD", 1200, -2950, g.out(gi, "Foam"),
-                 0.7, 0.7).outputs[0])
+    skw = g.math("MULTIPLY", 1300, -2900, g.out(gi, "Width"), only(g.math("MULTIPLY_ADD", 1200, -2950, g.out(gi, "Foam"),
+                 0.7, 0.7).outputs))
     sksc = g.n("ShaderNodeCombineXYZ", 1450, -2900)
     g.link(skw, 0, sksc, "X")
     g.link(g.math("MULTIPLY", 1350, -3000, g.out(skw, 0), 0.75), 0, sksc, "Y")
@@ -374,9 +374,9 @@ def fall_group():
     g.link(skx, 0, skm, "Geometry")
     g.link(gi, "Skirt Material", skm, "Material")
     spl_ = g.n("GeometryNodeJoinGeometry", 2650, -1300)
-    g.link(splm0, 0, spl_, 0)
-    g.link(dm, 0, spl_, 0)
-    g.link(skm, 0, spl_, 0)
+    g.link(splm0, 0, spl_, "Geometry")
+    g.link(dm, 0, spl_, "Geometry")
+    g.link(skm, 0, spl_, "Geometry")
     splm = spl_
     # spray mist: a few soft puffs drifting up from the foot, each on its own clock
     mpts = g.n("GeometryNodePoints", 400, -2300)
@@ -385,12 +385,12 @@ def fall_group():
     mr.inputs["Min"].default_value = (-0.75, -0.5, 0.0)
     mr.inputs["Max"].default_value = (0.75, 0.6, 1.0)
     mrs = _sep(g, 400, -2450, g.out(mr, "Value", "VECTOR"))
-    mph = g.math("FRACT", 550, -2550, g.math("MULTIPLY_ADD", 450, -2550, g.out(tm, "Seconds"), 0.12,
-                 g.out(mrs, "Z")).outputs[0])
+    mph = g.math("FRACT", 550, -2550, only(g.math("MULTIPLY_ADD", 450, -2550, g.out(tm, "Seconds"), 0.12,
+                 g.out(mrs, "Z")).outputs))
     mpos = g.n("ShaderNodeCombineXYZ", 700, -2400)
     g.link(g.math("MULTIPLY", 550, -2350, g.out(mrs, "X"), g.out(gi, "Width")), 0, mpos, "X")
     g.link(g.math("SUBTRACT", 550, -2400, g.out(mrs, "Y"), g.out(footy, 0)), 0, mpos, "Y")
-    g.link(g.math("SUBTRACT", 600, -2500, g.math("MULTIPLY_ADD", 500, -2500, g.out(mph, 0), 1.4, 0.15).outputs[0],
+    g.link(g.math("SUBTRACT", 600, -2500, only(g.math("MULTIPLY_ADD", 500, -2500, g.out(mph, 0), 1.4, 0.15).outputs),
            g.out(gi, "Drop")), 0, mpos, "Z")
     msp = g.n("GeometryNodeSetPosition", 850, -2300)
     g.link(mpts, 0, msp, "Geometry")
@@ -398,8 +398,8 @@ def fall_group():
     puff = g.n("GeometryNodeMeshIcoSphere", 850, -2550)
     puff.inputs["Subdivisions"].default_value = 3
     puff.inputs["Radius"].default_value = 1.0
-    psz = g.math("MULTIPLY", 850, -2700, g.math("MULTIPLY_ADD", 750, -2700, g.out(mph, 0), 0.35, 0.25).outputs[0],
-                 g.math("MULTIPLY", 700, -2800, g.out(gi, "Width"), g.out(gi, "Mist")).outputs[0])
+    psz = g.math("MULTIPLY", 850, -2700, only(g.math("MULTIPLY_ADD", 750, -2700, g.out(mph, 0), 0.35, 0.25).outputs),
+                 only(g.math("MULTIPLY", 700, -2800, g.out(gi, "Width"), g.out(gi, "Mist")).outputs))
     mins = g.n("GeometryNodeInstanceOnPoints", 1000, -2300)
     g.link(msp, 0, mins, "Points")
     g.link(puff, "Mesh", mins, "Instance")
@@ -417,15 +417,15 @@ def fall_group():
     g.link(g.math("GREATER_THAN", 1200, -2100, g.out(gi, "Mist"), 0.01), 0, msw, "Switch")
     g.link(mmat, 0, msw, "True")
     join = g.n("GeometryNodeJoinGeometry", 1400, 0)
-    g.link(sm, 0, join, 0)
+    g.link(sm, 0, join, "Geometry")
     # (the big dome read as a pale bubble: the lumps and the white water replace it)
-    g.link(msw, 0, join, 0)
+    g.link(msw, 0, join, "Geometry")
     lumps = g.n("GeometryNodeSetMaterial", 750, -1300)                  # flattened churning lumps round the foot
     g.link(inst, 0, lumps, "Geometry")
     g.link(gi, "Foam Material", lumps, "Material")
-    g.link(lumps, 0, join, 0)
-    g.link(splm, 0, join, 0)
-    g.link(join, 0, go, 0)
+    g.link(lumps, 0, join, "Geometry")
+    g.link(splm, 0, join, "Geometry")
+    g.link(join, 0, go, "Geometry")
     return ng
 
 
@@ -447,10 +447,10 @@ def fall_material():
     t = g.out(tg, "Seconds")
     at = g.n("ShaderNodeAttribute", -1600, 600, attribute_name="hrp_wf", attribute_type="GEOMETRY")
     wf = g.n("ShaderNodeSeparateXYZ", -1400, 600)
-    g.link(at, "Vector", wf, 0)
+    g.link(at, "Vector", wf, "Vector")
     u, v, to_end = g.out(wf, "X"), g.out(wf, "Y"), g.out(wf, "Z")
     # middle slice: streaks scroll down
-    vs = g.math("SUBTRACT", -1200, 500, v, g.math("MULTIPLY", -1300, 400, t, 1.6).outputs[0])
+    vs = g.math("SUBTRACT", -1200, 500, v, only(g.math("MULTIPLY", -1300, 400, t, 1.6).outputs))
     sc = g.n("ShaderNodeCombineXYZ", -1050, 500)
     g.link(g.math("MULTIPLY", -1150, 600, u, 15.0), 0, sc, "X")
     g.link(g.math("MULTIPLY", -1150, 450, g.out(vs, 0), 0.55), 0, sc, "Y")
@@ -462,7 +462,7 @@ def fall_material():
     g.link(sc, 0, nz, "Vector")
     st = g.out(nz, "Fac")
     # a second, faster and finer layer of strands over the first (water does not fall at one speed)
-    vs2 = g.math("SUBTRACT", -1200, 750, v, g.math("MULTIPLY", -1300, 750, t, 2.6).outputs[0])
+    vs2 = g.math("SUBTRACT", -1200, 750, v, only(g.math("MULTIPLY", -1300, 750, t, 2.6).outputs))
     sc2 = g.n("ShaderNodeCombineXYZ", -1050, 750)
     g.link(g.math("MULTIPLY", -1150, 850, u, 26.0), 0, sc2, "X")
     g.link(g.math("MULTIPLY", -1150, 800, g.out(vs2, 0), 0.8), 0, sc2, "Y")
@@ -471,7 +471,7 @@ def fall_material():
     g.set(nz2_, "Scale", 1.0)
     g.set(nz2_, "Detail", 1.0)
     g.link(sc2, 0, nz2_, "Vector")
-    st = g.math("MAXIMUM", -750, 700, st, g.math("SUBTRACT", -850, 750, g.out(nz2_, "Fac"), 0.06).outputs[0]).outputs[0]
+    st = only(g.math("MAXIMUM", -750, 700, st, only(g.math("SUBTRACT", -850, 750, g.out(nz2_, "Fac"), 0.06).outputs)).outputs)
     rhy = g.n("ShaderNodeTexNoise", -900, 950, noise_dimensions="2D")
     g.set(rhy, "Scale", 2.5)
     g.set(rhy, "Detail", 0.0)
@@ -479,8 +479,8 @@ def fall_material():
     g.link(u, 0, rhv, "X")
     rhv.inputs["Y"].default_value = 3.3
     g.link(rhv, 0, rhy, "Vector")
-    st = g.math("ADD", -750, 900, st, g.math("MULTIPLY_ADD", -800, 950, g.out(rhy, "Fac"), 0.14, -0.07).outputs[0]
-                ).outputs[0]
+    st = only(g.math("ADD", -750, 900, st, only(g.math("MULTIPLY_ADD", -800, 950, g.out(rhy, "Fac"), 0.14, -0.07).outputs)
+                ).outputs)
     k1 = g.maprange(-700, 650, st, 0.40, 0.43, smooth=True)
     k2 = g.maprange(-700, 500, st, 0.53, 0.56, smooth=True)
     k3 = g.maprange(-700, 350, st, 0.64, 0.665, smooth=True)
@@ -491,10 +491,10 @@ def fall_material():
     col = g.mix(-500, 600, fac=g.out(k1, "Result"), a=g.mixout(dstreak), b=g.mixout(pale))
     col = g.mix(-350, 550, fac=g.out(k2, "Result"), a=g.mixout(col), b=g.out(pal, "water_line"))
     col = g.mix(-200, 500, fac=g.out(k3, "Result"), a=g.mixout(col), b=g.out(pal, "water_foam"))
-    edge_d = g.math("SUBTRACT", -900, 200, 0.5, g.math("ABSOLUTE", -1000, 200, g.math("SUBTRACT", -1100, 200, u,
-                    0.5).outputs[0]).outputs[0])
+    edge_d = g.math("SUBTRACT", -900, 200, 0.5, only(g.math("ABSOLUTE", -1000, 200, only(g.math("SUBTRACT", -1100, 200, u,
+                    0.5).outputs)).outputs))
     dark = g.maprange(-700, 200, g.out(edge_d, 0), 0.10, 0.02, smooth=True)
-    col = g.mix(-50, 450, fac=g.math("MULTIPLY", -150, 350, g.out(dark, "Result"), 0.35).outputs[0], a=g.mixout(col),
+    col = g.mix(-50, 450, fac=only(g.math("MULTIPLY", -150, 350, g.out(dark, "Result"), 0.35).outputs), a=g.mixout(col),
                 b=wd)
     # top slice: a bright curl in the first 0.3 m after the lip
     ln_ = g.n("ShaderNodeTexNoise", -900, 100, noise_dimensions="2D")
@@ -504,12 +504,12 @@ def fall_material():
     g.link(g.math("MULTIPLY", -1100, 50, t, 0.4), 0, lnv, "Y")
     g.link(lnv, 0, ln_, "Vector")
     lipd = g.math("MULTIPLY_ADD", -800, 50, g.out(ln_, "Fac"), 0.16, 0.12)              # 0.2 .. 0.36 m, ragged
-    lipband = g.maprange(-700, 0, g.math("SUBTRACT", -750, 0, v, g.out(lipd, 0)).outputs[0], 0.012, 0.0, smooth=True)
-    lipline = g.maprange(-700, -150, g.math("ABSOLUTE", -850, -150, g.math("SUBTRACT", -950, -150, v, 0.04)
-                         .outputs[0]).outputs[0], 0.03, 0.012, smooth=True)
-    col = g.mix(100, 400, fac=g.math("MULTIPLY", -500, 0, g.out(lipband, "Result"), 0.9).outputs[0],
+    lipband = g.maprange(-700, 0, only(g.math("SUBTRACT", -750, 0, v, g.out(lipd, 0)).outputs), 0.012, 0.0, smooth=True)
+    lipline = g.maprange(-700, -150, only(g.math("ABSOLUTE", -850, -150, only(g.math("SUBTRACT", -950, -150, v, 0.04)
+                         .outputs)).outputs), 0.03, 0.012, smooth=True)
+    col = g.mix(100, 400, fac=only(g.math("MULTIPLY", -500, 0, g.out(lipband, "Result"), 0.9).outputs),
                 a=g.mixout(col), b=g.out(pal, "water_foam"))
-    col = g.mix(250, 350, fac=g.math("MULTIPLY", 150, 300, g.out(lipline, "Result"), 0.7).outputs[0],
+    col = g.mix(250, 350, fac=only(g.math("MULTIPLY", 150, 300, g.out(lipline, "Result"), 0.7).outputs),
                 a=g.mixout(col), b=g.out(pal, "water_foam"))                    # a soft curl, not a ruled line
     # bottom slice: churning white foam in the last 0.4 m
     fn = g.n("ShaderNodeTexNoise", -900, -400)
@@ -518,8 +518,8 @@ def fall_material():
     g.link(g.math("MULTIPLY", -1150, -350, u, 3.0), 0, fc, "X")
     g.link(g.math("MULTIPLY_ADD", -1150, -450, t, 0.9, to_end), 0, fc, "Y")
     g.link(fc, 0, fn, "Vector")
-    foot = g.math("ADD", -700, -400, g.math("SUBTRACT", -800, -500, 0.14, to_end).outputs[0],
-                  g.math("MULTIPLY_ADD", -800, -350, g.out(fn, "Fac"), 0.24, -0.12).outputs[0])
+    foot = g.math("ADD", -700, -400, only(g.math("SUBTRACT", -800, -500, 0.14, to_end).outputs),
+                  only(g.math("MULTIPLY_ADD", -800, -350, g.out(fn, "Fac"), 0.24, -0.12).outputs))
     foot = g.maprange(-550, -400, g.out(foot, 0), 0.0, 0.03, smooth=True)
     col = g.mix(400, 300, fac=g.out(foot, "Result"), a=g.mixout(col), b=g.out(pal, "water_foam"))
     # eroded side edges and a soft start at the lip -> alpha
@@ -529,8 +529,8 @@ def fall_material():
     g.link(g.math("MULTIPLY", -1150, -650, u, 2.0), 0, ec, "X")
     g.link(g.math("MULTIPLY", -1150, -750, g.out(vs, 0), 1.5), 0, ec, "Y")
     g.link(ec, 0, en, "Vector")
-    er = g.math("ADD", -700, -700, g.out(edge_d, 0), g.math("MULTIPLY_ADD", -800, -800, g.out(en, "Fac"), 0.3,
-                -0.15).outputs[0])
+    er = g.math("ADD", -700, -700, g.out(edge_d, 0), only(g.math("MULTIPLY_ADD", -800, -800, g.out(en, "Fac"), 0.3,
+                -0.15).outputs))
     alpha = g.maprange(-550, -700, g.out(er, 0), 0.02, 0.035, smooth=True)
     # the side edges break into a few separate strands below the lip
     sn = g.n("ShaderNodeTexNoise", -900, -950, noise_dimensions="2D")
@@ -545,8 +545,8 @@ def fall_material():
     below = g.maprange(-750, -1250, v, 0.05, 0.35, smooth=True)
     cut = g.math("MULTIPLY", -600, -1000, g.out(gap, "Result"), g.out(zone, "Result"))
     cut = g.math("MULTIPLY", -500, -1050, g.out(cut, 0), g.out(below, "Result"))
-    alpha = g.math("MULTIPLY", -400, -800, g.out(alpha, "Result"), g.math("SUBTRACT", -450, -1000, 1.0, g.out(cut, 0))
-                   .outputs[0])
+    alpha = g.math("MULTIPLY", -400, -800, g.out(alpha, "Result"), only(g.math("SUBTRACT", -450, -1000, 1.0, g.out(cut, 0))
+                   .outputs))
     rn = g.n("ShaderNodeTexNoise", -900, -1350, noise_dimensions="2D")                 # ropes in the lower part
     rnv = g.n("ShaderNodeCombineXYZ", -1050, -1350)
     g.link(g.math("MULTIPLY", -1150, -1300, u, 7.0), 0, rnv, "X")
@@ -556,11 +556,11 @@ def fall_material():
     g.link(rnv, 0, rn, "Vector")
     low = g.maprange(-750, -1450, to_end, 1.2, 0.45, smooth=True)
     thr = g.math("MULTIPLY_ADD", -650, -1400, g.out(low, "Result"), 0.16, 0.36)
-    gaps = g.maprange(-550, -1350, g.math("SUBTRACT", -650, -1300, g.out(rn, "Fac"), g.out(thr, 0)).outputs[0],
+    gaps = g.maprange(-550, -1350, only(g.math("SUBTRACT", -650, -1300, g.out(rn, "Fac"), g.out(thr, 0)).outputs),
                       -0.02, 0.0, 0.0, 1.0, smooth=True)
     gaps = g.math("MAXIMUM", -450, -1350, g.out(gaps, "Result"), g.out(foot, "Result"))
-    alpha = g.math("MULTIPLY", -400, -1250, g.out(alpha, 0), g.math("MAXIMUM", -500, -1250,
-                   g.out(gaps, 0), g.math("SUBTRACT", -600, -1200, 1.0, g.out(low, "Result")).outputs[0]).outputs[0])
+    alpha = g.math("MULTIPLY", -400, -1250, g.out(alpha, 0), only(g.math("MAXIMUM", -500, -1250,
+                   g.out(gaps, 0), only(g.math("SUBTRACT", -600, -1200, 1.0, g.out(low, "Result")).outputs)).outputs))
     core = g.math("MULTIPLY_ADD", -300, -900, g.out(k2, "Result"), 0.0, 1.0)         # opaque toon water
     core = g.math("MAXIMUM", -200, -900, g.out(core, 0), g.out(foot, "Result"))
     core = g.math("MAXIMUM", -150, -950, g.out(core, 0), g.out(lipband, "Result"))
@@ -571,17 +571,17 @@ def fall_material():
     g.link(g.math("MULTIPLY_ADD", 200, 700, g.out(ng_, 0), 0.0, 1.0), 0, nhs, "Saturation")
     g.link(g.math("MULTIPLY_ADD", 200, 600, g.out(ng_, 0), -0.12, 1.0), 0, nhs, "Value")
     g.links.new(g.mixout(col), nhs.inputs["Color"])
-    col = g.mix(320, 560, fac=1.0, a=g.mixout(col), b=nhs.outputs[0])
+    col = g.mix(320, 560, fac=1.0, a=g.mixout(col), b=only(nhs.outputs))
     back = g.out(g.n("ShaderNodeAttribute", 200, -400, attribute_name="hrp_back", attribute_type="GEOMETRY"), "Fac")
-    col = g.mix(350, 350, fac=g.math("MULTIPLY", 250, -350, back, 0.7).outputs[0], a=g.mixout(col), b=wd)
+    col = g.mix(350, 350, fac=only(g.math("MULTIPLY", 250, -350, back, 0.7).outputs), a=g.mixout(col), b=wd)
     alpha = g.mix(350, -500, "MIX", "FLOAT", fac=back, a=g.out(alpha, 0),
-                  b=g.math("MULTIPLY", 250, -550, g.out(er, 0), 30.0, clamp=True).outputs[0])
+                  b=only(g.math("MULTIPLY", 250, -550, g.out(er, 0), 30.0, clamp=True).outputs))
     alpha = g.mixout(alpha)
     glow = g.math("MULTIPLY_ADD", 400, -200, g.out(pal, "water_glow"), 0.1, 1.0)
     gc = g.n("ShaderNodeCombineColor", 550, -200)
     for ch in ("Red", "Green", "Blue"):
         g.link(glow, 0, gc, ch)
-    col = g.mix(600, 300, "MULTIPLY", fac=1.0, a=g.mixout(col), b=gc.outputs[0])
+    col = g.mix(600, 300, "MULTIPLY", fac=1.0, a=g.mixout(col), b=only(gc.outputs))
     shading._emit_out(g, g.mixout(col), 1000, 300, alpha=alpha, shadow_off=True, pal=pal, soft=True)
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
@@ -591,7 +591,7 @@ def fall_material():
 
 def _sep(g, x, y, vec):
     sep = g.n("ShaderNodeSeparateXYZ", x, y)
-    g.links.new(vec, sep.inputs[0])
+    g.links.new(vec, sock(sep.inputs, "Vector"))
     return sep
 
 
@@ -611,7 +611,7 @@ def mist_material():
     pal.node_tree = shading.palette_group()
     lw = g.n("ShaderNodeLayerWeight", -800, 300)
     g.set(lw, "Blend", 0.5)
-    core = g.math("POWER", -600, 300, g.math("SUBTRACT", -700, 300, 1.0, g.out(lw, "Facing")).outputs[0], 3.5)
+    core = g.math("POWER", -600, 300, only(g.math("SUBTRACT", -700, 300, 1.0, g.out(lw, "Facing")).outputs), 3.5)
     fd = g.n("ShaderNodeAttribute", -800, 500, attribute_name="hrp_mist", attribute_type="INSTANCER")
     a = g.math("MULTIPLY", -450, 350, g.out(core, 0), g.out(fd, "Fac"))
     a = g.math("MULTIPLY", -350, 350, g.out(a, 0), 0.07)
@@ -647,14 +647,14 @@ def splash_material():
     col = g.mix(-600, 600, fac=g.out(b1, "Result"), a=g.mixout(low), b=g.mixout(wht))
     col = g.mix(-450, 550, fac=g.out(b2, "Result"), a=g.mixout(col), b=g.mixout(wht))
     cool = g.mix(-450, 400, fac=0.25, a=(1.0, 1.0, 1.0, 1.0), b=g.out(pal, "water_mid"))           # one cool step
-    col = g.mix(-300, 500, fac=g.math("MULTIPLY", -400, 400, back, 0.8).outputs[0], a=g.mixout(col),
+    col = g.mix(-300, 500, fac=only(g.math("MULTIPLY", -400, 400, back, 0.8).outputs), a=g.mixout(col),
                 b=g.mixout(cool))
     # a curved white highlight band and fine vertical streaks: a sheet of water, not a shell
-    wave = g.math("MULTIPLY_ADD", -900, 200, g.math("SINE", -1000, 200, g.math("MULTIPLY", -1100, 200, ang,
-                  18.85).outputs[0]).outputs[0], 0.05, 0.56)
-    hb = g.maprange(-700, 200, g.math("ABSOLUTE", -800, 200, g.math("SUBTRACT", -850, 250, cv, g.out(wave, 0))
-                    .outputs[0]).outputs[0], 0.045, 0.02, smooth=True)
-    hbf = g.math("MULTIPLY", -550, 200, g.out(hb, "Result"), g.math("SUBTRACT", -650, 150, 1.0, back).outputs[0])
+    wave = g.math("MULTIPLY_ADD", -900, 200, only(g.math("SINE", -1000, 200, only(g.math("MULTIPLY", -1100, 200, ang,
+                  18.85).outputs)).outputs), 0.05, 0.56)
+    hb = g.maprange(-700, 200, only(g.math("ABSOLUTE", -800, 200, only(g.math("SUBTRACT", -850, 250, cv, g.out(wave, 0))
+                    .outputs)).outputs), 0.045, 0.02, smooth=True)
+    hbf = g.math("MULTIPLY", -550, 200, g.out(hb, "Result"), only(g.math("SUBTRACT", -650, 150, 1.0, back).outputs))
     col = g.mix(-150, 450, fac=g.out(hbf, 0), a=g.mixout(col), b=g.mixout(wht))
     sv = g.n("ShaderNodeCombineXYZ", -1000, -100)
     g.link(g.math("MULTIPLY", -1100, -50, ang, 40.0), 0, sv, "X")
@@ -675,17 +675,17 @@ def splash_material():
     g.set(enz, "Scale", 1.0)
     g.set(enz, "Detail", 2.0)
     g.link(ev, 0, enz, "Vector")
-    keep = g.math("ADD", -650, -400, g.out(enz, "Fac"), g.math("MULTIPLY", -750, -500, g.math("SUBTRACT", -850, -500,
-                  1.0, cv).outputs[0], 0.45).outputs[0])
+    keep = g.math("ADD", -650, -400, g.out(enz, "Fac"), only(g.math("MULTIPLY", -750, -500, only(g.math("SUBTRACT", -850, -500,
+                  1.0, cv).outputs), 0.45).outputs))
     a1 = g.maprange(-500, -400, g.out(keep, 0), 0.3, 0.34, smooth=True)
-    fing = g.maprange(-500, -600, g.math("ADD", -600, -600, spk, g.math("MULTIPLY", -700, -650, g.math(
-        "SUBTRACT", -800, -650, 1.0, g.math("POWER", -900, -650, cv, 3.0).outputs[0]).outputs[0], 1.6).outputs[0])
-        .outputs[0], 0.18, 0.24, smooth=True)
+    fing = g.maprange(-500, -600, only(g.math("ADD", -600, -600, spk, only(g.math("MULTIPLY", -700, -650, only(g.math(
+        "SUBTRACT", -800, -650, 1.0, only(g.math("POWER", -900, -650, cv, 3.0).outputs)).outputs), 1.6).outputs))
+        .outputs), 0.18, 0.24, smooth=True)
     lwe = g.n("ShaderNodeLayerWeight", -700, -900)
     g.set(lwe, "Blend", 0.5)
     edgeon = g.maprange(-550, -900, g.out(lwe, "Facing"), 0.93, 0.85, smooth=True)    # never a glass fan edge-on
-    alpha = g.math("MULTIPLY", -300, -500, g.math("MULTIPLY", -400, -500, g.out(a1, "Result"), g.out(fing, "Result"))
-                   .outputs[0], g.out(edgeon, "Result"))
+    alpha = g.math("MULTIPLY", -300, -500, only(g.math("MULTIPLY", -400, -500, g.out(a1, "Result"), g.out(fing, "Result"))
+                   .outputs), g.out(edgeon, "Result"))
     shading._emit_out(g, g.mixout(col), 300, 300, pal=pal, alpha=g.out(alpha, 0), shadow_off=True, soft=True)
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
@@ -711,32 +711,32 @@ def skirt_material():
     geo = g.n("ShaderNodeNewGeometry", -900, 800)
     pv = g.n("ShaderNodeCombineXYZ", -700, 800)
     ps = g.n("ShaderNodeSeparateXYZ", -800, 900)
-    g.link(geo, "Position", ps, 0)
+    g.link(geo, "Position", ps, "Vector")
     g.link(ps, "X", pv, "X")
     g.link(ps, "Y", pv, "Y")
     g.link(g.math("MULTIPLY", -800, 700, t, 0.8), 0, pv, "Z")
-    pvs = g.vmath("MULTIPLY", -650, 850, pv.outputs[0], (1.0, 0.33, 1.0))            # streaks run with the flow
+    pvs = g.vmath("MULTIPLY", -650, 850, only(pv.outputs), (1.0, 0.33, 1.0))            # streaks run with the flow
     nz = g.n("ShaderNodeTexNoise", -550, 800, noise_dimensions="3D")
     g.set(nz, "Scale", 3.2)
     g.set(nz, "Detail", 1.0)
-    g.links.new(pvs.outputs[0], nz.inputs["Vector"])
-    f = g.math("ADD", -400, 700, g.math("SUBTRACT", -500, 600, 1.0, r).outputs[0],
-               g.math("MULTIPLY_ADD", -500, 750, g.out(nz, "Fac"), 0.9, -0.45).outputs[0])
+    g.links.new(only(pvs.outputs), nz.inputs["Vector"])
+    f = g.math("ADD", -400, 700, only(g.math("SUBTRACT", -500, 600, 1.0, r).outputs),
+               only(g.math("MULTIPLY_ADD", -500, 750, g.out(nz, "Fac"), 0.9, -0.45).outputs))
     dense = g.maprange(-250, 700, g.out(f, 0), 0.4, 0.415, smooth=True)
     edge = g.maprange(-250, 550, g.out(f, 0), 0.24, 0.255, smooth=True)
-    a = g.math("MAXIMUM", -100, 650, g.out(dense, "Result"), g.math("MULTIPLY", -150, 550, g.out(edge, "Result"), 0.6)
-               .outputs[0])
+    a = g.math("MAXIMUM", -100, 650, g.out(dense, "Result"), only(g.math("MULTIPLY", -150, 550, g.out(edge, "Result"), 0.6)
+               .outputs))
     # impact rings: two thin rings running outwards past the foam, fading
     for k, ph in enumerate((0.0, 0.5)):
-        fr_ = g.math("FRACT", -500, 300 - 150 * k, g.math("MULTIPLY_ADD", -600, 300 - 150 * k, t, 0.55, ph).outputs[0])
+        fr_ = g.math("FRACT", -500, 300 - 150 * k, only(g.math("MULTIPLY_ADD", -600, 300 - 150 * k, t, 0.55, ph).outputs))
         rr = g.math("MULTIPLY_ADD", -400, 300 - 150 * k, g.out(fr_, 0), 0.55, 0.45)
-        gap_ = g.math("ABSOLUTE", -300, 300 - 150 * k, g.math("SUBTRACT", -350, 250 - 150 * k, r, g.out(rr, 0))
-                      .outputs[0])
+        gap_ = g.math("ABSOLUTE", -300, 300 - 150 * k, only(g.math("SUBTRACT", -350, 250 - 150 * k, r, g.out(rr, 0))
+                      .outputs))
         ring_ = g.maprange(-200, 300 - 150 * k, g.out(gap_, 0), 0.018, 0.01, smooth=True)
         ring_ = g.math("MULTIPLY", -100, 300 - 150 * k, g.out(ring_, "Result"),
-                       g.math("SUBTRACT", -200, 200 - 150 * k, 1.0, g.out(fr_, 0)).outputs[0])
-        ring_ = g.math("MULTIPLY", 0, 400 - 100 * k, g.out(ring_, 0), g.math("SUBTRACT", -100, 350 - 100 * k, 1.0,
-                       g.out(dense, "Result")).outputs[0])                  # rings only on open water
+                       only(g.math("SUBTRACT", -200, 200 - 150 * k, 1.0, g.out(fr_, 0)).outputs))
+        ring_ = g.math("MULTIPLY", 0, 400 - 100 * k, g.out(ring_, 0), only(g.math("SUBTRACT", -100, 350 - 100 * k, 1.0,
+                       g.out(dense, "Result")).outputs))                  # rings only on open water
         a = g.math("MAXIMUM", 0, 500 - 100 * k, g.out(a, 0), g.out(ring_, 0))
     wfo = g.mix(-250, 350, fac=0.75, a=g.out(pal, "water_foam"), b=(1.0, 1.0, 1.0, 1.0))
     wed = g.mix(-250, 250, fac=0.5, a=g.mixout(wfo), b=(0.82, 0.93, 1.0, 1.0))
@@ -745,7 +745,7 @@ def skirt_material():
     gc = g.n("ShaderNodeCombineColor", -150, -100)
     for ch in ("Red", "Green", "Blue"):
         g.link(glow, 0, gc, ch)
-    col = g.mix(50, 250, "MULTIPLY", fac=1.0, a=g.mixout(col), b=gc.outputs[0])
+    col = g.mix(50, 250, "MULTIPLY", fac=1.0, a=g.mixout(col), b=only(gc.outputs))
     shading._emit_out(g, g.mixout(col), 250, 250, pal=pal, alpha=g.out(a, 0), shadow_off=True, soft=True)
     mat.surface_render_method = "BLENDED"
     return mat

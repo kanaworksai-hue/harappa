@@ -15,7 +15,7 @@ import bpy
 from mathutils import Vector
 
 from . import shading, water
-from .util import G, fresh_group, iface, mod_input
+from .util import G, fresh_group, iface, mod_input, only, sock
 
 FAUNA_VER = 22
 FISH = "HRP Fish"
@@ -95,10 +95,10 @@ def koi_material():
     tc = g.n("ShaderNodeTexCoord", -1400, 400)
     rnd = g.n("ShaderNodeAttribute", -1400, 200, attribute_name="hrp_koi", attribute_type="GEOMETRY")
     seed = g.n("ShaderNodeSeparateXYZ", -1200, 200)
-    g.link(rnd, "Vector", seed, 0)
+    g.link(rnd, "Vector", seed, "Vector")
     # patches: kohaku red / showa black / ogon gold, chosen per fish
-    pv = g.vmath("ADD", -1100, 400, g.out(tc, "Object"), g.out(rnd, "Vector")).outputs[0]
-    pv = g.vmath("MULTIPLY", -1000, 400, pv, (1.0, 2.2, 2.2)).outputs[0]
+    pv = only(g.vmath("ADD", -1100, 400, g.out(tc, "Object"), g.out(rnd, "Vector")).outputs)
+    pv = only(g.vmath("MULTIPLY", -1000, 400, pv, (1.0, 2.2, 2.2)).outputs)
     nz = g.n("ShaderNodeTexNoise", -850, 400, noise_dimensions="3D")
     g.set(nz, "Scale", 3.2)
     g.set(nz, "Detail", 2.0)
@@ -119,17 +119,17 @@ def koi_material():
     fin = g.n("ShaderNodeAttribute", -1400, -300, attribute_name="hrp_fin", attribute_type="GEOMETRY")
     sub = g.math("MULTIPLY_ADD", -500, -300, g.out(fin, "Fac"), 0.3, 0.26)          # just under the surface
     air = g.n("ShaderNodeAttribute", -650, -450, attribute_name="hrp_air", attribute_type="GEOMETRY")
-    sub = g.math("MULTIPLY", -400, -350, g.out(sub, 0), g.math("SUBTRACT", -500, -450, 1.0, g.out(air, "Fac"))
-                 .outputs[0])                                               # ...except a koi leaping in the air
+    sub = g.math("MULTIPLY", -400, -350, g.out(sub, 0), only(g.math("SUBTRACT", -500, -450, 1.0, g.out(air, "Fac"))
+                 .outputs))                                               # ...except a koi leaping in the air
     deep = g.mix(-200, -100, fac=0.6, a=g.out(pal, "water_mid"), b=g.out(pal, "water_deep"))
     col = g.mix(50, 300, fac=g.out(sub, 0), a=g.mixout(base), b=g.mixout(deep))
     lum = g.n("ShaderNodeRGBToBW", -200, -300)                       # dimmed with the water (night, storm)
-    g.link(pal, "water_mid", lum, 0)
-    dim = g.math("MINIMUM", 0, -300, g.math("MULTIPLY", -100, -300, g.out(lum, 0), 3.2).outputs[0], 1.0)
+    g.link(pal, "water_mid", lum, "Color")
+    dim = g.math("MINIMUM", 0, -300, only(g.math("MULTIPLY", -100, -300, g.out(lum, 0), 3.2).outputs), 1.0)
     dc = g.n("ShaderNodeCombineColor", 150, -300)
     for ch in ("Red", "Green", "Blue"):
         g.link(dim, 0, dc, ch)
-    col = g.mix(250, 300, "MULTIPLY", fac=1.0, a=g.mixout(col), b=dc.outputs[0])
+    col = g.mix(250, 300, "MULTIPLY", fac=1.0, a=g.mixout(col), b=only(dc.outputs))
     shading._emit_out(g, g.mixout(col), 400, 300, pal=pal)
     return mat
 
@@ -183,7 +183,7 @@ def fish_group():
     na.inputs["Name"].default_value = "hrp_a"
     g.link(na, "Exists", surf, "Selection")
     sa = g.n("ShaderNodeSeparateXYZ", -1600, -200)
-    g.link(na, "Attribute", sa, 0)
+    g.link(na, "Attribute", sa, "Vector")
     deep = g.maprange(-1450, -200, g.out(sa, "X"), 0.5, 0.75, smooth=True)
     pondonly = g.math("SUBTRACT", -1450, -350, 1.0, g.out(sa, "Z"))
     dens = g.math("MULTIPLY", -1300, -250, g.out(deep, "Result"), g.out(pondonly, 0))
@@ -226,9 +226,9 @@ def fish_group():
     om = g.math("MULTIPLY", -350, -1100, g.out(om, 0), g.out(dsg, 0))
     ang = g.math("MULTIPLY_ADD", -250, -1000, g.out(tm, "Seconds"), g.out(om, 0), g.out(ph, "Value", "VALUE"))
     ang2 = g.math("MULTIPLY", -250, -1200, g.out(ang, 0), 2.0)                   # a lazy figure of eight
-    cx = g.math("MULTIPLY", -100, -850, g.math("SINE", -150, -850, g.out(ang, 0)).outputs[0], g.out(rad, 0))
-    cy = g.math("MULTIPLY", -100, -1000, g.math("SINE", -150, -1000, g.out(ang2, 0)).outputs[0],
-                g.math("MULTIPLY", -200, -1100, g.out(rad, 0), 0.55).outputs[0])
+    cx = g.math("MULTIPLY", -100, -850, only(g.math("SINE", -150, -850, g.out(ang, 0)).outputs), g.out(rad, 0))
+    cy = g.math("MULTIPLY", -100, -1000, only(g.math("SINE", -150, -1000, g.out(ang2, 0)).outputs),
+                only(g.math("MULTIPLY", -200, -1100, g.out(rad, 0), 0.55).outputs))
     off = g.n("ShaderNodeCombineXYZ", 50, -900)
     g.link(cx, 0, off, "X")
     g.link(cy, 0, off, "Y")
@@ -238,9 +238,9 @@ def fish_group():
     g.link(off, 0, mv, "Offset")
     # heading: along the loop tangent
     # heading = direction of travel: d/dt (r sin a, 0.55 r sin 2a) ~ (cos a, 1.1 cos 2a) * sign
-    vx = g.math("MULTIPLY", -100, -1300, g.math("COSINE", -150, -1300, g.out(ang, 0)).outputs[0], g.out(dsg, 0))
-    vy = g.math("MULTIPLY", -100, -1400, g.math("MULTIPLY", -150, -1400, g.math("COSINE", -200, -1400,
-                g.out(ang2, 0)).outputs[0], 1.1).outputs[0], g.out(dsg, 0))
+    vx = g.math("MULTIPLY", -100, -1300, only(g.math("COSINE", -150, -1300, g.out(ang, 0)).outputs), g.out(dsg, 0))
+    vy = g.math("MULTIPLY", -100, -1400, only(g.math("MULTIPLY", -150, -1400, only(g.math("COSINE", -200, -1400,
+                g.out(ang2, 0)).outputs), 1.1).outputs), g.out(dsg, 0))
     head = g.math("ARCTAN2", 50, -1150, g.out(vy, 0), g.out(vx, 0))
     rot = g.n("ShaderNodeCombineXYZ", 200, -1150)
     g.link(head, 0, rot, "Z")
@@ -262,23 +262,23 @@ def fish_group():
     g.link(fsc, 0, inst, "Scale")
     # body wave: realize and bend each fish sideways along its length
     real = g.n("GeometryNodeRealizeInstances", 750, 0)
-    g.link(inst, 0, real, 0)
+    g.link(inst, 0, real, "Geometry")
     hx = g.n("GeometryNodeInputNamedAttribute", 750, -300, data_type="FLOAT")
     hx.inputs["Name"].default_value = "hrp_x"
     kk = g.n("GeometryNodeInputNamedAttribute", 750, -450, data_type="FLOAT_VECTOR")
     kk.inputs["Name"].default_value = "hrp_koi"
     kks = g.n("ShaderNodeSeparateXYZ", 900, -450)
-    g.link(kk, "Attribute", kks, 0)
+    g.link(kk, "Attribute", kks, "Vector")
     wave = g.math("MULTIPLY_ADD", 1050, -350, g.out(hx, "Attribute"), -7.0,
-                  g.math("MULTIPLY_ADD", 900, -600, g.out(tm, "Seconds"), 7.5,
-                         g.math("MULTIPLY", 800, -650, g.out(kks, "X"), 30.0).outputs[0]).outputs[0])
-    amp = g.math("MULTIPLY", 1050, -500, g.math("POWER", 950, -500, g.out(hx, "Attribute"), 1.6).outputs[0],
-                 g.math("MULTIPLY", 950, -650, g.out(gi, "Size"), 0.12).outputs[0])
-    side = g.math("MULTIPLY", 1200, -400, g.math("SINE", 1150, -350, g.out(wave, 0)).outputs[0], g.out(amp, 0))
+                  only(g.math("MULTIPLY_ADD", 900, -600, g.out(tm, "Seconds"), 7.5,
+                         only(g.math("MULTIPLY", 800, -650, g.out(kks, "X"), 30.0).outputs)).outputs))
+    amp = g.math("MULTIPLY", 1050, -500, only(g.math("POWER", 950, -500, g.out(hx, "Attribute"), 1.6).outputs),
+                 only(g.math("MULTIPLY", 950, -650, g.out(gi, "Size"), 0.12).outputs))
+    side = g.math("MULTIPLY", 1200, -400, only(g.math("SINE", 1150, -350, g.out(wave, 0)).outputs), g.out(amp, 0))
     # sideways in each fish's own frame: perpendicular to its heading (stored on the points as hrp_head)
     hd = g.n("GeometryNodeInputNamedAttribute", 1050, -800, data_type="FLOAT")
     hd.inputs["Name"].default_value = "hrp_head"
-    sx = g.math("MULTIPLY", 1300, -700, g.math("SINE", 1200, -700, g.out(hd, "Attribute")).outputs[0], -1.0)
+    sx = g.math("MULTIPLY", 1300, -700, only(g.math("SINE", 1200, -700, g.out(hd, "Attribute")).outputs), -1.0)
     sy = g.math("COSINE", 1200, -850, g.out(hd, "Attribute"))
     bo = g.n("ShaderNodeCombineXYZ", 1400, -600)
     g.link(g.math("MULTIPLY", 1350, -650, g.out(sx, 0), g.out(side, 0)), 0, bo, "X")
@@ -296,9 +296,9 @@ def fish_group():
     idx0 = g.n("GeometryNodeInputIndex", -1000, -2500)
     leap = _leaper(g, gi, dist2.outputs["Points"], idx0, tm, ko, g.out(surf, "Selection"))
     fj = g.n("GeometryNodeJoinGeometry", 1650, 0)
-    g.link(bend, 0, fj, 0)
-    g.link(leap, 0, fj, 0)
-    g.link(fj, 0, go, 0)
+    g.link(bend, 0, fj, "Geometry")
+    g.link(leap, 0, fj, "Geometry")
+    g.link(fj, 0, go, "Geometry")
     # hrp_head on the points before instancing (the heading angle, for the bend direction)
     sth = g.n("GeometryNodeStoreNamedAttribute", 450, 200, data_type="FLOAT", domain="POINT")
     g.link(st, 0, sth, "Geometry")
@@ -323,9 +323,9 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
     P = g.math("MAXIMUM", X, Y - 250, g.out(gi, "Leap Every"), 2.5)
     J = 1.0                                                              # seconds in the air
     tt = g.math("ADD", X + 150, Y - 250, g.out(tm, "Seconds"), 2.0)       # nothing mid-splash on frame 1
-    k = g.math("FLOOR", X + 300, Y - 200, g.math("DIVIDE", X + 250, Y - 250, g.out(tt, 0), g.out(P, 0)).outputs[0])
-    tin = g.math("SUBTRACT", X + 450, Y - 250, g.out(tt, 0), g.math("MULTIPLY", X + 350, Y - 300, g.out(k, 0),
-                 g.out(P, 0)).outputs[0])                              # seconds since this period began
+    k = g.math("FLOOR", X + 300, Y - 200, only(g.math("DIVIDE", X + 250, Y - 250, g.out(tt, 0), g.out(P, 0)).outputs))
+    tin = g.math("SUBTRACT", X + 450, Y - 250, g.out(tt, 0), only(g.math("MULTIPLY", X + 350, Y - 300, g.out(k, 0),
+                 g.out(P, 0)).outputs))                              # seconds since this period began
     u = g.math("DIVIDE", X + 550, Y - 250, g.out(tin, 0), J)
     air = g.math("LESS_THAN", X + 650, Y - 300, g.out(u, 0), 1.0)
     uc = g.math("MINIMUM", X + 650, Y - 200, g.out(u, 0), 1.0)
@@ -334,24 +334,24 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
     g.link(g.math("ADD", X + 250, Y - 500, g.out(k, 0), 0.0), 0, hr, "ID", bkind="INT")
     # always across the pond, towards its middle (takeoff and entry both over open water)
     bbx = g.n("GeometryNodeBoundBox", X + 100, Y - 1200)
-    g.links.new(surf, bbx.inputs[0])
-    bc = g.vmath("SCALE", X + 250, Y - 1200, g.vmath("ADD", X + 200, Y - 1250, g.out(bbx, "Min"), g.out(bbx, "Max"))
-                 .outputs[0], scale=0.5)
-    tod = g.vmath("SUBTRACT", X + 350, Y - 1200, bc.outputs[0], g.n("GeometryNodeInputPosition", X + 250, Y - 1350)
-                  .outputs[0])
-    tds = _xyz_s(g, X + 450, Y - 1200, tod.outputs[0])
-    hd_ = g.math("ADD", X + 600, Y - 1150, g.math("ARCTAN2", X + 550, Y - 1200, g.out(tds, "Y"), g.out(tds, "X"))
-                 .outputs[0], g.math("MULTIPLY_ADD", X + 500, Y - 1300, g.out(hr, "Value", "VALUE"), 0.2, -0.63)
-                 .outputs[0]).outputs[0]
+    g.links.new(surf, sock(bbx.inputs, "Geometry"))
+    bc = g.vmath("SCALE", X + 250, Y - 1200, only(g.vmath("ADD", X + 200, Y - 1250, g.out(bbx, "Min"), g.out(bbx, "Max"))
+                 .outputs), scale=0.5)
+    tod = g.vmath("SUBTRACT", X + 350, Y - 1200, only(bc.outputs), only(g.n("GeometryNodeInputPosition", X + 250, Y - 1350)
+                  .outputs))
+    tds = _xyz_s(g, X + 450, Y - 1200, only(tod.outputs))
+    hd_ = only(g.math("ADD", X + 600, Y - 1150, only(g.math("ARCTAN2", X + 550, Y - 1200, g.out(tds, "Y"), g.out(tds, "X"))
+                 .outputs), only(g.math("MULTIPLY_ADD", X + 500, Y - 1300, g.out(hr, "Value", "VALUE"), 0.2, -0.63)
+                 .outputs)).outputs)
     S = g.out(gi, "Size")
     D = g.math("MULTIPLY", X + 450, Y - 600, S, 2.2)                       # horizontal reach
     H = g.math("MULTIPLY", X + 450, Y - 700, S, 1.9)                       # height of the arc
-    dx = g.math("MULTIPLY", X + 800, Y - 500, g.math("SUBTRACT", X + 700, Y - 500, g.out(uc, 0), 0.5).outputs[0],
+    dx = g.math("MULTIPLY", X + 800, Y - 500, only(g.math("SUBTRACT", X + 700, Y - 500, g.out(uc, 0), 0.5).outputs),
                 g.out(D, 0))
-    zz = g.math("SUBTRACT", X + 900, Y - 650, g.math("MULTIPLY", X + 800, Y - 650, g.math("MULTIPLY", X + 700, Y - 650,
-                g.out(uc, 0), g.math("SUBTRACT", X + 600, Y - 700, 1.0, g.out(uc, 0)).outputs[0]).outputs[0],
-                g.math("MULTIPLY", X + 700, Y - 750, g.out(H, 0), 4.0).outputs[0]).outputs[0],
-                g.math("MULTIPLY", X + 800, Y - 800, S, 0.15).outputs[0])
+    zz = g.math("SUBTRACT", X + 900, Y - 650, only(g.math("MULTIPLY", X + 800, Y - 650, only(g.math("MULTIPLY", X + 700, Y - 650,
+                g.out(uc, 0), only(g.math("SUBTRACT", X + 600, Y - 700, 1.0, g.out(uc, 0)).outputs)).outputs),
+                only(g.math("MULTIPLY", X + 700, Y - 750, g.out(H, 0), 4.0).outputs)).outputs),
+                only(g.math("MULTIPLY", X + 800, Y - 800, S, 0.15).outputs))
     cs, sn = g.math("COSINE", X + 800, Y - 900, hd_), g.math("SINE", X + 800, Y - 1000, hd_)
     off = g.n("ShaderNodeCombineXYZ", X + 1000, Y - 600)
     g.link(g.math("MULTIPLY", X + 900, Y - 550, g.out(dx, 0), g.out(cs, 0)), 0, off, "X")
@@ -360,16 +360,16 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
     fp = g.n("GeometryNodeSetPosition", X + 1100, Y)
     g.link(pt, "Selection", fp, "Geometry")
     g.link(off, 0, fp, "Offset")
-    pitch = g.math("ARCTAN2", X + 1000, Y - 800, g.math("MULTIPLY", X + 900, Y - 850, g.math("MULTIPLY", X + 800,
-                   Y - 850, g.out(H, 0), 4.0).outputs[0], g.math("SUBTRACT", X + 800, Y - 900, 1.0,
-                   g.math("MULTIPLY", X + 700, Y - 900, g.out(uc, 0), 2.0).outputs[0]).outputs[0]).outputs[0],
+    pitch = g.math("ARCTAN2", X + 1000, Y - 800, only(g.math("MULTIPLY", X + 900, Y - 850, only(g.math("MULTIPLY", X + 800,
+                   Y - 850, g.out(H, 0), 4.0).outputs), only(g.math("SUBTRACT", X + 800, Y - 900, 1.0,
+                   only(g.math("MULTIPLY", X + 700, Y - 900, g.out(uc, 0), 2.0).outputs)).outputs)).outputs),
                    g.out(D, 0))
     rot = g.n("ShaderNodeCombineXYZ", X + 1150, Y - 800)
     g.link(g.math("MULTIPLY", X + 1050, Y - 750, g.out(pitch, 0), -1.0), 0, rot, "Y")
     g.links.new(hd_, rot.inputs["Z"])
     vis = g.math("MULTIPLY", X + 1150, Y - 300, g.out(air, 0), g.out(on, 0))
     fsc = g.n("ShaderNodeCombineXYZ", X + 1250, Y - 400)
-    sv_ = g.math("MULTIPLY", X + 1150, Y - 400, g.math("MULTIPLY", X + 1050, Y - 450, S, 1.25).outputs[0],
+    sv_ = g.math("MULTIPLY", X + 1150, Y - 400, only(g.math("MULTIPLY", X + 1050, Y - 450, S, 1.25).outputs),
                  g.out(vis, 0))
     g.link(sv_, 0, fsc, "X")
     g.link(sv_, 0, fsc, "Y")
@@ -397,15 +397,15 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
     g.link(rot, 0, fi0, "Rotation")
     g.link(fsc, 0, fi0, "Scale")
     fre = g.n("GeometryNodeRealizeInstances", X + 1500, Y)                      # bend the body along the arc
-    g.link(fi0, 0, fre, 0)
+    g.link(fi0, 0, fre, "Geometry")
     bx = g.n("GeometryNodeInputNamedAttribute", X + 1400, Y + 200, data_type="FLOAT")
     bx.inputs["Name"].default_value = "hrp_x"
     bu = g.n("GeometryNodeInputNamedAttribute", X + 1400, Y + 300, data_type="FLOAT")
     bu.inputs["Name"].default_value = "hrp_leapu"
-    bend = g.math("MULTIPLY", X + 1600, Y + 250, g.math("POWER", X + 1500, Y + 200, g.out(bx, "Attribute"), 1.8)
-                  .outputs[0], g.math("MULTIPLY", X + 1500, Y + 300, g.math("MULTIPLY_ADD", X + 1400, Y + 350,
-                  g.out(bu, "Attribute"), 2.0, -1.0).outputs[0], g.math("MULTIPLY", X + 1400, Y + 450, S, 0.28)
-                  .outputs[0]).outputs[0])
+    bend = g.math("MULTIPLY", X + 1600, Y + 250, only(g.math("POWER", X + 1500, Y + 200, g.out(bx, "Attribute"), 1.8)
+                  .outputs), only(g.math("MULTIPLY", X + 1500, Y + 300, only(g.math("MULTIPLY_ADD", X + 1400, Y + 350,
+                  g.out(bu, "Attribute"), 2.0, -1.0).outputs), only(g.math("MULTIPLY", X + 1400, Y + 450, S, 0.28)
+                  .outputs)).outputs))
     bo = g.n("ShaderNodeCombineXYZ", X + 1700, Y + 250)
     g.link(bend, 0, bo, "Z")
     fi = g.n("GeometryNodeSetPosition", X + 1650, Y)
@@ -415,8 +415,8 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
     parts = []
     for e, sign in ((0.0, -1.0), (J, 1.0)):
         age = g.math("SUBTRACT", X, Y - 1300, g.out(tin, 0), e)
-        live = g.math("MULTIPLY", X + 100, Y - 1300, g.math("GREATER_THAN", X, Y - 1400, g.out(age, 0), 0.0).outputs[0],
-                      g.math("LESS_THAN", X, Y - 1450, g.out(age, 0), 0.9).outputs[0])
+        live = g.math("MULTIPLY", X + 100, Y - 1300, only(g.math("GREATER_THAN", X, Y - 1400, g.out(age, 0), 0.0).outputs),
+                      only(g.math("LESS_THAN", X, Y - 1450, g.out(age, 0), 0.9).outputs))
         live = g.math("MULTIPLY", X + 200, Y - 1300, g.out(live, 0), g.out(on, 0))
         sp_ = g.n("ShaderNodeCombineXYZ", X + 300, Y - 1200)
         half = g.math("MULTIPLY", X + 200, Y - 1150, g.out(D, 0), 0.5 * sign)
@@ -428,11 +428,11 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
         g.link(sp_, 0, spt, "Offset")
         # a ring that spreads
         rd = ring_disc(g, X + 300, Y - 1700)
-        rs_ = g.math("MULTIPLY", X + 500, Y - 1500, g.math("MULTIPLY_ADD", X + 400, Y - 1500, g.out(age, 0), 1.6, 0.25)
-                     .outputs[0], g.math("MULTIPLY", X + 400, Y - 1600, S, g.out(live, 0)).outputs[0])
+        rs_ = g.math("MULTIPLY", X + 500, Y - 1500, only(g.math("MULTIPLY_ADD", X + 400, Y - 1500, g.out(age, 0), 1.6, 0.25)
+                     .outputs), only(g.math("MULTIPLY", X + 400, Y - 1600, S, g.out(live, 0)).outputs))
         ri = g.n("GeometryNodeInstanceOnPoints", X + 650, Y - 1100)
         g.link(spt, 0, ri, "Points")
-        g.links.new(rd.outputs[0], ri.inputs["Instance"])
+        g.links.new(only(rd.outputs), ri.inputs["Instance"])
         g.link(rs_, 0, ri, "Scale")
         parts.append(ri)
         # a crown splash (the waterfall's crown at fish scale) rising and falling over 0.6 s
@@ -440,14 +440,14 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
         ctr = g.n("GeometryNodeSampleIndex", X + 450, Y - 2150, data_type="FLOAT_VECTOR", domain="POINT")
         g.link(spt, 0, ctr, "Geometry")
         g.link(g.n("GeometryNodeInputPosition", X + 300, Y - 2200), 0, ctr, "Value")
-        lf = g.math("SINE", X + 600, Y - 2300, g.math("MULTIPLY", X + 500, Y - 2300, g.math("MINIMUM", X + 400, Y - 2300,
-                    g.math("DIVIDE", X + 300, Y - 2300, g.out(age, 0), 0.6).outputs[0], 1.0).outputs[0],
-                    3.1416).outputs[0])
+        lf = g.math("SINE", X + 600, Y - 2300, only(g.math("MULTIPLY", X + 500, Y - 2300, only(g.math("MINIMUM", X + 400, Y - 2300,
+                    only(g.math("DIVIDE", X + 300, Y - 2300, g.out(age, 0), 0.6).outputs), 1.0).outputs),
+                    3.1416).outputs))
         lf = g.math("MULTIPLY", X + 700, Y - 2300, g.out(lf, 0), g.out(live, 0))
         cr = crown_geo(g, X + 300, Y - 2500, g.out(tm, "Seconds"),
-                       g.math("MULTIPLY", X + 200, Y - 2450, S, 0.27).outputs[0],
-                       g.math("MULTIPLY", X + 200, Y - 2550, S, 0.27).outputs[0],
-                       g.math("MULTIPLY", X + 200, Y - 2650, S, 0.65).outputs[0], False, g.out(lf, 0))
+                       only(g.math("MULTIPLY", X + 200, Y - 2450, S, 0.27).outputs),
+                       only(g.math("MULTIPLY", X + 200, Y - 2550, S, 0.27).outputs),
+                       only(g.math("MULTIPLY", X + 200, Y - 2650, S, 0.65).outputs), False, g.out(lf, 0))
         crx = g.n("GeometryNodeTransform", X + 1500, Y - 2500)
         g.links.new(cr, crx.inputs["Geometry"])
         g.links.new(g.out(ctr, "Value", "VECTOR"), crx.inputs["Translation"])
@@ -461,9 +461,9 @@ def _leaper(g, gi, srt, idx, tm, ko, surf=None):
         g.link(gi, "Splash Material", cm, "Material")
         parts.append(cm)
     jn = g.n("GeometryNodeJoinGeometry", X + 1600, Y)
-    g.link(fi, 0, jn, 0)
+    g.link(fi, 0, jn, "Geometry")
     for pp in parts:
-        g.link(pp, 0, jn, 0)
+        g.link(pp, 0, jn, "Geometry")
     return jn
 
 
@@ -550,7 +550,7 @@ def boat_mesh(name):
 
 def _xyz_s(g, x, y, vec):
     sep = g.n("ShaderNodeSeparateXYZ", x, y)
-    g.links.new(vec, sep.inputs[0])
+    g.links.new(vec, sock(sep.inputs, "Vector"))
     return sep
 
 
@@ -567,14 +567,14 @@ def boat_material():
     geo = g.n("ShaderNodeNewGeometry", -1200, 400)
     tc = g.n("ShaderNodeTexCoord", -1200, 200)
     sz = g.n("ShaderNodeSeparateXYZ", -1000, 200)
-    g.link(tc, "Object", sz, 0)
-    plank = g.math("FRACT", -800, 200, g.math("MULTIPLY", -900, 200, g.out(sz, "Z"), 9.0).outputs[0])
+    g.link(tc, "Object", sz, "Vector")
+    plank = g.math("FRACT", -800, 200, only(g.math("MULTIPLY", -900, 200, g.out(sz, "Z"), 9.0).outputs))
     seam = g.maprange(-650, 200, g.out(plank, 0), 0.08, 0.02, smooth=True)       # dark plank lines
     up_ = g.vmath("DOT_PRODUCT", -900, 0, g.out(geo, "Normal"), (0.0, 0.0, 1.0))
     inner = g.maprange(-750, 0, g.out(up_, "Value"), 0.2, 0.5, smooth=True)      # the inside faces the sky
     rail = g.maprange(-750, -150, g.out(sz, "Z"), 0.44, 0.47, smooth=True)       # the gunwale
     lit = g.mix(-500, 300, fac=0.35, a=g.out(pal, "bark_lit"), b=g.out(pal, "dirt_lit"))
-    lit = g.mix(-450, 250, fac=g.math("MULTIPLY", -550, 150, g.out(inner, "Result"), 0.5).outputs[0],
+    lit = g.mix(-450, 250, fac=only(g.math("MULTIPLY", -550, 150, g.out(inner, "Result"), 0.5).outputs),
                 a=g.mixout(lit), b=g.out(pal, "dirt_lit"))
     lit = g.mix(-400, 200, fac=g.out(rail, "Result"), a=g.mixout(lit), b=(0.16, 0.39, 0.35, 1.0))  # faded paint #6FA8A0
     lit = g.mix(-350, 300, fac=g.out(seam, "Result"), a=g.mixout(lit), b=g.out(pal, "bark_shadow"))
@@ -584,7 +584,7 @@ def boat_material():
     wz = g.math("SUBTRACT", -150, 600, g.out(_xyz_s(g, -300, 750, g.out(geo, "Position")), "Z"),
                 g.out(_xyz_s(g, -150, 750, g.out(oi, "Location")), "Z"))
     wl = g.maprange(0, 600, g.out(wz, 0), 0.07, 0.02, smooth=True)               # wet, dark at the waterline
-    wcol = g.mix(150, 400, fac=g.math("MULTIPLY", 50, 500, g.out(wl, "Result"), 0.8).outputs[0],
+    wcol = g.mix(150, 400, fac=only(g.math("MULTIPLY", 50, 500, g.out(wl, "Result"), 0.8).outputs),
                  a=g.out(cel, "Color"), b=(0.018, 0.08, 0.16, 1.0))
     shading._emit_out(g, g.mixout(wcol), 300, 300, pal=pal)
     mat.use_backface_culling = False
@@ -607,13 +607,13 @@ def float_group():
     go = g.n("NodeGroupOutput", 700, 0)
     tm = g.n("GeometryNodeInputSceneTime", -900, -300)
     t = g.math("MULTIPLY", -750, -300, g.out(tm, "Seconds"), g.out(gi, "Speed"))
-    bz = g.math("MULTIPLY", -550, -250, g.math("SINE", -650, -250, g.math("MULTIPLY", -700, -200, g.out(t, 0),
-                1.7).outputs[0]).outputs[0], g.out(gi, "Bob"))
+    bz = g.math("MULTIPLY", -550, -250, only(g.math("SINE", -650, -250, only(g.math("MULTIPLY", -700, -200, g.out(t, 0),
+                1.7).outputs)).outputs), g.out(gi, "Bob"))
     z = g.math("SUBTRACT", -400, -250, g.out(bz, 0), g.out(gi, "Draft"))
-    rx = g.math("MULTIPLY", -550, -400, g.math("SINE", -650, -400, g.math("MULTIPLY_ADD", -700, -400, g.out(t, 0),
-                1.1, 0.7).outputs[0]).outputs[0], g.out(gi, "Sway"))
-    ry = g.math("MULTIPLY", -550, -550, g.math("SINE", -650, -550, g.math("MULTIPLY_ADD", -700, -550, g.out(t, 0),
-                0.8, 2.1).outputs[0]).outputs[0], g.math("MULTIPLY", -650, -650, g.out(gi, "Sway"), 0.5).outputs[0])
+    rx = g.math("MULTIPLY", -550, -400, only(g.math("SINE", -650, -400, only(g.math("MULTIPLY_ADD", -700, -400, g.out(t, 0),
+                1.1, 0.7).outputs)).outputs), g.out(gi, "Sway"))
+    ry = g.math("MULTIPLY", -550, -550, only(g.math("SINE", -650, -550, only(g.math("MULTIPLY_ADD", -700, -550, g.out(t, 0),
+                0.8, 2.1).outputs)).outputs), only(g.math("MULTIPLY", -650, -650, g.out(gi, "Sway"), 0.5).outputs))
     tr = g.n("ShaderNodeCombineXYZ", -250, -250)
     g.link(z, 0, tr, "Z")
     rt = g.n("ShaderNodeCombineXYZ", -250, -450)
@@ -626,26 +626,26 @@ def float_group():
     # a contact ring on the water round the hull (it stays on the water, it does not bob with the boat)
     from .pondlife import ring_disc
     bb = g.n("GeometryNodeBoundBox", -100, -700)
-    g.link(gi, "Geometry", bb, 0)
+    g.link(gi, "Geometry", bb, "Geometry")
     hx = g.vmath("SUBTRACT", 50, -700, g.out(bb, "Max"), g.out(bb, "Min"))
-    hxs = _xyz_s(g, 200, -700, hx.outputs[0])
+    hxs = _xyz_s(g, 200, -700, only(hx.outputs))
     rd = ring_disc(g, -100, -900)
     rsc = g.n("ShaderNodeCombineXYZ", 400, -800)
     g.link(g.math("MULTIPLY", 300, -750, g.out(hxs, "X"), 0.47), 0, rsc, "X")
     g.link(g.math("MULTIPLY", 300, -850, g.out(hxs, "Y"), 0.43), 0, rsc, "Y")
     rsc.inputs["Z"].default_value = 1.0
     rxf = g.n("GeometryNodeTransform", 500, -900)
-    g.links.new(rd.outputs[0], rxf.inputs["Geometry"])
+    g.links.new(only(rd.outputs), rxf.inputs["Geometry"])
     g.link(rsc, 0, rxf, "Scale")
     rxf.inputs["Translation"].default_value = (0.0, 0.0, 0.004)
     jn = g.n("GeometryNodeJoinGeometry", 550, 0)
-    g.link(xf, 0, jn, 0)
-    g.link(rxf, 0, jn, 0)
+    g.link(xf, 0, jn, "Geometry")
+    g.link(rxf, 0, jn, "Geometry")
     nob = g.n("GeometryNodeStoreNamedAttribute", 650, 0, data_type="FLOAT", domain="POINT")    # not a rock (hull
     g.link(jn, 0, nob, "Geometry")                                    # AND its ring): no foam collar on the pond
     nob.inputs["Name"].default_value = "hrp_noobst"
     nob.inputs["Value"].default_value = 1.0
-    g.link(nob, 0, go, 0)
+    g.link(nob, 0, go, "Geometry")
     return ng
 
 
@@ -740,12 +740,12 @@ def dragonfly_material():
     pal.node_tree = shading.palette_group()
     wing = g.n("ShaderNodeAttribute", -800, 300, attribute_name="hrp_wing", attribute_type="GEOMETRY")
     kind = g.n("ShaderNodeAttribute", -800, 450, attribute_name="hrp_dfly", attribute_type="INSTANCER")
-    body = g.mix(-500, 300, fac=g.math("GREATER_THAN", -650, 450, g.out(kind, "Fac"), 0.6).outputs[0],
+    body = g.mix(-500, 300, fac=only(g.math("GREATER_THAN", -650, 450, g.out(kind, "Fac"), 0.6).outputs),
                  a=(0.03, 0.32, 0.55, 1.0), b=(0.72, 0.09, 0.03, 1.0))           # blue darter / red dragonfly
     col = g.mix(-300, 250, fac=g.out(wing, "Fac"), a=g.mixout(body), b=g.out(pal, "water_foam"))
     shading._emit_out(g, g.mixout(col), 0, 200, pal=pal,
-                      alpha=g.math("SUBTRACT", -300, 0, 1.0, g.math("MULTIPLY", -400, 0, g.out(wing, "Fac"), 0.55)
-                                   .outputs[0]).outputs[0], soft=True)
+                      alpha=only(g.math("SUBTRACT", -300, 0, 1.0, only(g.math("MULTIPLY", -400, 0, g.out(wing, "Fac"), 0.55)
+                                   .outputs)).outputs), soft=True)
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
     return mat
@@ -770,16 +770,16 @@ def dragon_group():
     g.link(gi, "Water", ci, "Collection")
     ci.inputs["Separate Children"].default_value = False
     re_ = g.n("GeometryNodeRealizeInstances", -1450, 0)
-    g.link(ci, 0, re_, 0)
+    g.link(ci, 0, re_, "Geometry")
     dist = g.n("GeometryNodeDistributePointsOnFaces", -1300, 0)
     g.link(re_, 0, dist, "Mesh")
     dist.inputs["Density"].default_value = 2.0
     g.link(gi, "Seed", dist, "Seed")
     dsz = g.n("GeometryNodeAttributeDomainSize", -1300, -250, component="POINTCLOUD")
-    g.link(dist, "Points", dsz, 0)
+    g.link(dist, "Points", dsz, "Geometry")
     keep = g.n("FunctionNodeRandomValue", -1150, -250, data_type="BOOLEAN")       # a fair pick over all water
-    g.link(g.math("DIVIDE", -1250, -350, g.out(gi, "Count"), g.math("MAXIMUM", -1350, -400, g.out(dsz, "Point Count"),
-           1.0).outputs[0]), 0, keep, "Probability")
+    g.link(g.math("DIVIDE", -1250, -350, g.out(gi, "Count"), only(g.math("MAXIMUM", -1350, -400, g.out(dsz, "Point Count"),
+           1.0).outputs)), 0, keep, "Probability")
     g.link(gi, "Seed", keep, "Seed")
     sel = g.n("GeometryNodeSeparateGeometry", -1150, 0, domain="POINT")
     g.link(dist, "Points", sel, "Geometry")
@@ -802,25 +802,25 @@ def dragon_group():
         g.set(nz, "Scale", 0.37)
         g.set(nz, "Detail", 0.0)
         g.link(c, 0, nz, "Vector")
-        return g.vmath("ADD", x + 450, y, g.vmath("MULTIPLY", x + 300, y, g.out(nz, "Color"), (3.0, 3.0, 0.9))
-                       .outputs[0], (-1.5, -1.5, 0.3)).outputs[0]                  # 0.3 m and more above the water
+        return only(g.vmath("ADD", x + 450, y, only(g.vmath("MULTIPLY", x + 300, y, g.out(nz, "Color"), (3.0, 3.0, 0.9))
+                       .outputs), (-1.5, -1.5, 0.3)).outputs)                  # 0.3 m and more above the water
     a = target(-850, -800, stp)
     b = target(-850, -1000, g.math("ADD", -1000, -1000, g.out(stp, 0), 1.0))
     off = g.n("ShaderNodeMix", -350, -850, data_type="VECTOR")
-    g.link(k, "Result", off, 0)
-    g.links.new(a, off.inputs[4])
-    g.links.new(b, off.inputs[5])
+    g.link(k, "Result", off, ("Factor", 0))
+    g.links.new(a, sock(off.inputs, ("A", 1)))
+    g.links.new(b, sock(off.inputs, ("B", 1)))
     hov = g.n("ShaderNodeCombineXYZ", -350, -650)                     # a tiny bob while hovering
-    g.link(g.math("MULTIPLY", -450, -650, g.math("SINE", -550, -650, g.math("MULTIPLY", -650, -650,
-           g.out(tm, "Seconds"), 9.0).outputs[0]).outputs[0], 0.015), 0, hov, "Z")
-    tot = g.vmath("ADD", -200, -750, off.outputs[1], hov.outputs[0])
+    g.link(g.math("MULTIPLY", -450, -650, only(g.math("SINE", -550, -650, only(g.math("MULTIPLY", -650, -650,
+           g.out(tm, "Seconds"), 9.0).outputs)).outputs), 0.015), 0, hov, "Z")
+    tot = g.vmath("ADD", -200, -750, sock(off.outputs, ("Result", 1)), only(hov.outputs))
     mv = g.n("GeometryNodeSetPosition", -900, 0)
     g.link(sel, "Selection", mv, "Geometry")
-    g.links.new(tot.outputs[0], mv.inputs["Offset"])
+    g.links.new(only(tot.outputs), mv.inputs["Offset"])
     # heading: towards the next spot
     dirv = g.vmath("SUBTRACT", -200, -1000, b, a)
-    yaw = g.math("ARCTAN2", -50, -1000, g.out(_xyz(g, -150, -1100, dirv.outputs[0]), "Y"),
-                 g.out(_xyz(g, -150, -1200, dirv.outputs[0]), "X"))
+    yaw = g.math("ARCTAN2", -50, -1000, g.out(_xyz(g, -150, -1100, only(dirv.outputs)), "Y"),
+                 g.out(_xyz(g, -150, -1200, only(dirv.outputs)), "X"))
     rot = g.n("ShaderNodeCombineXYZ", 100, -1000)
     g.link(yaw, 0, rot, "Z")
     bi = g.n("GeometryNodeObjectInfo", -200, -300)
@@ -839,13 +839,13 @@ def dragon_group():
     sm = g.n("GeometryNodeSetMaterial", 700, 0)
     g.link(sti, 0, sm, "Geometry")
     g.link(gi, "Material", sm, "Material")
-    g.link(sm, 0, go, 0)
+    g.link(sm, 0, go, "Geometry")
     return ng
 
 
 def _xyz(g, x, y, vec):
     sep = g.n("ShaderNodeSeparateXYZ", x, y)
-    g.links.new(vec, sep.inputs[0])
+    g.links.new(vec, sock(sep.inputs, "Vector"))
     return sep
 
 

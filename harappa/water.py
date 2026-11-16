@@ -17,7 +17,7 @@ import random
 
 import bpy
 
-from .util import G, fresh_group, iface, menu, mod_input
+from .util import G, fresh_group, iface, menu, mod_input, only, sock
 from . import shading
 
 WATER_VER = 66
@@ -71,12 +71,12 @@ def _store(g, x, y, geo, name, value, dtype="FLOAT", domain="POINT"):
         g.links.new(value, sock)
     else:
         sock.default_value = value
-    return st.outputs[0]
+    return only(st.outputs)
 
 
 def _xyz(g, x, y, vec):
     sep = g.n("ShaderNodeSeparateXYZ", x, y)
-    g.links.new(vec, sep.inputs[0])
+    g.links.new(vec, sock(sep.inputs, "Vector"))
     return sep
 
 
@@ -86,7 +86,7 @@ def _flat(g, x, y, vec):
     c = g.n("ShaderNodeCombineXYZ", x + 160, y)
     g.link(sep, "X", c, "X")
     g.link(sep, "Y", c, "Y")
-    return c.outputs[0]
+    return only(c.outputs)
 
 
 def _smooth(g, x, y, v, a, b, lo=0.0, hi=1.0):
@@ -102,7 +102,7 @@ def _switch(g, x, y, kind, cond, a_false, b_true):
             g.links.new(v, s)
         else:
             s.default_value = v
-    return sw.outputs[0]
+    return only(sw.outputs)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -147,7 +147,7 @@ def surface_group():
 
     # ---- pond: flat at the mean height of its outline
     pos = g.n("GeometryNodeInputPosition", -1400, -400)
-    pz = _xyz(g, -1250, -400, pos.outputs[0])
+    pz = _xyz(g, -1250, -400, only(pos.outputs))
     st = g.n("GeometryNodeAttributeStatistic", -1050, -300, data_type="FLOAT", domain="POINT")
     g.links.new(pond_c, st.inputs["Geometry"])
     g.link(pz, "Z", st, "Attribute")
@@ -173,7 +173,7 @@ def surface_group():
     outline = g.n("GeometryNodeCurveToMesh", -650, -500)
     g.link(sp, 0, outline, "Curve")
     prox = g.n("GeometryNodeProximity", -250, -450, target_element="EDGES")
-    g.link(outline, 0, prox, 0)
+    g.link(outline, 0, prox, "Geometry")
     pshore = _store(g, -50, -250, g.out(sub, 0), "hrp_shore", g.out(prox, "Distance"))
     pflow = _store(g, 150, -250, pshore, "hrp_flow", 0.0)
     pflow = _store(g, 250, -250, pflow, "hrp_end", 999.0)
@@ -181,23 +181,23 @@ def surface_group():
     sci = g.n("GeometryNodeCollectionInfo", -650, -800, transform_space="RELATIVE")
     g.link(gi, "Streams", sci, "Collection")
     sreal0 = g.n("GeometryNodeRealizeInstances", -550, -800)
-    g.link(sci, 0, sreal0, 0)
+    g.link(sci, 0, sreal0, "Geometry")
     sreal = g.n("GeometryNodeSeparateGeometry", -450, -800, domain="FACE")
     g.link(sreal0, 0, sreal, "Geometry")
     g.link(_named(g, -600, -900, "hrp_carve", "FLOAT_VECTOR"), "Exists", sreal, "Selection")
     spos = g.n("GeometryNodeInputPosition", -450, -950)
     sflat = g.n("GeometryNodeSetPosition", -300, -800)
-    g.link(sreal, 0, sflat, "Geometry")
-    g.links.new(_flat(g, -400, -1050, spos.outputs[0]), sflat.inputs["Position"])
+    g.link(sreal, "Selection", sflat, "Geometry")
+    g.links.new(_flat(g, -400, -1050, only(spos.outputs)), sflat.inputs["Position"])
     ssize = g.n("GeometryNodeAttributeDomainSize", -150, -950, component="MESH")
-    g.link(sflat, 0, ssize, 0)
+    g.link(sflat, 0, ssize, "Geometry")
     shas = g.n("FunctionNodeCompare", 0, -950, data_type="INT", operation="GREATER_THAN")
     g.link(ssize, "Face Count", shas, "A", bkind="INT")
     g.inp(shas, "B", "INT").default_value = 0
     ppos = g.n("GeometryNodeInputPosition", -150, -1150)
     mprox = g.n("GeometryNodeProximity", 0, -800, target_element="FACES")
-    g.link(sflat, 0, mprox, 0)
-    g.links.new(_flat(g, -100, -1250, ppos.outputs[0]), mprox.inputs["Sample Position"])
+    g.link(sflat, 0, mprox, "Geometry")
+    g.links.new(_flat(g, -100, -1250, only(ppos.outputs)), mprox.inputs["Sample Position"])
     mfade = _smooth(g, 150, -800, g.out(mprox, "Distance"), 0.15, 2.4)     # (pads keep clear of the inflow too)
     mfade = _switch(g, 300, -850, "FLOAT", g.out(shas, 0), 1.0, mfade)
     pflow = _store(g, 400, -250, pflow, "hrp_mouth", mfade)
@@ -207,7 +207,7 @@ def surface_group():
     g.links.new(stream_c, nrm.inputs["Curve"])
     menu(nrm.inputs["Mode"], "Z Up", "Minimum Twist")
     spl = g.n("GeometryNodeSplineParameter", -1200, 450)
-    su = _store(g, -1000, 300, nrm.outputs[0], "hrp_u", g.out(spl, "Length"))
+    su = _store(g, -1000, 300, only(nrm.outputs), "hrp_u", g.out(spl, "Length"))
     slen = g.n("GeometryNodeSplineLength", -1200, 900)
     to_end = g.math("SUBTRACT", -1050, 900, g.out(slen, "Length"), g.out(spl, "Length"))
     su = _store(g, -900, 300, su, "hrp_end", g.out(to_end, 0))
@@ -232,12 +232,12 @@ def surface_group():
         return _switch(g, x + 300, y, "FLOAT", g.out(on, 0), fallback, g.out(si, "Value", "VALUE"))
     exit_u = cross_u("Exit", -1400, 1500, 0.0)
     entry_u = cross_u("Entry", -1400, 1750, g.out(slen, "Length"))
-    from_exit = g.math("SUBTRACT", -1250, 1500, g.out(spl, "Length"), exit_u).outputs[0]
-    to_entry = g.math("SUBTRACT", -1250, 1750, entry_u, g.out(spl, "Length")).outputs[0]
+    from_exit = only(g.math("SUBTRACT", -1250, 1500, g.out(spl, "Length"), exit_u).outputs)
+    to_entry = only(g.math("SUBTRACT", -1250, 1750, entry_u, g.out(spl, "Length")).outputs)
     # the hand-overs scale with how much stream shows between the shores: a short link between two ponds still flows
-    vis = g.math("MAXIMUM", -1250, 1900, g.math("SUBTRACT", -1350, 1900, entry_u, exit_u).outputs[0], 0.5).outputs[0]
+    vis = only(g.math("MAXIMUM", -1250, 1900, only(g.math("SUBTRACT", -1350, 1900, entry_u, exit_u).outputs), 0.5).outputs)
     def fit(k, cap):
-        return g.math("MINIMUM", -1150, 1950, g.math("MULTIPLY", -1250, 1950, vis, k).outputs[0], cap).outputs[0]
+        return only(g.math("MINIMUM", -1150, 1950, only(g.math("MULTIPLY", -1250, 1950, vis, k).outputs), cap).outputs)
     su = _store(g, -880, 300, su, "hrp_fx", from_exit)
     su = _store(g, -860, 300, su, "hrp_te", to_entry)
     # width: a narrow source widening over two widths, then a slow natural swell and pinch
@@ -249,8 +249,8 @@ def surface_group():
     taper = g.mixout(g.mix(-950, 1150, "MIX", "FLOAT", fac=g.out(gi, "Outlet"), a=taper, b=flare))
     # ...and where it runs into a pond its mouth opens out
     mo_ = _smooth(g, -1050, 1000, to_entry, 0.0, fit(0.45, g.out(w2, 0)), 1.3, 1.0)
-    mo_ = g.math("MULTIPLY_ADD", -900, 1000, g.math("SUBTRACT", -950, 950, mo_, 1.0).outputs[0], g.out(gi, "Mouth"), 1.0)
-    taper = g.math("MULTIPLY", -850, 1100, taper, g.out(mo_, 0)).outputs[0]
+    mo_ = g.math("MULTIPLY_ADD", -900, 1000, only(g.math("SUBTRACT", -950, 950, mo_, 1.0).outputs), g.out(gi, "Mouth"), 1.0)
+    taper = only(g.math("MULTIPLY", -850, 1100, taper, g.out(mo_, 0)).outputs)
     wv = g.n("ShaderNodeCombineXYZ", -1050, 1300)
     g.link(g.math("MULTIPLY", -1200, 1300, g.out(spl, "Length"), 0.16), 0, wv, "X")
     wn_ = g.n("ShaderNodeTexNoise", -900, 1300, noise_dimensions="2D")
@@ -274,11 +274,11 @@ def surface_group():
     lres.inputs["Count"].default_value = 9
     g.link(line, 0, lres, "Curve")
     spl2 = g.n("GeometryNodeSplineParameter", -600, 800)
-    sv = _store(g, -450, 650, lres.outputs[0], "hrp_v", g.out(spl2, "Factor"))
+    sv = _store(g, -450, 650, only(lres.outputs), "hrp_v", g.out(spl2, "Factor"))
     c2m = g.n("GeometryNodeCurveToMesh", -250, 400)
     tan = g.n("GeometryNodeInputTangent", -700, 150)
     side = g.vmath("CROSS_PRODUCT", -550, 150, g.out(tan, 0), (0.0, 0.0, 1.0))
-    side = g.vmath("NORMALIZE", -450, 150, side.outputs[0])
+    side = g.vmath("NORMALIZE", -450, 150, only(side.outputs))
     wv2 = g.n("ShaderNodeCombineXYZ", -700, 0)
     g.link(_named(g, -850, 0, "hrp_u"), "Attribute", wv2, "X")
     wv2.inputs["Y"].default_value = 3.7
@@ -290,11 +290,11 @@ def surface_group():
     amp = g.math("MULTIPLY", -400, -100, g.out(gi, "Width"), 0.22)
     wob2 = g.math("MULTIPLY", -300, 0, g.out(wob2, 0), g.out(amp, 0))
     wob2 = g.math("MULTIPLY", -250, -50, g.out(wob2, 0), g.out(_named(g, -400, -200, "hrp_ws"), "Attribute"))
-    offs = g.vmath("SCALE", -200, 100, side.outputs[0], scale=g.out(wob2, 0))
+    offs = g.vmath("SCALE", -200, 100, only(side.outputs), scale=g.out(wob2, 0))
     wander = g.n("GeometryNodeSetPosition", -150, 300)
     g.links.new(su, wander.inputs["Geometry"])
     g.link(offs, 0, wander, "Offset")
-    su = wander.outputs[0]
+    su = only(wander.outputs)
     g.links.new(su, c2m.inputs["Curve"])
     g.links.new(sv, c2m.inputs["Profile Curve"])
     g.link(_named(g, -450, 450, "hrp_ws"), "Attribute", c2m, "Scale")
@@ -314,30 +314,30 @@ def surface_group():
     sflow = _store(g, 200, 400, sshore, "hrp_flow", 1.0)
     # a stream that leaves a pond: its first metres are the pond's water turning into a stream (no hard start)
     ostart = _smooth(g, 150, 550, g.out(_named(g, 0, 550, "hrp_fx"), "Attribute"), 0.0, fit(0.22, 1.8))
-    ostart = g.math("MULTIPLY_ADD", 250, 550, g.math("SUBTRACT", 200, 500, ostart, 1.0).outputs[0], g.out(gi, "Outlet"),
+    ostart = g.math("MULTIPLY_ADD", 250, 550, only(g.math("SUBTRACT", 200, 500, ostart, 1.0).outputs), g.out(gi, "Outlet"),
                     1.0)
     # ...and one that runs into a pond turns into the pond's water over its last metres (same depth colour, its
     # lines and foam fading), so the two bodies share one surface at the join
     oend = _smooth(g, 150, 700, g.out(_named(g, 0, 700, "hrp_te"), "Attribute"), 0.0, fit(0.25, 2.2))
-    oend = g.math("MULTIPLY_ADD", 250, 700, g.math("SUBTRACT", 200, 650, oend, 1.0).outputs[0], g.out(gi, "Mouth"), 1.0)
+    oend = g.math("MULTIPLY_ADD", 250, 700, only(g.math("SUBTRACT", 200, 650, oend, 1.0).outputs), g.out(gi, "Mouth"), 1.0)
     ostart = g.math("MINIMUM", 300, 600, g.out(ostart, 0), g.out(oend, 0))
     sflow = _store(g, 300, 400, sflow, "hrp_mouth", g.out(ostart, 0))
 
     # ---- both: level, depth (profile), carve parameters, time; material
     join = g.n("GeometryNodeJoinGeometry", 400, 0)
-    g.links.new(sflow, join.inputs[0])
-    g.links.new(pflow, join.inputs[0])
+    g.links.new(sflow, sock(join.inputs, "Geometry"))
+    g.links.new(pflow, sock(join.inputs, "Geometry"))
     pos2 = g.n("GeometryNodeInputPosition", 400, -300)
-    z2 = _xyz(g, 550, -300, pos2.outputs[0])
-    geo = join.outputs[0]
+    z2 = _xyz(g, 550, -300, only(pos2.outputs))
+    geo = only(join.outputs)
     shore = _named(g, 600, -500, "hrp_shore")
     # the shelf is wide here (a sandy beach), steep there (a deep bank): no even "pool step" all round
     shn = g.n("ShaderNodeTexNoise", 450, -650, noise_dimensions="2D")
     g.set(shn, "Scale", 0.32)
     g.set(shn, "Detail", 1.0)
-    g.links.new(pos2.outputs[0], shn.inputs["Vector"])
+    g.links.new(only(pos2.outputs), shn.inputs["Vector"])
     shk = g.maprange(600, -650, g.out(shn, "Fac"), 0.32, 0.68, 0.35, 2.1, smooth=True)
-    shelf_v = g.math("MULTIPLY", 750, -650, g.out(gi, "Shelf"), g.out(shk, "Result")).outputs[0]
+    shelf_v = only(g.math("MULTIPLY", 750, -650, g.out(gi, "Shelf"), g.out(shk, "Result")).outputs)
     dn = _smooth(g, 800, -500, g.out(shore, "Attribute"), 0.0, shelf_v)
     # where water bodies meet (a stream entering / leaving a pond) the deep water runs on as a tongue across the
     # shallows, so pond and stream share their colours at the join instead of meeting along a hard line
@@ -345,20 +345,20 @@ def surface_group():
     mth_p = _smooth(g, 600, -650, g.out(mth, "Attribute"), 0.0, 0.3)          # a pond's colour tongue is the near part
     mth_v = g.mixout(g.mix(650, -650, "MIX", "FLOAT", fac=g.out(_named(g, 500, -650, "hrp_flow"), "Attribute"),
                            a=mth_p, b=g.out(mth, "Attribute")))
-    tongue = g.math("MULTIPLY", 750, -700, g.math("SUBTRACT", 700, -750, 1.0, mth_v).outputs[0], 0.85)
+    tongue = g.math("MULTIPLY", 750, -700, only(g.math("SUBTRACT", 700, -750, 1.0, mth_v).outputs), 0.85)
     # on a stream the tongue keeps clear of its own banks (a thin shallow edge stays where the ribbon meets land)
-    tb = g.math("MAXIMUM", 700, -850, g.math("SUBTRACT", 600, -850, 1.0, g.out(_named(g, 500, -850, "hrp_flow"),
-                "Attribute")).outputs[0], _smooth(g, 600, -900, g.out(shore, "Attribute"), 0.0, 0.3))
+    tb = g.math("MAXIMUM", 700, -850, only(g.math("SUBTRACT", 600, -850, 1.0, g.out(_named(g, 500, -850, "hrp_flow"),
+                "Attribute")).outputs), _smooth(g, 600, -900, g.out(shore, "Attribute"), 0.0, 0.3))
     tb = g.math("MAXIMUM", 750, -900, g.out(tb, 0),                    # ...until it is in the pond: no pale edges there
-                g.math("SUBTRACT", 700, -950, 1.0, _smooth(g, 600, -950, g.out(mth, "Attribute"), 0.0, 0.6)).outputs[0])
+                only(g.math("SUBTRACT", 700, -950, 1.0, _smooth(g, 600, -950, g.out(mth, "Attribute"), 0.0, 0.6)).outputs))
     tongue = g.math("MULTIPLY", 800, -750, g.out(tongue, 0), g.out(tb, 0))
-    dn = g.math("MAXIMUM", 800, -600, dn, g.out(tongue, 0)).outputs[0]
+    dn = only(g.math("MAXIMUM", 800, -600, dn, g.out(tongue, 0)).outputs)
     geo = _store(g, 800, 0, geo, "hrp_dn", dn)
     pack = g.n("ShaderNodeCombineXYZ", 900, -300)                   # what the carve needs, in one lookup
     g.link(z2, "Z", pack, "X")
     g.link(gi, "Depth", pack, "Y")
     g.links.new(shelf_v, pack.inputs["Z"])
-    geo = _store(g, 1000, 0, geo, "hrp_carve", pack.outputs[0], "FLOAT_VECTOR")
+    geo = _store(g, 1000, 0, geo, "hrp_carve", only(pack.outputs), "FLOAT_VECTOR")
     geo = _store(g, 1600, 0, geo, "hrp_speed", g.out(gi, "Flow Speed"))   # (time lives in the shader: no rebuild per frame)
     # the shader reads three packed vectors (Metal allows only ~31 buffers per material)
     def pack3(geo_in, name, a, b, c, x):
@@ -366,23 +366,23 @@ def surface_group():
         for sock_, nm in zip(("X", "Y", "Z"), (a, b, c)):
             if nm:
                 g.link(_named(g, x - 150, -700, nm), "Attribute", cv, sock_)
-        return _store(g, x + 80, 0, geo_in, name, cv.outputs[0], "FLOAT_VECTOR")
+        return _store(g, x + 80, 0, geo_in, name, only(cv.outputs), "FLOAT_VECTOR")
     geo = pack3(geo, "hrp_a", "hrp_dn", "hrp_shore", "hrp_flow", 1650)
     geo = pack3(geo, "hrp_b", "hrp_u", "hrp_v", "hrp_speed", 1700)
     # distance to anything standing in the water (rocks): the shader draws a foam collar and a lapping ring
     oci = g.n("GeometryNodeCollectionInfo", 1400, -900, transform_space="RELATIVE")
     g.link(gi, "Obstacles", oci, "Collection")
     ore0 = g.n("GeometryNodeRealizeInstances", 1450, -900)
-    g.link(oci, 0, ore0, 0)
+    g.link(oci, 0, ore0, "Geometry")
     ore = g.n("GeometryNodeSeparateGeometry", 1500, -900, domain="POINT")      # rocks only (not the boat)
     g.link(ore0, 0, ore, "Geometry")
     g.link(g.math("LESS_THAN", 1400, -1000, g.out(_named(g, 1300, -1000, "hrp_noobst"), "Attribute"), 0.5), 0, ore,
            "Selection")
     osz = g.n("GeometryNodeAttributeDomainSize", 1600, -1000, component="MESH")
-    g.link(ore, 0, osz, 0)
+    g.link(ore, "Selection", osz, "Geometry")
     ohas = g.math("GREATER_THAN", 1700, -1000, g.out(osz, "Face Count"), 0.5)
     opx = g.n("GeometryNodeProximity", 1600, -900, target_element="FACES")
-    g.link(ore, 0, opx, 0)
+    g.link(ore, "Selection", opx, "Geometry")
     od = _switch(g, 1700, -900, "FLOAT", g.out(ohas, 0), 99.0, g.out(opx, "Distance"))
     geo = _store(g, 1720, 0, geo, "hrp_obst", od)
     # distance to a floating boat: screen-space reflections under a hull have nothing to find (a pale smear)
@@ -391,10 +391,10 @@ def surface_group():
     g.link(g.math("GREATER_THAN", 1400, -1200, g.out(_named(g, 1300, -1200, "hrp_noobst"), "Attribute"), 0.5), 0, bsel,
            "Selection")
     bsz = g.n("GeometryNodeAttributeDomainSize", 1600, -1250, component="MESH")
-    g.link(bsel, "Selection", bsz, 0)
+    g.link(bsel, "Selection", bsz, "Geometry")
     bpx = g.n("GeometryNodeProximity", 1600, -1150, target_element="FACES")
-    g.link(bsel, "Selection", bpx, 0)
-    bd = _switch(g, 1700, -1150, "FLOAT", g.math("GREATER_THAN", 1650, -1300, g.out(bsz, "Face Count"), 0.5).outputs[0],
+    g.link(bsel, "Selection", bpx, "Geometry")
+    bd = _switch(g, 1700, -1150, "FLOAT", only(g.math("GREATER_THAN", 1650, -1300, g.out(bsz, "Face Count"), 0.5).outputs),
                  99.0, g.out(bpx, "Distance"))
     geo = _store(g, 1730, 0, geo, "hrp_boatd", bd)
     geo = pack3(geo, "hrp_c", "hrp_end", "hrp_mouth", "hrp_obst", 1750)
@@ -431,7 +431,7 @@ def terrace_group():
     res.inputs["Length"].default_value = 0.2
     g.link(gi, "Geometry", res, "Curve")
     pos = g.n("GeometryNodeInputPosition", -1000, -250)
-    pz = _xyz(g, -850, -250, pos.outputs[0])
+    pz = _xyz(g, -850, -250, only(pos.outputs))
     st = g.n("GeometryNodeAttributeStatistic", -700, -200, data_type="FLOAT", domain="POINT")
     g.link(res, 0, st, "Geometry")
     g.link(pz, "Z", st, "Attribute")
@@ -459,7 +459,7 @@ def terrace_group():
     g.link(st, "Mean", eo, "Z")
     g.link(eo, 0, eflat, "Position")
     prox = g.n("GeometryNodeProximity", -150, -300, target_element="EDGES")
-    g.link(eflat, 0, prox, 0)
+    g.link(eflat, 0, prox, "Geometry")
     near = g.n("GeometryNodeSampleNearest", -150, -550, domain="POINT")
     g.link(eflat, 0, near, "Geometry")
     rad = g.n("GeometryNodeSampleIndex", 0, -550, data_type="FLOAT", domain="POINT")
@@ -471,8 +471,8 @@ def terrace_group():
     g.link(st, "Mean", pack, "X")
     g.link(prox, "Distance", pack, "Y")
     g.link(cl, 0, pack, "Z")
-    out = _store(g, 250, 0, g.out(sub, 0), "hrp_terr", pack.outputs[0], "FLOAT_VECTOR")
-    g.links.new(out, go.inputs[0])
+    out = _store(g, 250, 0, g.out(sub, 0), "hrp_terr", only(pack.outputs), "FLOAT_VECTOR")
+    g.links.new(out, sock(go.inputs, "Geometry"))
     return ng
 
 
@@ -534,28 +534,28 @@ def carve_group():
     ci.inputs["Separate Children"].default_value = False
     ci.inputs["Reset Children"].default_value = False
     real = g.n("GeometryNodeRealizeInstances", -1600, -300)
-    g.link(ci, 0, real, 0)
-    only = g.n("GeometryNodeSeparateGeometry", -1500, -200, domain="FACE")    # water surfaces, not pads or reeds
-    g.link(real, 0, only, "Geometry")
-    # real water surfaces only: after Realize, an attribute "exists" on every face of the joined mesh (a waterfall
-    # sheet included), so select by value: only ponds and streams have a depth > 0 in hrp_carve
+    g.link(ci, 0, real, "Geometry")
+    wsurf = g.n("GeometryNodeSeparateGeometry", -1500, -200, domain="FACE")    # water surfaces, not pads or reeds
+    g.link(real, 0, wsurf, "Geometry")
+    # real water surfaces wsurf: after Realize, an attribute "exists" on every face of the joined mesh (a waterfall
+    # sheet included), so select by value: wsurf ponds and streams have a depth > 0 in hrp_carve
     cvsel = _xyz(g, -1650, -50, g.out(_named(g, -1800, -50, "hrp_carve", "FLOAT_VECTOR"), "Attribute", "VECTOR"))
-    g.link(g.math("GREATER_THAN", -1550, -100, g.out(cvsel, "Y"), 0.001), 0, only, "Selection")
+    g.link(g.math("GREATER_THAN", -1550, -100, g.out(cvsel, "Y"), 0.001), 0, wsurf, "Selection")
     wpos = g.n("GeometryNodeInputPosition", -1600, -500)
     wsp = g.n("GeometryNodeSetPosition", -1400, -300)
-    g.link(only, "Selection", wsp, "Geometry")
-    g.links.new(_flat(g, -1500, -600, wpos.outputs[0]), wsp.inputs["Position"])
-    W = wsp.outputs[0]
+    g.link(wsurf, "Selection", wsp, "Geometry")
+    g.links.new(_flat(g, -1500, -600, only(wpos.outputs)), wsp.inputs["Position"])
+    W = only(wsp.outputs)
     size = g.n("GeometryNodeAttributeDomainSize", -1400, -100, component="MESH")
-    g.links.new(W, size.inputs[0])
+    g.links.new(W, sock(size.inputs, "Geometry"))
     has = g.n("FunctionNodeCompare", -1200, -100, data_type="INT", operation="GREATER_THAN")
     g.link(size, "Face Count", has, "A", bkind="INT")
     g.inp(has, "B", "INT").default_value = 0
 
     pos = g.n("GeometryNodeInputPosition", -1600, 300)
-    pxy = _flat(g, -1450, 300, pos.outputs[0])
+    pxy = _flat(g, -1450, 300, only(pos.outputs))
     prox = g.n("GeometryNodeProximity", -1100, -300, target_element="FACES")
-    g.links.new(W, prox.inputs[0])
+    g.links.new(W, sock(prox.inputs, "Geometry"))
     g.links.new(pxy, prox.inputs["Sample Position"])
     d = g.out(prox, "Distance")
 
@@ -584,7 +584,7 @@ def carve_group():
     g.set(bwn, "Detail", 1.0)
     g.links.new(pxy, bwn.inputs["Vector"])
     bfac = g.out(g.maprange(-950, -1300, g.out(bwn, "Fac"), 0.3, 0.7, 0.3, 1.5), "Result")
-    bankw = g.math("MULTIPLY", -800, -1300, g.out(gi, "Bank"), bfac).outputs[0]
+    bankw = only(g.math("MULTIPLY", -800, -1300, g.out(gi, "Bank"), bfac).outputs)
 
     inside = g.math("LESS_THAN", -800, -300, d, 0.002)
     neg = g.math("MULTIPLY", -800, -500, shore, -1.0)
@@ -595,8 +595,8 @@ def carve_group():
     # inside: level + lip -> level - depth across the shelf
     ins = g.math("MULTIPLY", -400, -600, s, -1.0)
     xs = g.math("DIVIDE", -300, -600, g.out(ins, 0), shelf, clamp=True)
-    fall = g.math("MULTIPLY", -150, -600, g.out(xs, 0),
-                  g.math("SUBTRACT", -250, -500, 2.0, g.out(xs, 0)).outputs[0]).outputs[0]   # steep at the shore
+    fall = only(g.math("MULTIPLY", -150, -600, g.out(xs, 0),
+                  only(g.math("SUBTRACT", -250, -500, 2.0, g.out(xs, 0)).outputs)).outputs)   # steep at the shore
     dl = g.math("ADD", -250, -900, dmax, g.out(gi, "Bank Height"))
     drop = g.math("MULTIPLY", -100, -700, fall, g.out(dl, 0))
     f_in = g.math("SUBTRACT", 50, -700, g.out(lip, 0), g.out(drop, 0))
@@ -605,23 +605,23 @@ def carve_group():
     f_out = g.math("ADD", 50, -1000, g.out(lip, 0), g.out(rise, 0))
     f = g.mixout(g.mix(250, -800, "MIX", "FLOAT", fac=g.out(inside, 0), a=g.out(f_out, 0), b=g.out(f_in, 0)))
 
-    pz = _xyz(g, -1450, 500, pos.outputs[0])
+    pz = _xyz(g, -1450, 500, only(pos.outputs))
     # terraces first: raise the meadow to each terrace top, easing up over its cliff width
     tci = g.n("GeometryNodeCollectionInfo", -1800, 900, transform_space="RELATIVE")
     g.link(gi, "Terrain", tci, "Collection")
     treal = g.n("GeometryNodeRealizeInstances", -1650, 900)
-    g.link(tci, 0, treal, 0)
+    g.link(tci, 0, treal, "Geometry")
     tpos = g.n("GeometryNodeInputPosition", -1650, 1050)
     tflat = g.n("GeometryNodeSetPosition", -1500, 900)
     g.link(treal, 0, tflat, "Geometry")
-    g.links.new(_flat(g, -1600, 1150, tpos.outputs[0]), tflat.inputs["Position"])
+    g.links.new(_flat(g, -1600, 1150, only(tpos.outputs)), tflat.inputs["Position"])
     tsize = g.n("GeometryNodeAttributeDomainSize", -1350, 1050, component="MESH")
-    g.link(tflat, 0, tsize, 0)
+    g.link(tflat, 0, tsize, "Geometry")
     thas = g.n("FunctionNodeCompare", -1200, 1050, data_type="INT", operation="GREATER_THAN")
     g.link(tsize, "Face Count", thas, "A", bkind="INT")
     g.inp(thas, "B", "INT").default_value = 0
     tprox = g.n("GeometryNodeProximity", -1200, 900, target_element="FACES")
-    g.link(tflat, 0, tprox, 0)
+    g.link(tflat, 0, tprox, "Geometry")
     g.links.new(pxy, tprox.inputs["Sample Position"])
     tin_s = g.n("GeometryNodeSampleNearestSurface", -1200, 700, data_type="FLOAT_VECTOR")
     g.link(tflat, 0, tin_s, "Mesh")
@@ -634,8 +634,8 @@ def carve_group():
     zt = g.mixout(g.mix(-600, 700, "MIX", "FLOAT", fac=g.out(ramp, 0), a=g.out(pz, "Z"), b=g.out(tv, "X")))
     zt = g.math("MAXIMUM", -450, 700, zt, g.out(pz, "Z"))
     zr = _switch(g, -300, 700, "FLOAT", g.out(thas, 0), g.out(pz, "Z"), g.out(zt, 0))
-    cliffm = g.math("MULTIPLY", -300, 550, g.out(ramp, 0), g.math("SUBTRACT", -400, 500, 1.0, g.out(ramp, 0))
-                    .outputs[0])                                       # 1 on the steep terrace face
+    cliffm = g.math("MULTIPLY", -300, 550, g.out(ramp, 0), only(g.math("SUBTRACT", -400, 500, 1.0, g.out(ramp, 0))
+                    .outputs))                                       # 1 on the steep terrace face
     cliffm = g.maprange(-150, 550, g.out(cliffm, 0), 0.03, 0.12, 1.0, 0.0, smooth=True)
     z1 = g.math("MINIMUM", 450, -700, zr, f)
     # a low dam where the meadow is lower than the shore (pond on a slope), easing back over the bank
@@ -648,25 +648,25 @@ def carve_group():
     g.link(pz, "X", np_, "X")
     g.link(pz, "Y", np_, "Y")
     g.links.new(znew, np_.inputs["Z"])
-    # work only near water and terraces (fields are evaluated on the selection only): far meadow is free
+    # work wsurf near water and terraces (fields are evaluated on the selection wsurf): far meadow is free
     jb = g.n("GeometryNodeJoinGeometry", 900, 1300)
-    g.links.new(W, jb.inputs[0])
-    g.link(tflat, 0, jb, 0)
+    g.links.new(W, sock(jb.inputs, "Geometry"))
+    g.link(tflat, 0, jb, "Geometry")
     bb = g.n("GeometryNodeBoundBox", 1050, 1300)
-    g.link(jb, 0, bb, 0)
+    g.link(jb, 0, bb, "Geometry")
     cen = g.vmath("ADD", 1200, 1350, g.out(bb, "Min"), g.out(bb, "Max"))
-    cen = g.vmath("SCALE", 1300, 1350, cen.outputs[0], scale=0.5)
+    cen = g.vmath("SCALE", 1300, 1350, only(cen.outputs), scale=0.5)
     half = g.vmath("SUBTRACT", 1200, 1200, g.out(bb, "Max"), g.out(bb, "Min"))
-    half = g.vmath("SCALE", 1300, 1200, half.outputs[0], scale=0.5)
-    half = g.vmath("ADD", 1400, 1200, half.outputs[0], (6.0, 6.0, 1e6))
-    dd = g.vmath("ABSOLUTE", 1450, 1350, g.vmath("SUBTRACT", 1400, 1350, pos.outputs[0], cen.outputs[0]).outputs[0])
-    ins = g.vmath("SUBTRACT", 1550, 1300, half.outputs[0], dd.outputs[0])
-    insx = _xyz(g, 1650, 1300, ins.outputs[0])
+    half = g.vmath("SCALE", 1300, 1200, only(half.outputs), scale=0.5)
+    half = g.vmath("ADD", 1400, 1200, only(half.outputs), (6.0, 6.0, 1e6))
+    dd = g.vmath("ABSOLUTE", 1450, 1350, only(g.vmath("SUBTRACT", 1400, 1350, only(pos.outputs), only(cen.outputs)).outputs))
+    ins = g.vmath("SUBTRACT", 1550, 1300, only(half.outputs), only(dd.outputs))
+    insx = _xyz(g, 1650, 1300, only(ins.outputs))
     near = g.math("MINIMUM", 1750, 1300, g.out(insx, "X"), g.out(insx, "Y"))
     near = g.math("GREATER_THAN", 1850, 1300, g.out(near, 0), 0.0)
     # remember the meadow's own slope (before the carve) for planting rules
     nrm0 = g.n("GeometryNodeInputNormal", 1450, 150)
-    geo0 = _store(g, 1550, 100, g.out(gi, "Geometry"), "hrp_flat", g.out(_xyz(g, 1500, 200, nrm0.outputs[0]), "Z"))
+    geo0 = _store(g, 1550, 100, g.out(gi, "Geometry"), "hrp_flat", g.out(_xyz(g, 1500, 200, sock(nrm0.outputs, "Normal")), "Z"))
     geo0 = _store(g, 1600, 50, geo0, "hrp_sd", 99.0)
     setp = g.n("GeometryNodeSetPosition", 1650, 0)
     g.links.new(geo0, setp.inputs["Geometry"])
@@ -693,20 +693,20 @@ def carve_group():
     keep = _smooth(g, 1600, 600, g.out(bank_in, 0), -0.06, bankw)            # tufts reach into the shallows
     hgt = g.math("SUBTRACT", 1450, 1200, znew, level)                       # a tall cut bank grows grass again
     kh = _smooth(g, 1600, 1200, g.out(hgt, 0), 0.15, 0.32)
-    keep = g.math("MAXIMUM", 1700, 700, keep, kh).outputs[0]
+    keep = only(g.math("MAXIMUM", 1700, 700, keep, kh).outputs)
     nrm_ = g.n("GeometryNodeInputNormal", 1650, 900)                       # evaluated on the moved ground
-    nzz_ = _xyz(g, 1750, 900, nrm_.outputs[0])
+    nzz_ = _xyz(g, 1750, 900, sock(nrm_.outputs, "Normal"))
     blur = g.n("GeometryNodeBlurAttribute", 1850, 1000, data_type="FLOAT")    # no triangle teeth on the edge
     g.link(nzz_, "Z", blur, "Value")
     blur.inputs["Iterations"].default_value = 2
     steep = g.maprange(1900, 900, g.out(blur, 0), 0.72, 0.84, smooth=True)          # steep faces are bare rock
-    keep = g.math("MULTIPLY", 1800, 750, keep, g.out(steep, "Result")).outputs[0]
+    keep = only(g.math("MULTIPLY", 1800, 750, keep, g.out(steep, "Result")).outputs)
     keep2 = _switch(g, 1750, 600, "FLOAT", g.out(has, 0), g.out(steep, "Result"), keep)
     m = g.math("MULTIPLY", 1900, 400, msw, keep2)
     col = g.n("FunctionNodeCombineColor", 2050, 400)
     for c in ("Red", "Green", "Blue"):
         g.link(m, 0, col, c)
-    out = _store(g, 2100, 0, setp.outputs[0], MASK_ATTR, col.outputs[0], "FLOAT_COLOR")
+    out = _store(g, 2100, 0, only(setp.outputs), MASK_ATTR, only(col.outputs), "FLOAT_COLOR")
     st_nodes = [out.node]
     wet = g.math("SUBTRACT", 1900, 700, 1.0, keep2)
     out = _store(g, 2250, 0, out, "hrp_wet", g.out(wet, 0))
@@ -771,8 +771,8 @@ def type_colours(g, pal, x, y):
     from .util import srgb
     use = g.out(g.n("ShaderNodeAttribute", x, y, attribute_name="hrp_wuse", attribute_type="OBJECT"), "Fac")
     ref = g.n("ShaderNodeRGB", x, y - 150)
-    ref.outputs[0].default_value = (*[max(c, 1e-3) for c in srgb(SUMMER_MID)], 1.0)
-    ratio = g.mix(x + 200, y - 100, "DIVIDE", fac=1.0, a=g.out(pal, "water_mid"), b=ref.outputs[0])
+    only(ref.outputs).default_value = (*[max(c, 1e-3) for c in srgb(SUMMER_MID)], 1.0)
+    ratio = g.mix(x + 200, y - 100, "DIVIDE", fac=1.0, a=g.out(pal, "water_mid"), b=only(ref.outputs))
     out = []
     for k, (attr, key) in enumerate((("hrp_wcol_s", "water_shallow"), ("hrp_wcol_m", "water_mid"),
                                      ("hrp_wcol_d", "water_deep"))):
@@ -801,7 +801,7 @@ def rain_zone_group():
         for i, (k, d) in enumerate((("X", 0.0), ("Y", 0.0), ("R", 1.0e6))):
             v = g.n("ShaderNodeValue", -800, -200 - 120 * i)
             v.name = v.label = k
-            v.outputs[0].default_value = d
+            only(v.outputs).default_value = d
             vals[k] = v
         c = g.n("ShaderNodeCombineXYZ", -600, -200)
         g.link(vals["X"], 0, c, "X")
@@ -827,7 +827,7 @@ def drive_rain_zone():
         node = ng.nodes.get(k)
         if node is None:
             continue
-        sock = node.outputs[0]
+        sock = only(node.outputs)
         try:
             sock.driver_remove("default_value")
         except TypeError:
@@ -894,8 +894,8 @@ def water_material():
     g.set(on_, "Scale", 0.28)
     g.set(on_, "Detail", 1.0)
     g.links.new(P, on_.inputs["Vector"])
-    d2 = g.math("ADD", -1900, 1000, g.out(d2, 0), g.math("MULTIPLY_ADD", -2050, 1250, g.out(on_, "Fac"), 0.6, -0.3)
-                .outputs[0])
+    d2 = g.math("ADD", -1900, 1000, g.out(d2, 0), only(g.math("MULTIPLY_ADD", -2050, 1250, g.out(on_, "Fac"), 0.6, -0.3)
+                .outputs))
     b1 = _smooth(g, -1800, 1000, g.out(d2, 0), 0.21, 0.25)
     b2 = _smooth(g, -1800, 800, g.out(d2, 0), 0.56, 0.6)
     cs, cm, cd = type_colours(g, pal, -2300, 1800)
@@ -907,8 +907,8 @@ def water_material():
     bed = _smooth(g, -2100, 1500, g.out(bedn, "Distance"), 0.18, 0.42)
     bedc = g.mixout(g.mix(-1950, 1450, "MULTIPLY", fac=0.5, a=cs, b=(0.86, 0.9, 0.62, 1.0)))
     bshal = _smooth(g, -1950, 1600, g.out(d2, 0), 0.32, 0.04)
-    bedf = g.math("MULTIPLY", -1800, 1550, g.math("SUBTRACT", -1900, 1500, 1.0, bed).outputs[0], bshal)
-    cs = g.mixout(g.mix(-1750, 1450, fac=g.math("MULTIPLY", -1700, 1600, g.out(bedf, 0), 0.6).outputs[0], a=cs, b=bedc))
+    bedf = g.math("MULTIPLY", -1800, 1550, only(g.math("SUBTRACT", -1900, 1500, 1.0, bed).outputs), bshal)
+    cs = g.mixout(g.mix(-1750, 1450, fac=only(g.math("MULTIPLY", -1700, 1600, g.out(bedf, 0), 0.6).outputs), a=cs, b=bedc))
     c = g.mixout(g.mix(-1600, 1000, fac=b1, a=cs, b=cm))
     c = g.mixout(g.mix(-1450, 900, fac=b2, a=c, b=cd))
     # per water body: type / tint (object custom properties, neutral when missing)
@@ -921,14 +921,14 @@ def water_material():
     g.link(g.math("ADD", -1450, 1150, g.out(tint, "Y"), 1.0), 0, hsv, "Saturation")
     g.link(g.math("ADD", -1450, 1050, g.out(tint, "Z"), 1.0), 0, hsv, "Value")
     g.links.new(c, hsv.inputs["Color"])
-    c = hsv.outputs[0]
+    c = only(hsv.outputs)
     clar = clar0
     # --- caustic net in the shallows (Voronoi cell edges, drifting slowly)
     cw = g.n("ShaderNodeTexNoise", -2500, 300, noise_dimensions="2D")
     g.set(cw, "Scale", 0.6)
     g.links.new(P, cw.inputs["Vector"])
-    pw = g.vmath("MULTIPLY_ADD", -2400, 350, g.out(cw, "Color"), (0.9, 0.9, 0.0)).outputs[0]
-    pw = g.vmath("ADD", -2350, 350, pw, P).outputs[0]
+    pw = only(g.vmath("MULTIPLY_ADD", -2400, 350, g.out(cw, "Color"), (0.9, 0.9, 0.0)).outputs)
+    pw = only(g.vmath("ADD", -2350, 350, pw, P).outputs)
     cxy = g.n("ShaderNodeCombineXYZ", -2100, 300)
     pxyz = _xyz(g, -2300, 300, P)
     pwx = _xyz(g, -2250, 450, pw)
@@ -944,15 +944,15 @@ def water_material():
     lw_ = g.math("MULTIPLY_ADD", -1900, 600, g.out(cw, "Fac"), 0.03, 0.005)
     net = _smooth(g, -1800, 300, g.out(vor, "Distance"), g.out(lw_, 0), 0.004)
     broken = _smooth(g, -1800, 500, g.out(nn, "Fac"), 0.42, 0.55)
-    net = g.math("MULTIPLY", -1700, 400, net, broken).outputs[0]
+    net = only(g.math("MULTIPLY", -1700, 400, net, broken).outputs)
     shallow = _smooth(g, -1800, 150, dn, 0.42, 0.12)
     netw = g.math("MULTIPLY", -1650, 250, net, shallow)
     netw = g.math("MULTIPLY", -1500, 250, g.out(netw, 0), g.out(pal, "water_caustics"))
     netw = g.math("MULTIPLY", -1400, 250, g.out(netw, 0), 0.2)
     netw = g.math("MULTIPLY", -1380, 230, g.out(netw, 0),
-                  g.math("ADD", -1480, 180, clar, 1.0, clamp=True).outputs[0])     # murky water: no caustics
+                  only(g.math("ADD", -1480, 180, clar, 1.0, clamp=True).outputs))     # murky water: no caustics
     netw = g.math("MULTIPLY", -1350, 200, g.out(netw, 0),
-                  g.math("MULTIPLY_ADD", -1450, 100, g.out(night, 0), -0.7, 1.0).outputs[0])
+                  only(g.math("MULTIPLY_ADD", -1450, 100, g.out(night, 0), -0.7, 1.0).outputs))
     c = g.mixout(g.mix(-1300, 700, fac=g.out(netw, 0), a=c, b=g.out(pal, "water_line")))
 
     # --- flow streaks along streams (stretched noise, panned along U)
@@ -961,7 +961,7 @@ def water_material():
         mv = g.math("MULTIPLY", x - 300, y, t, spd)
         mv = g.math("MULTIPLY", x - 200, y, g.out(mv, 0), speed_k)
         g.link(g.math("MULTIPLY", x - 150, y + 50,
-                      g.math("SUBTRACT", x - 100, y + 100, u, g.out(mv, 0)).outputs[0], 0.35), 0, fu, "X")
+                      only(g.math("SUBTRACT", x - 100, y + 100, u, g.out(mv, 0)).outputs), 0.35), 0, fu, "X")
         g.link(g.math("MULTIPLY", x - 150, y - 100, v, vy), 0, fu, "Y")
         fu.inputs["Z"].default_value = seed
         fn = g.n("ShaderNodeTexNoise", x + 150, y, noise_dimensions="3D")
@@ -984,17 +984,17 @@ def water_material():
     # where a stream runs down a slope it turns to white rapids (more and longer streaks, foam between them)
     gnz = _xyz(g, -2100, -750, g.out(geo, "Normal"))
     rap = _smooth(g, -1950, -750, g.out(gnz, "Z"), 0.992, 0.94)
-    rap = g.math("MULTIPLY", -1850, -750, rap, flow).outputs[0]
+    rap = only(g.math("MULTIPLY", -1850, -750, rap, flow).outputs)
     rfn = g.n("ShaderNodeTexNoise", -1950, -900, noise_dimensions="3D")
     rfv = g.n("ShaderNodeCombineXYZ", -2050, -900)
-    g.link(g.math("MULTIPLY", -2150, -850, g.math("SUBTRACT", -2250, -850, u, g.math("MULTIPLY", -2350, -850, t,
-                  g.math("MULTIPLY", -2450, -850, spd, 2.0).outputs[0]).outputs[0]).outputs[0], 0.6), 0, rfv, "X")
+    g.link(g.math("MULTIPLY", -2150, -850, only(g.math("SUBTRACT", -2250, -850, u, only(g.math("MULTIPLY", -2350, -850, t,
+                  only(g.math("MULTIPLY", -2450, -850, spd, 2.0).outputs)).outputs)).outputs), 0.6), 0, rfv, "X")
     g.link(g.math("MULTIPLY", -2150, -950, v, 5.0), 0, rfv, "Y")
     g.set(rfn, "Scale", 1.3)
     g.set(rfn, "Detail", 2.0)
     g.link(rfv, 0, rfn, "Vector")
     rfoam = _smooth(g, -1800, -900, g.out(rfn, "Fac"), 0.47, 0.5)
-    rfoam = g.math("MULTIPLY", -1700, -850, rfoam, rap).outputs[0]
+    rfoam = only(g.math("MULTIPLY", -1700, -850, rfoam, rap).outputs)
     streak = g.math("MAXIMUM", -1650, -300, g.out(streak, 0), rfoam)
     streak2 = g.math("MULTIPLY", -1650, -150, g.out(streak, 0), flow)
     streak2 = g.math("MULTIPLY", -1600, -100, g.out(streak2, 0), endf)
@@ -1013,9 +1013,9 @@ def water_material():
     cwid = g.out(g.maprange(-2100, -450, g.out(cwn, "Fac"), 0.3, 0.7, 0.045, 0.12), "Result")
     cin = g.math("MULTIPLY", -1950, -450, cwid, 0.7)
     contact = _smooth(g, -1800, -600, g.out(sh2, 0), cwid, g.out(cin, 0))
-    breathe = g.math("SINE", -2100, -800, g.math("MULTIPLY", -2250, -800, t, 1.7).outputs[0])
+    breathe = g.math("SINE", -2100, -800, only(g.math("MULTIPLY", -2250, -800, t, 1.7).outputs))
     off = g.math("MULTIPLY_ADD", -1950, -800, g.out(breathe, 0), 0.04, 0.24)
-    gap = g.math("ABSOLUTE", -1800, -800, g.math("SUBTRACT", -1950, -950, g.out(sh2, 0), g.out(off, 0)).outputs[0])
+    gap = g.math("ABSOLUTE", -1800, -800, only(g.math("SUBTRACT", -1950, -950, g.out(sh2, 0), g.out(off, 0)).outputs))
     ring2 = _smooth(g, -1650, -800, g.out(gap, 0), 0.016, 0.009)
     dsn = g.n("ShaderNodeTexNoise", -1900, -1050, noise_dimensions="2D")             # a few arcs, not a lane line
     g.set(dsn, "Scale", 0.9)
@@ -1025,22 +1025,22 @@ def water_material():
     pond_only = g.math("SUBTRACT", -1500, -950, 1.0, flow)
     ring2 = g.math("MULTIPLY", -1400, -850, g.out(ring2, 0), g.out(pond_only, 0))
     ring2 = g.math("MULTIPLY", -1350, -900, g.out(ring2, 0),
-                   g.math("MULTIPLY_ADD", -1450, -1000, g.out(night, 0), -0.5, 1.0).outputs[0])
+                   only(g.math("MULTIPLY_ADD", -1450, -1000, g.out(night, 0), -0.5, 1.0).outputs))
     obst = g.out(vc, "Z")
-    collar = _smooth(g, -1800, -1150, g.math("ADD", -1900, -1150, obst, g.out(jit, 0)).outputs[0], 0.07, 0.045)
+    collar = _smooth(g, -1800, -1150, only(g.math("ADD", -1900, -1150, obst, g.out(jit, 0)).outputs), 0.07, 0.045)
     lap = g.math("MULTIPLY_ADD", -2000, -1250, g.out(breathe, 0), 0.03, 0.17)
-    lapg = g.math("ABSOLUTE", -1900, -1250, g.math("SUBTRACT", -2000, -1300, obst, g.out(lap, 0)).outputs[0])
+    lapg = g.math("ABSOLUTE", -1900, -1250, only(g.math("SUBTRACT", -2000, -1300, obst, g.out(lap, 0)).outputs))
     lapr = _smooth(g, -1800, -1250, g.out(lapg, 0), 0.014, 0.008)
-    lapr = g.math("MULTIPLY", -1700, -1250, lapr, g.math("MAXIMUM", -1800, -1350, dash, 0.4).outputs[0])
+    lapr = g.math("MULTIPLY", -1700, -1250, lapr, only(g.math("MAXIMUM", -1800, -1350, dash, 0.4).outputs))
     collar = g.math("MAXIMUM", -1600, -1200, collar, g.out(lapr, 0))
-    contact = g.math("MAXIMUM", -1500, -650, contact, g.out(collar, 0)).outputs[0]
+    contact = only(g.math("MAXIMUM", -1500, -650, contact, g.out(collar, 0)).outputs)
     foam = g.math("MAXIMUM", -1350, -700, contact, g.out(ring2, 0))
     foam = g.math("MULTIPLY", -1250, -700, g.out(foam, 0), endf)
     foam = g.math("MULTIPLY", -1200, -650, g.out(foam, 0), mouth)
     rzf = _xyz(g, -1400, -500, g.out(g.n("ShaderNodeTexCoord", -1550, -500), "Reflection"))
     farf = g.maprange(-1250, -500, g.out(rzf, "Z"), 0.5, 0.25, 0.35, 1.0, smooth=True)    # lit far bank, dark near
     brk = _smooth(g, -1250, -400, g.out(fnz, "Fac"), 0.36, 0.42)
-    farf = g.math("MULTIPLY", -1100, -450, g.out(farf, "Result"), g.math("MAXIMUM", -1150, -350, brk, 0.5).outputs[0])
+    farf = g.math("MULTIPLY", -1100, -450, g.out(farf, "Result"), only(g.math("MAXIMUM", -1150, -350, brk, 0.5).outputs))
     foam = g.math("MULTIPLY", -1050, -600, g.out(foam, 0), g.out(farf, 0))
 
     # --- rain ripples: one ring per Voronoi cell, each cell on its own clock
@@ -1049,19 +1049,19 @@ def water_material():
     g.set(rv, "Randomness", 0.8)
     g.links.new(P, rv.inputs["Vector"])
     rc = g.n("ShaderNodeSeparateColor", -2100, -1350)
-    g.link(rv, "Color", rc, 0)
+    g.link(rv, "Color", rc, "Color")
     ph = g.math("MULTIPLY_ADD", -1950, -1300, t, 0.85, g.out(rc, "Red"))
     ph = g.math("FRACT", -1800, -1300, g.out(ph, 0))
     rad = g.math("MULTIPLY", -1650, -1400, g.out(ph, 0), 0.30)
-    rg = g.math("ABSOLUTE", -1500, -1300, g.math("SUBTRACT", -1650, -1250, g.out(rv, "Distance"),
-                                                  g.out(rad, 0)).outputs[0])
+    rg = g.math("ABSOLUTE", -1500, -1300, only(g.math("SUBTRACT", -1650, -1250, g.out(rv, "Distance"),
+                                                  g.out(rad, 0)).outputs))
     ring = _smooth(g, -1350, -1300, g.out(rg, 0), 0.010, 0.004)
     fade = g.math("SUBTRACT", -1350, -1450, 1.0, g.out(ph, 0))
     rz = g.n("ShaderNodeGroup", -1700, -1650)
     rz.node_tree = rain_zone_group()
     g.links.new(P, rz.inputs["Position"])
     live = g.math("LESS_THAN", -1350, -1550, g.out(rc, "Green"),
-                  g.math("MULTIPLY", -1500, -1650, g.out(pal, "water_rain"), g.out(rz, "Zone")).outputs[0])
+                  only(g.math("MULTIPLY", -1500, -1650, g.out(pal, "water_rain"), g.out(rz, "Zone")).outputs))
     ring = g.math("MULTIPLY", -1200, -1300, ring, g.out(fade, 0))
     ring = g.math("MULTIPLY", -1050, -1300, g.out(ring, 0), g.out(live, 0))
     ring = g.math("GREATER_THAN", -900, -1300, g.out(ring, 0), 0.25)
@@ -1075,7 +1075,7 @@ def water_material():
     g.set(gv, "Scale", 9.0)
     g.link(gx, 0, gv, "Vector")
     gs = g.n("ShaderNodeSeparateColor", -1800, -1850)
-    g.link(gv, "Color", gs, 0)
+    g.link(gv, "Color", gs, "Color")
     gdot = _smooth(g, -1650, -1750, g.out(gv, "Distance"), 0.05, 0.03)
     gsel = g.math("GREATER_THAN", -1650, -1900, g.out(gs, "Red"), 0.86)
     glint = g.math("MULTIPLY", -1500, -1800, gdot, g.out(gsel, 0))
@@ -1083,9 +1083,9 @@ def water_material():
     gls = g.n("ShaderNodeBsdfGlossy", -1800, -2100)
     g.set(gls, "Roughness", 0.25)
     gs2 = g.n("ShaderNodeShaderToRGB", -1650, -2100)
-    g.link(gls, 0, gs2, 0)
+    g.link(gls, 0, gs2, "Shader")
     gbw = g.n("ShaderNodeRGBToBW", -1500, -2100)
-    g.link(gs2, "Color", gbw, 0)
+    g.link(gs2, "Color", gbw, "Color")
     sunm = _smooth(g, -1350, -2100, g.out(gbw, 0), 0.25, 0.6)
     glint = g.math("MULTIPLY", -1200, -1900, g.out(glint, 0), sunm)
 
@@ -1105,16 +1105,16 @@ def water_material():
         vn = g.n("ShaderNodeValue", -1850, -2500 - 100 * k)
         vn.name = vn.label = "Moon" + ax
         g.link(vn, 0, ml, ax)
-    mln = g.vmath("NORMALIZE", -1550, -2550, ml.outputs[0])
+    mln = g.vmath("NORMALIZE", -1550, -2550, only(ml.outputs))
     rfl = g.out(g.n("ShaderNodeTexCoord", -1850, -2700), "Reflection")
     rxy = g.vmath("NORMALIZE", -1550, -2700, _flat(g, -1700, -2700, rfl))
-    mdot = g.vmath("DOT_PRODUCT", -1400, -2600, mln.outputs[0], rxy.outputs[0])
+    mdot = g.vmath("DOT_PRODUCT", -1400, -2600, only(mln.outputs), only(rxy.outputs))
     mcol = _smooth(g, -1250, -2150, mdot.outputs["Value"], 0.992, 0.998)           # a narrow path of light
-    mcol = g.math("MULTIPLY", -1150, -2100, mcol, _smooth(g, -1250, -2050, dn, 0.12, 0.3)).outputs[0]   # open water
+    mcol = only(g.math("MULTIPLY", -1150, -2100, mcol, _smooth(g, -1250, -2050, dn, 0.12, 0.3)).outputs)   # open water
     moon = g.math("MULTIPLY", -1100, -2200, mdash, mcol)
     moon = g.math("MULTIPLY", -1050, -2250, g.out(moon, 0), 0.75)                      # silver, not a white bar
-    moon = g.math("MULTIPLY", -1000, -2200, g.out(moon, 0), g.math("MINIMUM", -1100, -2350, g.out(pal, "water_glow"),
-                  1.0).outputs[0])
+    moon = g.math("MULTIPLY", -1000, -2200, g.out(moon, 0), only(g.math("MINIMUM", -1100, -2350, g.out(pal, "water_glow"),
+                  1.0).outputs))
     lines = g.math("MAXIMUM", -1100, -1000, g.out(foam, 0), g.out(ring, 0))
     lines = g.math("MAXIMUM", -1050, -1050, g.out(lines, 0), g.out(moon, 0))
     lines = g.math("MAXIMUM", -950, -1100, g.out(lines, 0), g.out(glint, 0))
@@ -1151,10 +1151,10 @@ def water_material():
     # (which half of a pond is "far": the side away from the camera, from the pond's centre)
     oi = g.n("ShaderNodeObjectInfo", -900, 1250)
     rel = g.vmath("SUBTRACT", -750, 1250, _flat(g, -900, 1350, P), _flat(g, -900, 1150, g.out(oi, "Location")))
-    rel = g.vmath("NORMALIZE", -600, 1250, rel.outputs[0])
+    rel = g.vmath("NORMALIZE", -600, 1250, only(rel.outputs))
     away = g.vmath("SCALE", -750, 1100, _flat(g, -900, 1050, g.out(geo, "Incoming")), scale=-1.0)
-    away = g.vmath("NORMALIZE", -600, 1100, away.outputs[0])
-    side_ = g.vmath("DOT_PRODUCT", -450, 1200, rel.outputs[0], away.outputs[0])
+    away = g.vmath("NORMALIZE", -600, 1100, only(away.outputs))
+    side_ = g.vmath("DOT_PRODUCT", -450, 1200, only(rel.outputs), only(away.outputs))
     farh = g.maprange(-300, 1200, side_.outputs["Value"], 0.05, 0.45, smooth=True)
     nearh = g.maprange(-300, 1350, side_.outputs["Value"], -0.1, -0.5, smooth=True)
     bw = g.math("MULTIPLY_ADD", -450, 1000, g.out(rn, "Fac"), 0.25, 0.25)              # band width wanders
@@ -1170,21 +1170,21 @@ def water_material():
     nb = g.math("MULTIPLY", -50, 1300, g.out(nearh, "Result"), g.out(nsh, "Result"))
     nb = g.math("MULTIPLY", 0, 1250, g.out(nb, 0), g.out(pond_, 0))
     ncol = g.mix(0, 1150, "MULTIPLY", fac=1.0, a=col, b=(0.62, 0.78, 0.76, 1.0))
-    col = g.mixout(g.mix(100, 800, fac=g.math("MULTIPLY", 50, 1200, g.out(nb, 0), 0.25).outputs[0], a=col,
+    col = g.mixout(g.mix(100, 800, fac=only(g.math("MULTIPLY", 50, 1200, g.out(nb, 0), 0.25).outputs), a=col,
                          b=g.mixout(ncol)))
     # lines on top, unshaded; at night they glow (strength > 1 feeds the bloom)
     glow = g.math("MULTIPLY_ADD", -500, -900, g.out(pal, "water_glow"), 0.25, 1.0)
     gl =g.n("ShaderNodeCombineColor", -450, -1200)
     for ch in ("Red", "Green", "Blue"):
         g.link(glow, 0, gl, ch)
-    fl = g.mix(-300, -1100, "MULTIPLY", fac=1.0, a=g.out(pal, "water_foam"), b=gl.outputs[0])
+    fl = g.mix(-300, -1100, "MULTIPLY", fac=1.0, a=g.out(pal, "water_foam"), b=only(gl.outputs))
     out = g.mix(-100, 400, fac=g.out(lines, 0), a=col, b=g.mixout(fl))
     # base glow at night: the water itself gives off a little light
     bg = g.math("MULTIPLY_ADD", -300, 200, g.out(pal, "water_glow"), 0.0, 1.0)
     bgc = g.n("ShaderNodeCombineColor", -150, 200)
     for ch in ("Red", "Green", "Blue"):
         g.link(bg, 0, bgc, ch)
-    out = g.mix(100, 400, "MULTIPLY", fac=1.0, a=g.mixout(out), b=bgc.outputs[0])
+    out = g.mix(100, 400, "MULTIPLY", fac=1.0, a=g.mixout(out), b=only(bgc.outputs))
     mo = shading._emit_out(g, g.mixout(out), 700, 400, pal=pal, haze=1.0)
     # real reflections (EEVEE ray tracing): the trees, rocks, clouds of THIS scene in the water, strongest at a
     # glancing angle, broken by small ripples; the painted toon colour stays underneath
@@ -1211,16 +1211,16 @@ def water_material():
     ramt = g.math("ADD", 750, 1250, ramt, 1.0)                                   # per body, neutral when missing
     rf = g.math("MULTIPLY", 800, 1100, g.out(lw, "Fresnel"), g.out(ramt, 0))
     rf = g.math("MULTIPLY_ADD", 900, 1100, g.out(rf, 0), 0.9, 0.06, clamp=True)
-    rf = g.math("MULTIPLY", 950, 1050, g.out(rf, 0), g.math("SUBTRACT", 900, 1000, 1.0, rap).outputs[0])
+    rf = g.math("MULTIPLY", 950, 1050, g.out(rf, 0), only(g.math("SUBTRACT", 900, 1000, 1.0, rap).outputs))
     bdist = g.out(g.n("ShaderNodeAttribute", 700, 1350, attribute_name="hrp_boatd", attribute_type="GEOMETRY"), "Fac")
     bnear = _smooth(g, 850, 1350, bdist, 0.3, 2.2)                      # no mirror right round a hull
     bex = g.n("ShaderNodeAttribute", 700, 1450, attribute_name="hrp_boatd", attribute_type="GEOMETRY")
-    bnear = g.math("MAXIMUM", 900, 1400, bnear, g.math("LESS_THAN", 800, 1450, g.out(bex, "Fac"), 0.0001).outputs[0])
+    bnear = g.math("MAXIMUM", 900, 1400, bnear, only(g.math("LESS_THAN", 800, 1450, g.out(bex, "Fac"), 0.0001).outputs))
     rf = g.math("MULTIPLY", 1000, 1100, g.out(rf, 0), g.out(bnear, 0))
     ms = g.n("ShaderNodeMixShader", 1000, 700)
-    g.link(rf, 0, ms, 0)
-    g.links.new(em_out, ms.inputs[1])
-    g.link(gl, 0, ms, 2)
+    g.link(rf, 0, ms, "Factor")
+    g.links.new(em_out, sock(ms.inputs, ("Shader", 0)))
+    g.link(gl, 0, ms, ("Shader", 1))
     g.link(ms, 0, mo, "Surface")
     mat["hrp_kind"] = "water"
     drive_time(bpy.context.scene)
@@ -1243,10 +1243,10 @@ def drive_moon(mat=None):
         if nd is None:
             continue
         try:
-            nd.outputs[0].driver_remove("default_value")
+            only(nd.outputs).driver_remove("default_value")
         except TypeError:
             pass
-        nd.outputs[0].default_value = md.inputs[k].default_value
+        only(nd.outputs).default_value = md.inputs[k].default_value
 
 
 def time_group():
@@ -1257,7 +1257,7 @@ def time_group():
         iface(ng, "Seconds", "OUTPUT", "NodeSocketFloat")
         v = g.n("ShaderNodeValue", 0, 0, label="seconds")
         out = g.n("NodeGroupOutput", 200, 0)
-        g.links.new(v.outputs[0], out.inputs[0])
+        g.links.new(only(v.outputs), sock(out.inputs, "Seconds"))
     return ng
 
 
@@ -1267,7 +1267,7 @@ def drive_time(scene):
     node = ng.nodes.get("seconds")
     if node is None or scene is None:
         return
-    sock = node.outputs[0]
+    sock = only(node.outputs)
     try:
         sock.driver_remove("default_value")
     except TypeError:

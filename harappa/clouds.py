@@ -235,7 +235,8 @@ def far_hills(context, ground, seed=0):
         rows.append(row)
     for j in range(seg_r):
         for i in range(seg_a):
-            bm.faces.new((rows[j][i], rows[j][(i + 1) % seg_a], rows[j + 1][(i + 1) % seg_a], rows[j + 1][i]))
+            # wound so the faces look up: the fringe grass stands along the face normal and is lit by it
+            bm.faces.new((rows[j][i], rows[j + 1][i], rows[j + 1][(i + 1) % seg_a], rows[j][(i + 1) % seg_a]))
     for f in bm.faces:
         f.smooth = True
     bm.to_mesh(me)
@@ -259,13 +260,14 @@ def far_hills(context, ground, seed=0):
     me.materials.append(shading.ground_material())
     ob.visible_shadow = False
     ob["hrp_far_hills"] = True
-    ob["hrp_haze_boost"] = 1.0
+    ob["hrp_haze_boost"] = 0.45          # some haze, but the hills keep their light, shade and colour patches
+    ob["hrp_size"] = float(size)           # same cloud shadows as the meadow they surround
     mod = ob.modifiers.get("Harappa Fringe") or ob.modifiers.new("Harappa Fringe", "NODES")   # not a meadow
     mod.node_group = scatter.grass_group()
     mod_input(mod, "Tuft", tree.tuft_object(scene))
     mod_input(mod, "Mask Attribute", "hrp_crest")
-    mod_input(mod, "Density", 1.2)
-    mod_input(mod, "Height", size * 0.03)
+    mod_input(mod, "Density", 3.0)
+    mod_input(mod, "Height", size * 0.012)
     mod_input(mod, "Width", 1.4)
     mod_input(mod, "LOD Distance", 0.0)
     mod_input(mod, "Wind Strength", 0.1)

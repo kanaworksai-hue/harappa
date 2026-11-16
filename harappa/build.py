@@ -24,6 +24,29 @@ def ensure_mask(me, name=scatter.MASK_ATTR, value=1.0):
     return attr
 
 
+def is_custom(ob):
+    """Does this meadow need the custom grass material (a painted colour, or its own colour)? While its Colour
+    layer is being painted it always does (hrp_painting_colour), so the strokes show at once."""
+    from . import layers
+    return bool(ob.type == "MESH" and ("hrp_look" in ob or "hrp_own" in ob or ob.get("hrp_painting_colour")
+                                       or "COLOUR" in layers.painted(ob)))
+
+
+def refresh_custom(ob):
+    """Point the meadow's grass at the plain or the custom tuft, whichever it needs now (back to the plain, faster
+    one when the colour is cleared again)."""
+    mod = ob.modifiers.get(GRASS_MOD) if ob.type == "MESH" else None
+    if mod is None or mod.node_group is None:
+        return
+    want = tree.tuft_object(bpy.context.scene, custom=is_custom(ob))
+    try:
+        if mod_input(mod, "Tuft") != want:
+            mod_input(mod, "Tuft", want)
+            ob.update_tag()
+    except KeyError:
+        pass
+
+
 def ground_area(ob):
     me = ob.data
     s = ob.matrix_world.to_scale()
@@ -45,7 +68,8 @@ def make_meadow(context, ob, density=40.0, height=0.35, flowers=True, max_tufts=
             me.materials[i] = gm
     area = max(ground_area(ob), 1e-4)
     dens = min(density, max_tufts / area)
-    tuft = tree.tuft_object(scene)
+    ob["hrp_max_density"] = float(max_tufts / area)       # a look's grass settings stay under it too
+    tuft = tree.tuft_object(scene, custom=is_custom(ob))
     mod = ob.modifiers.get(GRASS_MOD)
     if mod is None:
         mod = ob.modifiers.new(GRASS_MOD, "NODES")
@@ -80,4 +104,5 @@ def make_meadow(context, ob, density=40.0, height=0.35, flowers=True, max_tufts=
     wc = bpy.data.collections.get(water.COLLECTION)
     if wc is not None and wc.all_objects and not ob.get("hrp_far_hills"):
         water.attach_carve(scene, ob)                       # meadows made after the water still get a bed
+    ob["hrp_size"] = float(max(ob.dimensions.x, ob.dimensions.y, 1.0))     # the cloud shadows' scale
     return mod

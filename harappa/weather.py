@@ -19,7 +19,7 @@ import bpy
 from mathutils import Vector
 
 from . import shading
-from .util import G, fresh_group, iface, mod_input, srgb
+from .util import G, fresh_group, iface, mod_input, only, sock, srgb
 
 WEATHER_VER = 12
 RAIN = "HRP Rain"
@@ -57,8 +57,8 @@ def rain_material():
     pal = g.n("ShaderNodeGroup", -800, 0)
     pal.node_tree = shading.palette_group()
     ry = g.n("ShaderNodeAttribute", -800, 300, attribute_name="hrp_ry", attribute_type="GEOMETRY")
-    a = g.math("MULTIPLY", -400, 300, g.math("SINE", -500, 300, g.math("MULTIPLY", -550, 350, g.out(ry, "Fac"),
-               math.pi).outputs[0]).outputs[0], 0.6)
+    a = g.math("MULTIPLY", -400, 300, only(g.math("SINE", -500, 300, only(g.math("MULTIPLY", -550, 350, g.out(ry, "Fac"),
+               math.pi).outputs)).outputs), 0.6)
     cd = g.n("ShaderNodeCameraData", -800, 500)
     near = g.maprange(-600, 500, g.out(cd, "View Distance"), 2.0, 6.0, smooth=True)   # no streaks across the lens
     a = g.math("MULTIPLY", -300, 400, g.out(a, 0), g.out(near, "Result"))
@@ -67,9 +67,9 @@ def rain_material():
     g.links.new(g.mixout(col), em.inputs["Color"])
     tr = g.n("ShaderNodeBsdfTransparent", -100, 150)
     ms = g.n("ShaderNodeMixShader", 100, 100)
-    g.link(a, 0, ms, 0)
-    g.link(tr, 0, ms, 1)
-    g.link(em, 0, ms, 2)
+    g.link(a, 0, ms, "Factor")
+    g.link(tr, 0, ms, ("Shader", 0))
+    g.link(em, 0, ms, ("Shader", 1))
     out = g.n("ShaderNodeOutputMaterial", 300, 100)
     g.link(ms, 0, out, "Surface")
     mat.surface_render_method = "BLENDED"
@@ -93,10 +93,10 @@ def rain_group():
     gi = g.n("NodeGroupInput", -1600, 0)
     go = g.n("NodeGroupOutput", 1200, 0)
     # count ~ area x amount, capped
-    area = g.math("MULTIPLY", -1400, -200, g.math("MULTIPLY", -1500, -200, g.out(gi, "Radius"), g.out(gi, "Radius"))
-                  .outputs[0], 3.1416)
-    cnt = g.math("MULTIPLY", -1250, -200, g.out(area, 0), g.math("MULTIPLY", -1350, -300, g.out(gi, "Amount"), 9.0)
-                 .outputs[0])
+    area = g.math("MULTIPLY", -1400, -200, only(g.math("MULTIPLY", -1500, -200, g.out(gi, "Radius"), g.out(gi, "Radius"))
+                  .outputs), 3.1416)
+    cnt = g.math("MULTIPLY", -1250, -200, g.out(area, 0), only(g.math("MULTIPLY", -1350, -300, g.out(gi, "Amount"), 9.0)
+                 .outputs))
     cnt = g.math("MINIMUM", -1100, -200, g.out(cnt, 0), 40000.0)
     pts = g.n("GeometryNodePoints", -950, 0)
     g.link(cnt, 0, pts, "Count")
@@ -104,16 +104,16 @@ def rain_group():
     r1 = g.n("FunctionNodeRandomValue", -1250, -500, data_type="FLOAT_VECTOR")
     r1.inputs["Max"].default_value = (1.0, 1.0, 1.0)
     rs = _xyz(g, -1100, -500, g.out(r1, "Value", "VECTOR"))
-    rad = g.math("MULTIPLY", -950, -450, g.math("SQRT", -1000, -450, g.out(rs, "X")).outputs[0], g.out(gi, "Radius"))
+    rad = g.math("MULTIPLY", -950, -450, only(g.math("SQRT", -1000, -450, g.out(rs, "X")).outputs), g.out(gi, "Radius"))
     ang = g.math("MULTIPLY", -950, -600, g.out(rs, "Y"), 6.2832)
     tm = g.n("GeometryNodeInputSceneTime", -1250, -800)
-    fall = g.math("FRACT", -850, -800, g.math("MULTIPLY_ADD", -950, -800, g.out(tm, "Seconds"),
-                  g.math("DIVIDE", -1050, -900, 9.0, g.out(gi, "Height")).outputs[0], g.out(rs, "Z")).outputs[0])
-    z = g.math("MULTIPLY", -700, -800, g.math("SUBTRACT", -800, -850, 1.0, g.out(fall, 0)).outputs[0],
+    fall = g.math("FRACT", -850, -800, only(g.math("MULTIPLY_ADD", -950, -800, g.out(tm, "Seconds"),
+                  only(g.math("DIVIDE", -1050, -900, 9.0, g.out(gi, "Height")).outputs), g.out(rs, "Z")).outputs))
+    z = g.math("MULTIPLY", -700, -800, only(g.math("SUBTRACT", -800, -850, 1.0, g.out(fall, 0)).outputs),
                g.out(gi, "Height"))
-    x = g.math("MULTIPLY_ADD", -700, -450, g.math("COSINE", -800, -450, g.out(ang, 0)).outputs[0], g.out(rad, 0),
-               g.math("MULTIPLY", -800, -650, g.out(z, 0), g.out(gi, "Wind")).outputs[0])
-    y = g.math("MULTIPLY", -700, -600, g.math("SINE", -800, -600, g.out(ang, 0)).outputs[0], g.out(rad, 0))
+    x = g.math("MULTIPLY_ADD", -700, -450, only(g.math("COSINE", -800, -450, g.out(ang, 0)).outputs), g.out(rad, 0),
+               only(g.math("MULTIPLY", -800, -650, g.out(z, 0), g.out(gi, "Wind")).outputs))
+    y = g.math("MULTIPLY", -700, -600, only(g.math("SINE", -800, -600, g.out(ang, 0)).outputs), g.out(rad, 0))
     p = g.n("ShaderNodeCombineXYZ", -550, -500)
     g.link(x, 0, p, "X")
     g.link(y, 0, p, "Y")
@@ -128,7 +128,7 @@ def rain_group():
     q1.inputs["Vertices X"].default_value = 2
     q1.inputs["Vertices Y"].default_value = 2
     quv = g.n("GeometryNodeStoreNamedAttribute", -450, -1000, data_type="FLOAT", domain="CORNER")
-    g.link(q1, 0, quv, "Geometry")
+    g.link(q1, "Mesh", quv, "Geometry")
     quv.inputs["Name"].default_value = "hrp_ry"
     g.link(_xyz(g, -550, -1000, g.out(q1, "UV Map")), "Y", quv, "Value", bkind="VALUE")
     rot1 = g.n("GeometryNodeTransform", -400, -1100)
@@ -138,8 +138,8 @@ def rain_group():
     g.link(rot1, 0, rot2, "Geometry")
     rot2.inputs["Rotation"].default_value = (0.0, 0.0, 1.5708)
     jn = g.n("GeometryNodeJoinGeometry", -250, -1150)
-    g.link(rot1, 0, jn, 0)
-    g.link(rot2, 0, jn, 0)
+    g.link(rot1, 0, jn, "Geometry")
+    g.link(rot2, 0, jn, "Geometry")
     lean = g.n("ShaderNodeCombineXYZ", -250, -900)
     g.link(g.math("ARCTAN2", -350, -900, g.out(gi, "Wind"), 1.0), 0, lean, "Y")
     inst = g.n("GeometryNodeInstanceOnPoints", -50, 0)
@@ -158,15 +158,15 @@ def rain_group():
     g.link(vp, 0, sw, "Switch")
     g.link(cc, 0, sw, "True")
     jn2 = g.n("GeometryNodeJoinGeometry", 600, 0)
-    g.link(sm, 0, jn2, 0)
-    g.link(sw, 0, jn2, 0)
-    g.link(jn2, 0, go, 0)
+    g.link(sm, 0, jn2, "Geometry")
+    g.link(sw, 0, jn2, "Geometry")
+    g.link(jn2, 0, go, "Geometry")
     return ng
 
 
 def _xyz(g, x, y, vec):
     sep = g.n("ShaderNodeSeparateXYZ", x, y)
-    g.links.new(vec, sep.inputs[0])
+    g.links.new(vec, sock(sep.inputs, "Vector"))
     return sep
 
 
@@ -236,9 +236,9 @@ def rainbow_material():
     g = G(mat.node_tree)
     uv = g.n("ShaderNodeUVMap", -900, 0)
     sep = g.n("ShaderNodeSeparateXYZ", -700, 0)
-    g.link(uv, 0, sep, 0)
+    g.link(uv, 0, sep, "Vector")
     ramp = g.n("ShaderNodeValToRGB", -500, 0)
-    g.link(sep, "Y", ramp, 0)
+    g.link(sep, "Y", ramp, "Factor")
     cols = ["#9B6BD8", "#5A7BE0", "#4FB6E8", "#7CD67A", "#F4E35C", "#F7A04C", "#E8584E"]
     els = ramp.color_ramp.elements
     ramp.color_ramp.interpolation = "LINEAR"
@@ -248,20 +248,20 @@ def rainbow_material():
         e.position = pos
         e.color = (*srgb(hx), 1.0)
     # soft across the band, fading near the ground at the ends
-    across = g.math("SINE", -500, -250, g.math("MULTIPLY", -600, -250, g.out(sep, "Y"), math.pi).outputs[0])
-    ends = g.maprange(-500, -400, g.math("SINE", -600, -400, g.math("MULTIPLY", -700, -400, g.out(sep, "X"),
-                      math.pi).outputs[0]).outputs[0], 0.05, 0.75, smooth=True)          # the lower third fades out
+    across = g.math("SINE", -500, -250, only(g.math("MULTIPLY", -600, -250, g.out(sep, "Y"), math.pi).outputs))
+    ends = g.maprange(-500, -400, only(g.math("SINE", -600, -400, only(g.math("MULTIPLY", -700, -400, g.out(sep, "X"),
+                      math.pi).outputs)).outputs), 0.05, 0.75, smooth=True)          # the lower third fades out
     amt = g.n("ShaderNodeAttribute", -700, -600, attribute_name="hrp_rainbow", attribute_type="OBJECT")
     a = g.math("MULTIPLY", -300, -300, g.out(across, 0), g.out(ends, "Result"))
     a = g.math("MULTIPLY", -150, -300, g.out(a, 0), g.out(amt, "Fac"))
     a = g.math("MULTIPLY", -50, -300, g.out(a, 0), 0.55)
     em = g.n("ShaderNodeEmission", -100, 0)
-    g.link(ramp, 0, em, "Color")
+    g.link(ramp, "Color", em, "Color")
     tr = g.n("ShaderNodeBsdfTransparent", -100, 150)
     ms = g.n("ShaderNodeMixShader", 150, 100)
-    g.link(a, 0, ms, 0)
-    g.link(tr, 0, ms, 1)
-    g.link(em, 0, ms, 2)
+    g.link(a, 0, ms, "Factor")
+    g.link(tr, 0, ms, ("Shader", 0))
+    g.link(em, 0, ms, ("Shader", 1))
     out = g.n("ShaderNodeOutputMaterial", 350, 100)
     g.link(ms, 0, out, "Surface")
     mat.surface_render_method = "BLENDED"
@@ -339,7 +339,7 @@ def fly_material():
     st = g.math("MULTIPLY", -400, 200, g.out(st, 0), 4.5)
     lw = g.n("ShaderNodeLayerWeight", -800, 550)                     # a soft glowing dot: bright core, clear edge
     g.set(lw, "Blend", 0.5)
-    core = g.math("POWER", -600, 550, g.math("SUBTRACT", -700, 550, 1.0, g.out(lw, "Facing")).outputs[0], 2.5)
+    core = g.math("POWER", -600, 550, only(g.math("SUBTRACT", -700, 550, 1.0, g.out(lw, "Facing")).outputs), 2.5)
     st = g.math("MULTIPLY", -400, 300, g.out(st, 0), g.out(core, 0))
     em = g.n("ShaderNodeEmission", -200, 0)
     g.link(pal, "firefly_colour", em, "Color")
@@ -350,9 +350,9 @@ def fly_material():
     vis = g.math("MULTIPLY", -250, 450, g.out(vis, 0), g.out(core, 0))
     tr = g.n("ShaderNodeBsdfTransparent", -200, 200)
     ms = g.n("ShaderNodeMixShader", 0, 100)
-    g.link(vis, 0, ms, 0)
-    g.link(tr, 0, ms, 1)
-    g.link(em, 0, ms, 2)
+    g.link(vis, 0, ms, "Factor")
+    g.link(tr, 0, ms, ("Shader", 0))
+    g.link(em, 0, ms, ("Shader", 1))
     out = g.n("ShaderNodeOutputMaterial", 200, 100)
     g.link(ms, 0, out, "Surface")
     mat.surface_render_method = "BLENDED"
@@ -381,9 +381,9 @@ def flies_group():
     near = g.maprange(-1200, -250, g.out(sd, "Attribute"), 3.0, 0.2, smooth=True)
     near = g.math("POWER", -1100, -250, g.out(near, "Result"), 0.5)
     dry = g.maprange(-1200, -400, g.out(sd, "Attribute"), -0.1, 0.2, smooth=True)
-    w = g.math("MULTIPLY_ADD", -1000, -300, g.out(near, 0), g.math("MULTIPLY", -1100, -350, g.out(gi, "Near Water"),
-               6.0).outputs[0],
-               g.math("SUBTRACT", -1100, -450, 1.0, g.out(gi, "Near Water")).outputs[0])
+    w = g.math("MULTIPLY_ADD", -1000, -300, g.out(near, 0), only(g.math("MULTIPLY", -1100, -350, g.out(gi, "Near Water"),
+               6.0).outputs),
+               only(g.math("SUBTRACT", -1100, -450, 1.0, g.out(gi, "Near Water")).outputs))
     w = g.math("MULTIPLY", -850, -300, g.out(w, 0), g.out(dry, "Result"))
     dist = g.n("GeometryNodeDistributePointsOnFaces", -700, 0)
     g.link(oi, "Geometry", dist, "Mesh")
@@ -400,7 +400,7 @@ def flies_group():
     tm = g.n("GeometryNodeInputSceneTime", -550, -500)
     pos = g.n("GeometryNodeInputPosition", -550, -650)
     nv = g.n("ShaderNodeCombineXYZ", -400, -600)
-    ps = _xyz(g, -500, -750, pos.outputs[0])
+    ps = _xyz(g, -500, -750, only(pos.outputs))
     g.link(ps, "X", nv, "X")
     g.link(ps, "Y", nv, "Y")
     g.link(g.math("MULTIPLY", -500, -550, g.out(tm, "Seconds"), 0.18), 0, nv, "Z")
@@ -408,16 +408,16 @@ def flies_group():
     g.set(nz, "Scale", 0.35)
     g.set(nz, "Detail", 1.0)
     g.link(nv, 0, nz, "Vector")
-    dv = g.vmath("MULTIPLY_ADD", -100, -600, g.out(nz, "Color"), (1.6, 1.6, 0.8)).outputs[0]
-    dv = g.vmath("ADD", 0, -600, dv, (-0.8, -0.8, 0.15)).outputs[0]
+    dv = only(g.vmath("MULTIPLY_ADD", -100, -600, g.out(nz, "Color"), (1.6, 1.6, 0.8)).outputs)
+    dv = only(g.vmath("ADD", 0, -600, dv, (-0.8, -0.8, 0.15)).outputs)
     mv = g.n("GeometryNodeSetPosition", -350, 0)
     g.link(sel, "Selection", mv, "Geometry")
     g.links.new(dv, mv.inputs["Offset"])
     # blink out of step: each fly on its own slow clock
     rp = g.n("FunctionNodeRandomValue", -200, -900, data_type="FLOAT")
     g.set(rp, "Max", 1.0, "VALUE")
-    ph = g.math("FRACT", -50, -900, g.math("MULTIPLY_ADD", -150, -900, g.out(tm, "Seconds"), 0.45,
-                g.out(rp, "Value", "VALUE")).outputs[0])
+    ph = g.math("FRACT", -50, -900, only(g.math("MULTIPLY_ADD", -150, -900, g.out(tm, "Seconds"), 0.45,
+                g.out(rp, "Value", "VALUE")).outputs))
     blink = g.maprange(100, -900, g.out(ph, 0), 0.0, 0.18, smooth=True)
     blink2 = g.maprange(100, -1050, g.out(ph, 0), 0.5, 0.25, smooth=True)
     bl = g.math("MULTIPLY", 250, -950, g.out(blink, "Result"), g.out(blink2, "Result"))
@@ -432,7 +432,7 @@ def flies_group():
     fv = g.n("FunctionNodeRandomValue", 100, -450, data_type="FLOAT")
     g.set(fv, "Min", 0.5, "VALUE")
     g.set(fv, "Max", 1.3, "VALUE")
-    scl = g.math("MULTIPLY", 250, -300, g.math("MULTIPLY_ADD", 150, -350, g.out(bl, 0), 0.8, 0.2).outputs[0],
+    scl = g.math("MULTIPLY", 250, -300, only(g.math("MULTIPLY_ADD", 150, -350, g.out(bl, 0), 0.8, 0.2).outputs),
                  g.out(fv, "Value", "VALUE"))
     inst = g.n("GeometryNodeInstanceOnPoints", 300, 0)
     g.link(st, 0, inst, "Points")
@@ -441,11 +441,11 @@ def flies_group():
     g.link(icos, 0, inst, "Instance")
     g.link(scl, 0, inst, "Scale")
     real = g.n("GeometryNodeRealizeInstances", 500, 0)
-    g.link(inst, 0, real, 0)
+    g.link(inst, 0, real, "Geometry")
     sm = g.n("GeometryNodeSetMaterial", 700, 0)
     g.link(real, 0, sm, "Geometry")
     g.link(gi, "Material", sm, "Material")
-    g.link(sm, 0, go, 0)
+    g.link(sm, 0, go, "Geometry")
     return ng
 
 

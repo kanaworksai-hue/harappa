@@ -14,7 +14,7 @@ import bmesh
 import bpy
 
 from . import shading
-from .util import G, fresh_group, iface, menu, mod_input
+from .util import G, fresh_group, iface, menu, mod_input, only, sock
 
 LIFE_VER = 14
 LIFE = "HRP Pond Life"
@@ -204,15 +204,15 @@ def ring_material():
     tg.node_tree = water.time_group()
     t = g.out(tg, "Seconds")
     ph = g.out(g.n("ShaderNodeAttribute", -1200, 0, attribute_name="hrp_pad", attribute_type="INSTANCER"), "Fac")
-    line = g.maprange(-800, 400, g.math("ABSOLUTE", -900, 400, g.math("SUBTRACT", -1000, 400, r, 0.815).outputs[0])
-                      .outputs[0], 0.02, 0.01, 0.0, 0.8, smooth=True)
-    fr_ = g.math("FRACT", -900, 200, g.math("MULTIPLY_ADD", -1000, 200, t, 0.4,
-                 g.math("MULTIPLY", -1100, 100, ph, 7.0).outputs[0]).outputs[0])
+    line = g.maprange(-800, 400, only(g.math("ABSOLUTE", -900, 400, only(g.math("SUBTRACT", -1000, 400, r, 0.815).outputs))
+                      .outputs), 0.02, 0.01, 0.0, 0.8, smooth=True)
+    fr_ = g.math("FRACT", -900, 200, only(g.math("MULTIPLY_ADD", -1000, 200, t, 0.4,
+                 only(g.math("MULTIPLY", -1100, 100, ph, 7.0).outputs)).outputs))
     rr = g.math("MULTIPLY_ADD", -800, 200, g.out(fr_, 0), 0.17, 0.83)
-    lap = g.maprange(-650, 200, g.math("ABSOLUTE", -700, 250, g.math("SUBTRACT", -750, 250, r, g.out(rr, 0))
-                     .outputs[0]).outputs[0], 0.02, 0.01, smooth=True)
-    lap = g.math("MULTIPLY", -550, 200, g.out(lap, "Result"), g.math("MULTIPLY", -650, 100, g.math(
-        "SUBTRACT", -750, 100, 1.0, g.out(fr_, 0)).outputs[0], 0.7).outputs[0])
+    lap = g.maprange(-650, 200, only(g.math("ABSOLUTE", -700, 250, only(g.math("SUBTRACT", -750, 250, r, g.out(rr, 0))
+                     .outputs)).outputs), 0.02, 0.01, smooth=True)
+    lap = g.math("MULTIPLY", -550, 200, g.out(lap, "Result"), only(g.math("MULTIPLY", -650, 100, only(g.math(
+        "SUBTRACT", -750, 100, 1.0, g.out(fr_, 0)).outputs), 0.7).outputs))
     # not stamped: the line breaks into arcs, only some pads lap, each its own strength; quieter at night
     ang = g.out(g.n("ShaderNodeAttribute", -1200, -200, attribute_name="hrp_ang", attribute_type="GEOMETRY"), "Fac")
     dv = g.n("ShaderNodeCombineXYZ", -1000, -250)
@@ -224,20 +224,20 @@ def ring_material():
     g.link(dv, 0, dn_, "Vector")
     arcs = g.maprange(-700, -250, g.out(dn_, "Fac"), 0.38, 0.44, smooth=True)
     line = g.math("MULTIPLY", -600, 350, g.out(line, "Result"), g.out(arcs, "Result"))
-    some = g.math("LESS_THAN", -700, 100, g.math("FRACT", -800, 100, g.math("MULTIPLY", -900, 100, ph, 3.7)
-                  .outputs[0]).outputs[0], 0.4)
+    some = g.math("LESS_THAN", -700, 100, only(g.math("FRACT", -800, 100, only(g.math("MULTIPLY", -900, 100, ph, 3.7)
+                  .outputs)).outputs), 0.4)
     lap = g.math("MULTIPLY", -500, 150, g.out(lap, 0), g.out(some, 0))
     a = g.math("MAXIMUM", -400, 300, g.out(line, 0), g.out(lap, 0))
-    stren = g.math("MULTIPLY_ADD", -500, 0, g.math("FRACT", -600, 0, g.math("MULTIPLY", -700, 0, ph, 7.3).outputs[0])
-                   .outputs[0], 0.5, 0.5)
+    stren = g.math("MULTIPLY_ADD", -500, 0, only(g.math("FRACT", -600, 0, only(g.math("MULTIPLY", -700, 0, ph, 7.3).outputs))
+                   .outputs), 0.5, 0.5)
     a = g.math("MULTIPLY", -350, 250, g.out(a, 0), g.out(stren, 0))
-    a = g.math("MULTIPLY", -300, 200, g.out(a, 0), g.math("MULTIPLY_ADD", -400, -100, g.out(pal, "water_glow"),
-               -0.7, 1.0).outputs[0])
+    a = g.math("MULTIPLY", -300, 200, g.out(a, 0), only(g.math("MULTIPLY_ADD", -400, -100, g.out(pal, "water_glow"),
+               -0.7, 1.0).outputs))
     glow = g.math("MULTIPLY_ADD", -500, -100, g.out(pal, "water_glow"), 0.6, 1.0)
     gc = g.n("ShaderNodeCombineColor", -350, -100)
     for ch in ("Red", "Green", "Blue"):
         g.link(glow, 0, gc, ch)
-    col = g.mix(-200, 100, "MULTIPLY", fac=1.0, a=g.out(pal, "water_foam"), b=gc.outputs[0])
+    col = g.mix(-200, 100, "MULTIPLY", fac=1.0, a=g.out(pal, "water_foam"), b=only(gc.outputs))
     shading._emit_out(g, g.mixout(col), 0, 100, pal=pal, alpha=g.out(a, 0), shadow_off=True, soft=True)
     mat.surface_render_method = "BLENDED"
     mat["hrp_kind"] = "ring"
@@ -253,13 +253,13 @@ def ring_disc(g, x, y):
     g.link(c, 0, sub, "Mesh")
     sub.inputs["Level"].default_value = 2
     pos = g.n("GeometryNodeInputPosition", x, y - 150)
-    ln = g.vmath("LENGTH", x + 150, y - 150, pos.outputs[0])
+    ln = g.vmath("LENGTH", x + 150, y - 150, only(pos.outputs))
     st = g.n("GeometryNodeStoreNamedAttribute", x + 300, y, data_type="FLOAT", domain="POINT")
     g.link(sub, 0, st, "Geometry")
     st.inputs["Name"].default_value = "hrp_r"
     g.link(g.math("DIVIDE", x + 250, y - 150, g.out(ln, "Value"), 1.25), 0, st, "Value", bkind="VALUE")
     ps_ = g.n("ShaderNodeSeparateXYZ", x + 150, y - 300)
-    g.link(pos, 0, ps_, 0)
+    g.link(pos, 0, ps_, "Vector")
     st2 = g.n("GeometryNodeStoreNamedAttribute", x + 380, y, data_type="FLOAT", domain="POINT")
     g.link(st, 0, st2, "Geometry")
     st2.inputs["Name"].default_value = "hrp_ang"
@@ -278,18 +278,18 @@ def leaf_material():
     g, pal = gp
     geo = g.n("ShaderNodeNewGeometry", -900, 500)
     r = g.out(g.n("ShaderNodeAttribute", -900, 300, attribute_name="hrp_leaf", attribute_type="INSTANCER"), "Fac")
-    lit = g.mix(-700, 300, fac=g.math("GREATER_THAN", -800, 300, r, 0.3).outputs[0], a=(0.62, 0.08, 0.07, 1.0),
+    lit = g.mix(-700, 300, fac=only(g.math("GREATER_THAN", -800, 300, r, 0.3).outputs), a=(0.62, 0.08, 0.07, 1.0),
                 b=(0.85, 0.27, 0.07, 1.0))                                   # crimson / vermilion
-    lit = g.mix(-600, 300, fac=g.math("GREATER_THAN", -700, 200, r, 0.6).outputs[0], a=g.mixout(lit),
+    lit = g.mix(-600, 300, fac=only(g.math("GREATER_THAN", -700, 200, r, 0.6).outputs), a=g.mixout(lit),
                 b=(0.82, 0.55, 0.13, 1.0))                                   # ochre
-    lit = g.mix(-500, 300, fac=g.math("GREATER_THAN", -600, 100, r, 0.85).outputs[0], a=g.mixout(lit),
+    lit = g.mix(-500, 300, fac=only(g.math("GREATER_THAN", -600, 100, r, 0.85).outputs), a=g.mixout(lit),
                 b=(0.42, 0.25, 0.12, 1.0))                                   # brown
-    vj = g.math("MULTIPLY_ADD", -500, 0, g.math("FRACT", -600, 0, g.math("MULTIPLY", -700, 0, r, 13.7).outputs[0])
-                .outputs[0], 0.3, 0.85)
+    vj = g.math("MULTIPLY_ADD", -500, 0, only(g.math("FRACT", -600, 0, only(g.math("MULTIPLY", -700, 0, r, 13.7).outputs))
+                .outputs), 0.3, 0.85)
     vjc = g.n("ShaderNodeCombineColor", -400, 0)
     for ch in ("Red", "Green", "Blue"):
         g.link(vj, 0, vjc, ch)
-    lit = g.mix(-450, 300, "MULTIPLY", fac=1.0, a=g.mixout(lit), b=vjc.outputs[0])
+    lit = g.mix(-450, 300, "MULTIPLY", fac=1.0, a=g.mixout(lit), b=only(vjc.outputs))
     vein = g.out(g.n("ShaderNodeTexCoord", -900, 700), "Object")
     _ = vein
     sh = g.mix(-450, 100, "MULTIPLY", fac=1.0, a=g.mixout(lit), b=(0.75, 0.7, 0.8, 1.0))
@@ -310,12 +310,12 @@ def lily_material():
     geo = g.n("ShaderNodeNewGeometry", -1400, 500)
     tc = g.n("ShaderNodeTexCoord", -1400, 300)
     ob = g.n("ShaderNodeSeparateXYZ", -1200, 300)
-    g.link(tc, "Object", ob, 0)
+    g.link(tc, "Object", ob, "Vector")
     ang = g.math("ARCTAN2", -1000, 350, g.out(ob, "Y"), g.out(ob, "X"))
     rad = g.n("ShaderNodeVectorMath", -1000, 200, operation="LENGTH")
-    g.link(tc, "Object", rad, 0)
-    vein = g.math("ABSOLUTE", -800, 350, g.math("SINE", -900, 350, g.math("MULTIPLY", -950, 400, g.out(ang, 0),
-                                                                         9.0).outputs[0]).outputs[0])
+    g.link(tc, "Object", rad, ("Vector", 0))
+    vein = g.math("ABSOLUTE", -800, 350, only(g.math("SINE", -900, 350, only(g.math("MULTIPLY", -950, 400, g.out(ang, 0),
+                                                                         9.0).outputs)).outputs))
     vein = g.maprange(-650, 350, g.out(vein, 0), 0.10, 0.04, smooth=True)
     vin = g.maprange(-650, 200, g.out(rad, "Value"), 0.15, 0.3, smooth=True)
     vein = g.math("MULTIPLY", -500, 300, g.out(vein, "Result"), g.out(vin, "Result"))
@@ -328,21 +328,21 @@ def lily_material():
     lit = g.mix(-350, 350, fac=0.35, a=g.mixout(lit), b=g.out(pal, "leaf_shadow"))      # at the grass's value
     # some pads stay green whatever the season (in autumn not every pad turns)
     stay = g.maprange(-700, 1100, g.out(ptn, "Fac"), 0.42, 0.38, smooth=True)
-    lit = g.mix(-320, 700, fac=g.math("MULTIPLY", -420, 1100, g.out(stay, "Result"), 0.6).outputs[0],
+    lit = g.mix(-320, 700, fac=only(g.math("MULTIPLY", -420, 1100, g.out(stay, "Result"), 0.6).outputs),
                 a=g.mixout(lit), b=(0.36, 0.62, 0.22, 1.0))                   # fresh green, not olive
     # young pads are bronze-red, a few old ones yellowing
     young = g.maprange(-700, 800, g.out(ptn, "Fac"), 0.86, 0.9, smooth=True)
-    lit = g.mix(-300, 600, fac=g.math("MULTIPLY", -400, 700, g.out(young, "Result"), 0.3).outputs[0],
+    lit = g.mix(-300, 600, fac=only(g.math("MULTIPLY", -400, 700, g.out(young, "Result"), 0.3).outputs),
                 a=g.mixout(lit), b=(0.62, 0.36, 0.26, 1.0))
     old_ = g.maprange(-700, 950, g.out(ptn, "Fac"), 0.06, 0.02, smooth=True)
-    lit = g.mix(-280, 650, fac=g.math("MULTIPLY", -400, 900, g.out(old_, "Result"), 0.12).outputs[0],
+    lit = g.mix(-280, 650, fac=only(g.math("MULTIPLY", -400, 900, g.out(old_, "Result"), 0.12).outputs),
                 a=g.mixout(lit), b=(0.85, 0.82, 0.42, 1.0))
-    lit = g.mix(-250, 400, fac=g.math("MULTIPLY", -350, 450, g.out(vein, 0), 0.28).outputs[0], a=g.mixout(lit),
+    lit = g.mix(-250, 400, fac=only(g.math("MULTIPLY", -350, 450, g.out(vein, 0), 0.28).outputs), a=g.mixout(lit),
                 b=g.out(pal, "grass_tip"))
-    lit = g.mix(-100, 400, fac=g.math("MULTIPLY", -200, 450, g.out(rim, "Result"), 0.2).outputs[0],
+    lit = g.mix(-100, 400, fac=only(g.math("MULTIPLY", -200, 450, g.out(rim, "Result"), 0.2).outputs),
                 a=g.mixout(lit), b=g.out(pal, "leaf_lit"))
     edge_ = g.maprange(-650, -100, g.out(rad, "Value"), 0.94, 0.985, smooth=True)       # a wet dark lip: sits IN
-    lit = g.mix(-50, 450, fac=g.math("MULTIPLY", -200, -100, g.out(edge_, "Result"), 0.55).outputs[0],   # the water
+    lit = g.mix(-50, 450, fac=only(g.math("MULTIPLY", -200, -100, g.out(edge_, "Result"), 0.55).outputs),   # the water
                 a=g.mixout(lit), b=g.out(pal, "grass_deep"))
     sh = g.mix(-250, 150, fac=0.4, a=g.out(pal, "grass_shadow"), b=g.out(pal, "leaf_mid"))
     cel = shading._cel_node(g, pal, 100, 300, g.out(geo, "Normal"), g.mixout(lit), g.mixout(sh),
@@ -433,13 +433,13 @@ def life_group():
     c = g.n("GeometryNodeInputNamedAttribute", -1600, -600, data_type="FLOAT_VECTOR")
     c.inputs["Name"].default_value = "hrp_c"
     sa = g.n("ShaderNodeSeparateXYZ", -1400, -400)
-    g.link(a, "Attribute", sa, 0)
+    g.link(a, "Attribute", sa, "Vector")
     sc_ = g.n("ShaderNodeSeparateXYZ", -1400, -600)
-    g.link(c, "Attribute", sc_, 0)
+    g.link(c, "Attribute", sc_, "Vector")
     cv = g.n("GeometryNodeInputNamedAttribute", -1600, -200, data_type="FLOAT_VECTOR")
     cv.inputs["Name"].default_value = "hrp_carve"
     scv = g.n("ShaderNodeSeparateXYZ", -1450, -200)
-    g.link(cv, "Attribute", scv, 0)
+    g.link(cv, "Attribute", scv, "Vector")
     depth = g.math("MULTIPLY", -1300, -250, g.out(sa, "X"), g.out(scv, "Y"))       # metres of water here
     z1 = g.maprange(-1200, -350, g.out(depth, 0), 0.12, 0.28, smooth=True)          # floating-leaf zone:
     z2 = g.maprange(-1200, -500, g.out(depth, 0), 1.8, 1.4, smooth=True)            # ~0.2 .. 1.6 m deep
@@ -467,23 +467,23 @@ def life_group():
     aci = g.n("GeometryNodeCollectionInfo", -700, 100, transform_space="RELATIVE")
     g.link(gi, "Avoid", aci, "Collection")
     are = g.n("GeometryNodeRealizeInstances", -550, 100)
-    g.link(aci, 0, are, 0)
+    g.link(aci, 0, are, "Geometry")
     asz = g.n("GeometryNodeAttributeDomainSize", -400, 200, component="MESH")
-    g.link(are, 0, asz, 0)
+    g.link(are, 0, asz, "Geometry")
     ahas = g.math("GREATER_THAN", -250, 200, g.out(asz, "Face Count"), 0.5)
     apx = g.n("GeometryNodeProximity", -400, 100, target_element="FACES")
-    g.link(are, 0, apx, 0)
-    clear = g.math("LESS_THAN", -250, 100, g.out(apx, "Distance"), g.math("MULTIPLY", -350, 0, g.out(gi, "Pad Size"),
-                   1.3).outputs[0])
+    g.link(are, 0, apx, "Geometry")
+    clear = g.math("LESS_THAN", -250, 100, g.out(apx, "Distance"), only(g.math("MULTIPLY", -350, 0, g.out(gi, "Pad Size"),
+                   1.3).outputs))
     under = g.math("MULTIPLY", -150, 100, g.out(clear, 0), g.out(ahas, 0))
     dpads = g.n("GeometryNodeDeleteGeometry", -100, -100, domain="POINT")
     g.link(dist, "Points", dpads, "Geometry")
     g.link(under, 0, dpads, "Selection")
     pts = g.n("GeometryNodeStoreNamedAttribute", -250, -250, data_type="FLOAT", domain="POINT")
-    g.links.new(dpads.outputs[0], pts.inputs["Geometry"])
+    g.links.new(only(dpads.outputs), pts.inputs["Geometry"])
     pts.inputs["Name"].default_value = "hrp_pad"
     g.link(tone, "Value", pts, "Value", akind="VALUE", bkind="VALUE")
-    pts = pts.outputs[0]
+    pts = only(pts.outputs)
     lift = g.n("ShaderNodeCombineXYZ", -250, -150)
     g.link(g.math("MULTIPLY_ADD", -300, -100, g.out(tone, "Value", "VALUE"), 0.003, 0.02), 0, lift, "Z")
     up = g.n("GeometryNodeSetPosition", -150, -300)
@@ -528,9 +528,9 @@ def life_group():
     fa.inputs["Seed"].default_value = 31
     fo = g.n("ShaderNodeCombineXYZ", 200, -1400)
     fr2 = g.math("MULTIPLY", 100, -1500, g.out(gi, "Pad Size"), 0.75)
-    g.link(g.math("MULTIPLY", 150, -1350, g.math("COSINE", 100, -1350, g.out(fa, "Value", "VALUE")).outputs[0],
+    g.link(g.math("MULTIPLY", 150, -1350, only(g.math("COSINE", 100, -1350, g.out(fa, "Value", "VALUE")).outputs),
                   g.out(fr2, 0)), 0, fo, "X")
-    g.link(g.math("MULTIPLY", 150, -1450, g.math("SINE", 100, -1450, g.out(fa, "Value", "VALUE")).outputs[0],
+    g.link(g.math("MULTIPLY", 150, -1450, only(g.math("SINE", 100, -1450, g.out(fa, "Value", "VALUE")).outputs),
                   g.out(fr2, 0)), 0, fo, "Y")
     fmove = g.n("GeometryNodeSetPosition", 250, -700)
     g.link(fs, "Selection", fmove, "Geometry")
@@ -560,8 +560,8 @@ def life_group():
     g.set(lcl, "Scale", 1.6)
     g.link(g.n("GeometryNodeInputPosition", -950, -2500), 0, lcl, "Vector")
     lclump = g.maprange(-650, -2500, g.out(lcl, "Fac"), 0.5, 0.58, smooth=True)
-    lden = g.math("MULTIPLY", -550, -2300, g.math("MULTIPLY", -650, -2400, g.out(lnear, "Result"),
-                  g.out(pond, 0)).outputs[0], g.out(sc_, "Y"))
+    lden = g.math("MULTIPLY", -550, -2300, only(g.math("MULTIPLY", -650, -2400, g.out(lnear, "Result"),
+                  g.out(pond, 0)).outputs), g.out(sc_, "Y"))
     lden = g.math("MULTIPLY", -500, -2350, g.out(lden, 0), g.out(lclump, "Result"))
     ldist = g.n("GeometryNodeDistributePointsOnFaces", -400, -2300, distribute_method="POISSON")
     g.link(gi, "Geometry", ldist, "Mesh")
@@ -571,14 +571,14 @@ def life_group():
     g.link(gi, "Seed", ldist, "Seed")
     ltm = g.n("GeometryNodeInputSceneTime", -400, -2550)
     lpos = g.n("GeometryNodeInputPosition", -400, -2650)
-    lnv = g.vmath("ADD", -250, -2600, g.vmath("SCALE", -300, -2650, lpos.outputs[0], scale=0.5).outputs[0],
-                  g.vmath("SCALE", -300, -2550, (0, 0, 1.0), scale=g.math("MULTIPLY", -350, -2500,
-                          g.out(ltm, "Seconds"), 0.04).outputs[0]).outputs[0])
+    lnv = g.vmath("ADD", -250, -2600, only(g.vmath("SCALE", -300, -2650, only(lpos.outputs), scale=0.5).outputs),
+                  only(g.vmath("SCALE", -300, -2550, (0, 0, 1.0), scale=only(g.math("MULTIPLY", -350, -2500,
+                          g.out(ltm, "Seconds"), 0.04).outputs)).outputs))
     lnz = g.n("GeometryNodeInputPosition", -100, -2650)
     lns = g.n("ShaderNodeTexNoise", -100, -2600, noise_dimensions="3D")
     g.link(lnv, 0, lns, "Vector")
     ldr = g.vmath("MULTIPLY_ADD", 50, -2600, g.out(lns, "Color"), (0.5, 0.5, 0.0))
-    ldr.inputs[2].default_value = (-0.25, -0.25, 0.012)
+    sock(ldr.inputs, ("Vector", 2)).default_value = (-0.25, -0.25, 0.012)
     lmv = g.n("GeometryNodeSetPosition", -100, -2300)
     g.link(ldist, "Points", lmv, "Geometry")
     g.link(ldr, 0, lmv, "Offset")
@@ -586,16 +586,16 @@ def life_group():
     lmesh.inputs["Vertices"].default_value = 16
     lpp = g.n("GeometryNodeInputPosition", -400, -3000)
     lps = g.n("ShaderNodeSeparateXYZ", -300, -3000)
-    g.link(lpp, 0, lps, 0)
-    tipk = g.math("POWER", -200, -3050, g.math("MAXIMUM", -250, -3100, g.out(lps, "X"), 0.0).outputs[0], 2.0)
-    ly_ = g.math("MULTIPLY", -100, -3000, g.out(lps, "Y"), g.math("SUBTRACT", -150, -3100, 1.0, g.out(tipk, 0))
-                 .outputs[0])                                               # pointed tip
-    lx_ = g.math("SUBTRACT", -100, -2950, g.out(lps, "X"), g.math("MULTIPLY", -200, -2950, g.math(
-        "MAXIMUM", -300, -2950, g.math("MULTIPLY", -350, -2950, g.out(lps, "X"), -1.0).outputs[0], 0.0).outputs[0],
-        g.math("MULTIPLY", -250, -2900, g.math("SUBTRACT", -300, -2900, 1.0, g.math("ABSOLUTE", -350, -2900,
-               g.math("MULTIPLY", -400, -2900, g.out(lps, "Y"), 6.0).outputs[0]).outputs[0]).outputs[0], 0.25)
-        .outputs[0]).outputs[0])                                            # a notch at the stem end
-    lz_ = g.math("MULTIPLY", -100, -3150, g.math("MULTIPLY", -150, -3150, g.out(lps, "Y"), g.out(lps, "Y")).outputs[0],
+    g.link(lpp, 0, lps, "Vector")
+    tipk = g.math("POWER", -200, -3050, only(g.math("MAXIMUM", -250, -3100, g.out(lps, "X"), 0.0).outputs), 2.0)
+    ly_ = g.math("MULTIPLY", -100, -3000, g.out(lps, "Y"), only(g.math("SUBTRACT", -150, -3100, 1.0, g.out(tipk, 0))
+                 .outputs))                                               # pointed tip
+    lx_ = g.math("SUBTRACT", -100, -2950, g.out(lps, "X"), only(g.math("MULTIPLY", -200, -2950, only(g.math(
+        "MAXIMUM", -300, -2950, only(g.math("MULTIPLY", -350, -2950, g.out(lps, "X"), -1.0).outputs), 0.0).outputs),
+        only(g.math("MULTIPLY", -250, -2900, only(g.math("SUBTRACT", -300, -2900, 1.0, only(g.math("ABSOLUTE", -350, -2900,
+               only(g.math("MULTIPLY", -400, -2900, g.out(lps, "Y"), 6.0).outputs)).outputs)).outputs), 0.25)
+        .outputs)).outputs))                                            # a notch at the stem end
+    lz_ = g.math("MULTIPLY", -100, -3150, only(g.math("MULTIPLY", -150, -3150, g.out(lps, "Y"), g.out(lps, "Y")).outputs),
                  1.2)                                                       # curled up a little
     lnp = g.n("ShaderNodeCombineXYZ", 0, -3000)
     g.link(lx_, 0, lnp, "X")
@@ -628,12 +628,12 @@ def life_group():
     lrc.inputs["Seed"].default_value = 13
     g.link(lrc, "Value", lst, "Value", akind="VALUE", bkind="VALUE")
     join = g.n("GeometryNodeJoinGeometry", 900, 0)
-    g.link(gi, "Geometry", join, 0)
-    g.link(inst, 0, join, 0)
-    g.link(inst2, 0, join, 0)
-    g.link(rins, 0, join, 0)
-    g.link(lst, 0, join, 0)
-    g.link(join, 0, go, 0)
+    g.link(gi, "Geometry", join, "Geometry")
+    g.link(inst, 0, join, "Geometry")
+    g.link(inst2, 0, join, "Geometry")
+    g.link(rins, 0, join, "Geometry")
+    g.link(lst, 0, join, "Geometry")
+    g.link(join, 0, go, "Geometry")
     return ng
 
 

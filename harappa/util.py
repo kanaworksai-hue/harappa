@@ -5,12 +5,25 @@ import bpy
 
 TAG = "harappa"
 VERSION_KEY = "hrp_ver"
+BUILDING = 0                    # version tag while a group or material is being built
 
 
 def sock(sockets, name, kind=None):
-    """Enabled socket by name (and optional type); falls back to any match. Ints index directly."""
-    if isinstance(name, int):
-        return sockets[name]
+    """Socket by name (and optional type), never by position.
+
+    Blender adds sockets to existing nodes between releases (5.3 put a 'LightIndex' input in front of Vector
+    Transform's 'Vector'), so a position that is right today links to something else tomorrow - silently.
+    name is the socket's name or identifier; ("Value", 1) is the second socket called "Value" (Math, Vector
+    Math and Mix Shader name several inputs the same). Enabled sockets win, e.g. the Mix node's 'A' of the
+    current data type."""
+    if isinstance(name, tuple):
+        nm, nth = name
+        same = [s for s in sockets if s.name == nm and (kind is None or s.type == kind)]
+        if nth >= len(same):
+            raise KeyError(f"{nm} #{nth} ({kind}) not in {[x.name for x in sockets]}")
+        return same[nth]
+    if not isinstance(name, str):
+        raise TypeError(f"sockets are looked up by name, not by position ({name!r})")
     for s in sockets:
         if s.name == name and s.enabled and (kind is None or s.type == kind):
             return s
@@ -18,6 +31,15 @@ def sock(sockets, name, kind=None):
         if (s.name == name or s.identifier == name) and (kind is None or s.type == kind):
             return s
     raise KeyError(f"{name} ({kind}) not in {[x.name for x in sockets]}")
+
+
+def only(sockets):
+    """The one enabled socket of a node that has exactly one (a Math node's result, a Value node's value).
+    Raises as soon as a Blender version gives the node a second one, instead of picking whichever comes first."""
+    live = [s for s in sockets if s.enabled]
+    if len(live) != 1:
+        raise KeyError(f"expected one enabled socket, found {[x.name for x in live]}")
+    return live[0]
 
 
 class G:
@@ -39,9 +61,12 @@ class G:
         return node
 
     def out(self, node, name=0, kind=None):
+        """Output by name; without a name (or 0) the node's only output."""
+        if name is None or (isinstance(name, int) and name == 0):
+            return only(node.outputs)
         return sock(node.outputs, name, kind)
 
-    def inp(self, node, name=0, kind=None):
+    def inp(self, node, name, kind=None):
         return sock(node.inputs, name, kind)
 
     def link(self, a, aname, b, bname, akind=None, bkind=None):
@@ -61,10 +86,11 @@ class G:
         for i, v in enumerate((a, b, c)):
             if v is None:
                 continue
+            s = sock(node.inputs, ("Value", i))
             if isinstance(v, bpy.types.NodeSocket):
-                self.links.new(v, node.inputs[i])
+                self.links.new(v, s)
             else:
-                node.inputs[i].default_value = v
+                s.default_value = v
         return node
 
     def vmath(self, op, x, y, a=None, b=None, label=None, scale=None):
@@ -72,12 +98,13 @@ class G:
         for i, v in enumerate((a, b)):
             if v is None:
                 continue
+            s = sock(node.inputs, ("Vector", i))
             if isinstance(v, bpy.types.NodeSocket):
-                self.links.new(v, node.inputs[i])
+                self.links.new(v, s)
             else:
-                node.inputs[i].default_value = v
+                s.default_value = v
         if scale is not None:
-            s = node.inputs["Scale"]
+            s = sock(node.inputs, "Scale")
             if isinstance(scale, bpy.types.NodeSocket):
                 self.links.new(scale, s)
             else:
@@ -123,8 +150,35 @@ class G:
         return node
 
 
+_KEPT = {}      # group name -> identifiers of the interface sockets the running rebuild has claimed, in order
+_NEW = {}       # group name -> identifiers of inputs a rebuild added to an existing group
+
+
+def _sockets(ng):
+    return [i for i in ng.interface.items_tree if getattr(i, "item_type", "") == "SOCKET"]
+
+
 def iface(ng, name, in_out, stype, default=None, lo=None, hi=None, desc=None, subtype=None):
-    s = ng.interface.new_socket(name, in_out=in_out, socket_type=stype)
+    """Declare one socket of a group's interface.
+
+    While a group is being rebuilt (fresh_group) a socket that already has this name and direction is kept, not
+    replaced: its identifier stays, and with it every value a user set on a modifier, every driver on it and
+    every link to it from the user's own node trees. Sockets of the same name and direction are claimed in the
+    order they are declared, so a new one of that name goes after the old ones, never between them."""
+    kept = _KEPT.get(ng.name)
+    s = None
+    if kept is not None:
+        s = next((i for i in _sockets(ng) if i.in_out == in_out and i.name == name and i.identifier not in kept),
+                 None)
+        if s is not None and s.socket_type != stype:
+            s.socket_type = stype
+            s = next(i for i in _sockets(ng) if i.in_out == in_out and i.name == name and i.identifier not in kept)
+    if s is None:
+        s = ng.interface.new_socket(name, in_out=in_out, socket_type=stype)
+        if kept is not None and in_out == "INPUT":
+            _NEW.setdefault(ng.name, []).append(s.identifier)     # stamp() gives users its default
+    if kept is not None:
+        kept.append(s.identifier)
     if default is not None and hasattr(s, "default_value"):
         s.default_value = default
     if lo is not None and hasattr(s, "min_value"):
@@ -172,8 +226,15 @@ def to_hex(lin):
     return "#%02X%02X%02X" % tuple(out)
 
 
-def fresh_group(name, kind, version):
-    """Return (group, rebuilt?) — rebuilds the node group when its version tag differs."""
+def fresh_group(name, kind, version, renames=None):
+    """Return (group, rebuilt?) - the node group is emptied for a rebuild when its version tag differs.
+
+    Only the nodes are cleared. The interface is reconciled by iface() and stamp(), so sockets that still exist
+    keep their identifier; renames maps an old socket name to its new one - {"Old": "New"} renames inputs and
+    outputs of that name, {("INPUT", "Old"): "New"} only the input.
+
+    The caller stamps the version with stamp() after it has built the group, so a build that stopped half-way
+    (an error on a new Blender) is not mistaken for a finished one and is rebuilt next time."""
     ng = bpy.data.node_groups.get(name)
     if ng is not None and ng.get(VERSION_KEY) == version:
         return ng, False
@@ -181,9 +242,60 @@ def fresh_group(name, kind, version):
         ng = bpy.data.node_groups.new(name, kind)
     else:
         ng.nodes.clear()
-        ng.interface.clear()
-    ng[VERSION_KEY] = version
+        for old, new in (renames or {}).items():            # a socket that changed its name keeps its values
+            side, old = old if isinstance(old, tuple) else (None, old)
+            for i in _sockets(ng):
+                if i.name == old and side in (None, i.in_out):
+                    i.name = new
+        _KEPT[ng.name] = []                                  # iface() keeps what is still declared ...
+    ng[VERSION_KEY] = BUILDING
     return ng, True
+
+
+def stamp(idblock, version):
+    """Mark a node group / material / world as completely built at this version."""
+    kept = _KEPT.pop(getattr(idblock, "name", None), None) if isinstance(idblock, bpy.types.NodeTree) else None
+    new = _NEW.pop(getattr(idblock, "name", None), []) if isinstance(idblock, bpy.types.NodeTree) else []
+    if kept is not None:                                     # ... and what is no longer declared goes here
+        for i in [i for i in _sockets(idblock) if i.identifier not in kept]:
+            idblock.interface.remove(i)
+        _reorder(idblock, kept)
+    if new:
+        _default_new_inputs(idblock, new)
+    idblock[VERSION_KEY] = version
+
+
+def _default_new_inputs(ng, idents):
+    """Modifiers that already used the group got the new inputs with the value they had when they were created
+    (0), not their declared default: write the default into each of them (a meadow from an older version would
+    otherwise lose its grass in the viewport, Preview Factor 0)."""
+    items = {i.identifier: i for i in _sockets(ng) if i.in_out == "INPUT" and i.identifier in idents}
+    for ob in bpy.data.objects:
+        for mod in getattr(ob, "modifiers", []):
+            if mod.type != "NODES" or mod.node_group != ng:
+                continue
+            for ident, item in items.items():
+                if not hasattr(item, "default_value"):
+                    continue
+                try:
+                    mod_input(mod, item.name, item.default_value)
+                except (KeyError, TypeError, AttributeError):
+                    pass
+            ob.update_tag()
+
+
+def _reorder(ng, order):
+    """Put the interface sockets in the order they were declared (outputs first, as Blender keeps them).
+
+    Positions count panels too, so a group with panels is left as it is (Harappa's groups have none)."""
+    if any(getattr(i, "item_type", "") == "PANEL" for i in ng.interface.items_tree):
+        return
+    by_id = {i.identifier: i for i in _sockets(ng)}
+    want = ([k for k in order if by_id[k].in_out == "OUTPUT"] + [k for k in order if by_id[k].in_out == "INPUT"])
+    for pos, ident in enumerate(want):
+        item = next(i for i in _sockets(ng) if i.identifier == ident)
+        if item.position != pos:
+            ng.interface.move(item, pos)
 
 
 def mod_input(mod, name, value=None):

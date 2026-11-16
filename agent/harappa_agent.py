@@ -35,7 +35,8 @@ Options:
   --fireflies N         N fireflies by the water (they glow at GOLDEN and NIGHT)
   --dragonflies N       N dragonflies hovering and darting over the water (daytime)
   --trees N             plant N trees over the meadow (mixed shapes, off the path and away from water)
-  --tree SHAPE          add one tree: ROUND TALL WIDE BUSH CONIFER (repeatable; positions from --at, repeatable)
+  --tree SHAPE          add one tree: ROUND TALL WIDE BUSH CONIFER SAKURA PINE WILLOW COLUMN (repeatable;
+                        positions from --at, repeatable)
   --at X,Y              where the matching --tree stands (it is dropped onto the ground)
   --tree-height M       tree height in metres (default 5)        --blossom F   share of blossoms 0..1
   --foliage             cover --objects with anime leaf dabs (hedges, bushes)
@@ -51,6 +52,21 @@ Options:
   --frame F             frame to render (the wind moves over time)
   --preview-size PCT    render size in % of the scene resolution, e.g. 50 for quick previews
   --render PATH         render a PNG          --save PATH   save the .blend
+  --paint L:V@X,Y,R     paint a round spot on a brush layer of the meadow (repeatable), the way the panel's brush
+                        does: L = grass | flowers | height | colour, V = paint | erase | 0..1 | #RRGGBB (colour),
+                        X,Y = world position, R = radius in metres. e.g. --paint flowers:paint@3,4,2
+  --paint-strength F    how far each --paint moves the layer (0..1, default 1)
+  --fill L:V            fill a whole brush layer, e.g. --fill flowers:paint   --clear L   back to the starting state
+                        (grass: white = grass; flowers: 0.5 = natural patches, 1 = everywhere; height: 0.5 = x1,
+                        1 = x2; colour: painted colour with its amount)
+  --avoid A,B           grass and flowers make room for these mesh objects (characters, props)
+  --avoid-box           treat each avoided object as its bounding box (faster for heavy models)
+  --blend A,B           paint these models (and their children) like the meadow: no black shadows, shade colours
+                        follow the season and look; their own materials are kept
+  --unblend A,B         give these models their own materials back
+  --preset NAME         apply a saved look (colours, light, sky, paint style) from My Looks
+  --preset-file PATH    apply a look from a .harappa-look.json file
+  --save-preset NAME    save the scene's look into My Looks        --list-presets   print the saved looks
   --revert              remove Harappa grass/flowers/foliage from every object
   --ui-language L       panel language AUTO EN JA ZH KO (saved to user preferences)
   --list                print seasons, styles, tree shapes and settings, then exit
@@ -168,6 +184,57 @@ def paint_path(ground, pts, width):
     me.update()
 
 
+LAYER_KEYS = {"grass": "GRASS", "flowers": "FLOWERS", "flower": "FLOWERS", "height": "HEIGHT", "colour": "COLOUR",
+              "color": "COLOUR", "tint": "COLOUR"}
+
+
+def layer_value(key, text):
+    """RGBA a brush layer moves towards, from paint | erase | a number | #RRGGBB."""
+    L = pkg().layers
+    text = text.strip().lower()
+    if key == "COLOUR":
+        if text == "erase":
+            return (1.0, 1.0, 1.0, 0.0)
+        if text.startswith("#") and len(text) == 7:
+            return L.target("COLOUR", "PAINT", pkg().srgb(text))[0]
+        fail(f"colour layer values are #RRGGBB or erase (got {text!r})")
+    if text in ("paint", "erase"):
+        return L.target(key, text.upper())[0]
+    try:
+        v = min(1.0, max(0.0, float(text)))
+    except ValueError:
+        fail(f"layer values are paint, erase or a number 0..1 (got {text!r})")
+    return (v, v, v, 1.0)
+
+
+def layer_key(text):
+    k = LAYER_KEYS.get(text.strip().lower())
+    if k is None:
+        fail(f"unknown brush layer {text!r} (grass flowers height colour)")
+    return k
+
+
+def paint_layers(ground):
+    L = pkg().layers
+    strength = float(arg("--paint-strength", 1.0))
+    for spec in args("--clear"):
+        L.clear(ground, layer_key(spec))
+    for spec in args("--fill"):
+        name, _, val = spec.partition(":")
+        k = layer_key(name)
+        L.fill(ground, k, layer_value(k, val or "paint"))
+    for spec in args("--paint"):
+        head, _, where = spec.partition("@")
+        name, _, val = head.partition(":")
+        k = layer_key(name)
+        try:
+            x, y, r = (float(v) for v in where.split(","))
+        except ValueError:
+            fail(f"--paint needs LAYER:VALUE@X,Y,RADIUS (got {spec!r})")
+        n = L.paint_disc(ground, k, (x, y), r, layer_value(k, val or "paint"), strength=strength)
+        print(f"painted {k.lower()} at {x:g},{y:g} r {r:g}: {n} point(s)")
+
+
 def frame_camera(scene, ground):
     H = pkg()
     cam = scene.objects.get("Harappa Camera")
@@ -201,6 +268,12 @@ def main():
         bpy.ops.wm.save_userpref()
         print("panel language:", lang)
 
+    if arg("--list-presets", flag=True):
+        for name, path in pkg().looks.all_looks():
+            print(f"look {name}  ({path})")
+        print("HARAPPA OK listed looks")
+        return
+
     if arg("--list", flag=True):
         for key in ("season", "style", "new_shape"):
             for it in S[key].enum_items:
@@ -222,8 +295,10 @@ def main():
         report = "reverted"
     else:
         job = ("--meadow", "--trees", "--tree", "--foliage", "--clouds", "--season", "--style", "--variation",
-               "--shuffle", "--set", "--wind", "--path", "--pond", "--stream", "--rain", "--water-type", "--waterfall",
-               "--rock", "--koi", "--boat", "--weather", "--rain-at", "--rainbow", "--fireflies", "--dragonflies", "--save", "--render")
+               "--shuffle", "--set", "--wind", "--path", "--save", "--render", "--paint", "--fill", "--clear",
+               "--avoid", "--blend", "--unblend", "--preset", "--preset-file", "--save-preset",
+               "--pond", "--stream", "--rain", "--water-type", "--waterfall", "--rock", "--koi", "--boat", "--weather",
+               "--rain-at", "--rainbow", "--fireflies", "--dragonflies")
         if not any(a in argv for a in job):
             print("HARAPPA OK", "installed" if zip_path else "nothing to do")
             return
@@ -252,6 +327,26 @@ def main():
             if len(pts) < 2:
                 fail("--path needs at least two points X,Y:X,Y")
             paint_path(ground, pts, float(arg("--path-width", 1.2)))
+        if any(a in argv for a in ("--paint", "--fill", "--clear")):
+            if ground is None:
+                fail("--paint / --fill need a meadow (add --meadow)")
+            paint_layers(ground)
+        if arg("--avoid"):
+            avoid = H.avoid
+            obs = objects_named(scene, [n.strip() for n in arg("--avoid").split(",")])
+            added, skipped, _heavy = avoid.add(ctx, obs)
+            for n, why in skipped:
+                print(f"avoid skipped {n}: {why}")
+            if arg("--avoid-box", flag=True):
+                s.avoid_box = True
+            print("avoiding:", ", ".join(added) or "nothing new")
+        if arg("--unblend"):
+            done = H.blend.restore(objects_named(scene, [n.strip() for n in arg("--unblend").split(",")]))
+            print("own materials back:", ", ".join(o.name for o in done) or "nothing to restore")
+        if arg("--blend"):
+            done, already = H.blend.apply(objects_named(scene, [n.strip() for n in arg("--blend").split(",")]))
+            print("blended into the meadow:", ", ".join(o.name for o in done) or "nothing new",
+                  f"({len(already)} already)" if already else "")
         for spec in args("--pond"):
             if ground is None:
                 fail("--pond needs a meadow (add --meadow)")
@@ -322,8 +417,9 @@ def main():
         ats = args("--at")
         for i, shape in enumerate(args("--tree")):
             shape = shape.upper()
-            if shape not in ("ROUND", "TALL", "WIDE", "BUSH", "CONIFER"):
-                fail(f"unknown tree shape {shape!r} (ROUND TALL WIDE BUSH CONIFER)")
+            shapes = list(H.tree.SHAPES)
+            if shape not in shapes:
+                fail(f"unknown tree shape {shape!r} ({' '.join(shapes)})")
             if i < len(ats):
                 x, y = (float(v) for v in ats[i].split(","))
                 scene.cursor.location = (x, y, 0.0)
@@ -340,6 +436,19 @@ def main():
                 s.variation = random.randint(1, 99999)
             elif arg("--variation") is not None:
                 s.variation = int(arg("--variation"))
+            look_path = arg("--preset-file")
+            if arg("--preset"):
+                hit = [p for n, p in H.looks.all_looks() if n == arg("--preset")]
+                if not hit:
+                    fail(f"no saved look called {arg('--preset')!r} (see --list-presets)")
+                look_path = hit[0]
+            if look_path:
+                try:
+                    n = H.looks.apply(ctx, H.looks.read(os.path.abspath(look_path)))
+                except ValueError as err:
+                    fail(f"{look_path}: {err}")
+                print(f"look applied: {s.look_name} ({n['set']} set, {n['unknown']} unknown, {n['bad']} unreadable, "
+                      f"{n['clamped']} clamped)")
             for kv in args("--set"):
                 k, _, v = kv.partition("=")
                 if k not in S.keys():
@@ -382,6 +491,8 @@ def main():
             s.firefly_count = int(arg("--fireflies"))
         if arg("--dragonflies") is not None:
             s.dragonfly_count = int(arg("--dragonflies"))
+        if arg("--save-preset"):
+            print("look saved:", H.looks.save(ctx, arg("--save-preset")))
         n_trees = len([o for o in scene.objects if "hrp_tree" in o])
         report = (f"season {s.season}, style {s.style}, variation {s.variation}, "
                   f"{len([o for o in scene.objects if H.meadow_of(o)])} meadow(s), {n_trees} tree(s)")
