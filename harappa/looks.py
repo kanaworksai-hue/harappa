@@ -111,7 +111,10 @@ def collect(context, name, grass=False):
                 vals = {}
                 for k in keys:
                     try:
-                        vals[k] = round(float(mod_input(m, k)), 5)
+                        v = mod_input(m, k)
+                        if k == "Wind Strength" and ("hrp_wind0_" + m.name) in ms[0]:
+                            v = ms[0]["hrp_wind0_" + m.name]          # a storm doubles the wind: save the calm one
+                        vals[k] = round(float(v), 5)
                     except (KeyError, TypeError):
                         pass
                 layers[key] = vals
@@ -271,7 +274,12 @@ def _apply_layers(sc, layers, n):
                     c2 = min(max(c, lim[0]), lim[1])
                     if abs(c2 - c) > 1e-9:
                         n["clamped"] += 1
-                    mod_input(m, k, c2)
+                    wkey = "hrp_wind0_" + m.name
+                    if k == "Wind Strength" and wkey in ob:          # in a storm: the look's calm wind, doubled
+                        ob[wkey] = c2
+                        mod_input(m, k, min(2.0, c2 * 2.0))
+                    else:
+                        mod_input(m, k, c2)
                     n["set"] += 1
                 except (ValueError, TypeError, KeyError, OverflowError):
                     n["bad"] += 1

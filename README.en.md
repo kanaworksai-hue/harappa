@@ -27,6 +27,8 @@ Mix **6 seasons** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Leaves, Mo
 
 **New in 1.1:** paint paths, flower beds, tall grass and sunlit patches with a brush; let the grass make room for your characters; give any tree, cloud or meadow its own colour; and save the colours you like as a **Look** to use in any file.
 
+**New in 1.2: Waterside & Weather.** Ponds, streams, waterfalls and rocks in one click. Water follows the lie of the land: a pond fills to the lowest point of its rim and spills out there, a waterfall's plunge pool is dug into the slope, and the water leaving it steps down the meadow in small cascades. Water lilies, reeds, koi and a rowboat; rain, storms, a rainbow, fireflies and dragonflies.
+
 <p align="center">
   <img src="docs/images/hero_before_after.jpg" alt="A bare hill (left) and the anime meadow after one click (right)" width="820">
   <br><sub>Same hill, same camera. Left: nothing yet. Right: after Make Anime Meadow.</sub>
@@ -53,10 +55,21 @@ Mix **6 seasons** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Leaves, Mo
 - **Every object its own colour:** shift the hue, saturation and brightness of one meadow, tree, cloud or mountain range, or give it its own colour (a pink cherry among green trees). Shuffle keeps it.
 - **My Looks:** save the colours, light, sky and paint style as a small JSON file and apply it to any scene; import and export looks to share them.
 - **Detail Level:** Fast / Balanced / Best trades richness for speed in one click (it also sets the render samples).
+- **Waterside (1.2):** **Add Pond**, **Add Stream**, **Add Waterfall**, **Add Rock**, or turn your own curves into water. Water digs its own bed into the meadow and the grass makes room along the bank. The toon water has shallow / mid / deep colour bands, a bed you see through the shallows, caustics, reflections of the scene, flow lines on streams and white rapids, and follows every season and paint style.
+- **Rules of nature (1.2):** water runs downhill. A pond fills to the lowest point of its rim and spills out there; it never hangs above the slope. A waterfall's plunge pool is dug into the hillside, and the water spilling through its stone-lined notch takes the steepest way down as small pools and drops. A stream drawn up to a pond joins it by itself.
+- **Pond life (1.2):** water lilies and lily pads only where the water is 0.2–1.6 m deep, reeds in the shallows, pebbles on the bank, koi that now and then leap out, a floating rowboat. In autumn, fallen leaves drift to the banks.
+- **Weather (1.2):** Clear Sky, Cloudy, Rain and Storm as a layer over the season (your own colours are kept). Rain follows the camera or falls only where you put it. A rainbow, fireflies at dusk and night, dragonflies by day.
+- **Grass Only in Camera View (1.2):** grass and flowers grow only where the camera can see, with a margin. The picture doesn't change by a single pixel, and the grass count drops to a half to a fifth.
 - **Light and fast:** grass, leaves and flowers stay instances, so the viewport stays responsive and a 1920×1080 render takes about four seconds on an M1 Mac. Values live in node groups, so files render the same without the add-on installed.
 - **UI in English, 日本語, 简体中文 and 한국어:** follows Blender's language automatically, or pick one from the 🌐 menu at the top right of the panel.
 
 ## 🎨 Gallery
+
+### Waterside & Weather (1.2)
+
+One-click ponds and waterfalls, rain, a rainbow, a moonlit night. Water follows the land and steps down from the plunge pool into the pond.
+
+![A waterfall and pond on a clear day, water lilies and koi, the stream leaving the plunge pool, rain, a rainbow, a moonlit night](docs/images/water.jpg)
 
 ### Six seasons
 
@@ -119,6 +132,7 @@ flowchart LR
 2. **Light and shadow clumps (shader):** Voronoi "domes" projected straight down in world space (three sizes) are added to the ground normal, then lit through Diffuse → Shader to RGB → normalised by the key light → a 3-tone cel split. Grass and ground use the same projection, so the shadow clumps run across the whole field, and fine noise breaks the terminator into blade-like strokes. It follows the anime-grass technique of projecting a normal texture in object space; Harappa does it procedurally with nodes, no baking.
 3. **Trees and flowers:** the canopy is a mesh of overlapping spheres (edit it and the tree changes shape). Its surface is covered with camera-aligned leaf cards (a brush-dab atlas drawn with numpy) whose normals come from the spheres and the whole canopy. AO and depth darken the inside, and each card gets a slightly different value so the dabs read as overlapping brush marks.
 4. **Sky:** the gradient, sun and cirrus are painted in the world shader and refit to the camera. Each cloud is a cluster of puffs turned into a smooth mesh (SDF volume → mesh) and shaded per puff with a painter's light, so the lit tops, blue shade and flat base read like a background painting. Every material fades into the horizon colour with camera distance.
+5. **Water (1.2):** a pond is a closed curve, a stream an open one; Geometry Nodes build the surface. The meadow's first modifier digs banks and beds by the distance to the water, and grass and flowers step back from the bank. A pond's level follows the lowest ground on its rim; a stream follows the steepest way down and turns into pools and drops where it is steep. Where a pond and a stream meet, shape, colour and flow lines hand over at the shore, so they read as one body of water.
 
 ## 🚀 Get started
 
@@ -135,6 +149,8 @@ Then fine-tune it in plain words while you look at the preview:
 - "Add a path through it."
 - "More clouds."
 - "Show me another version."
+- "Add a pond in front with koi in it."
+- "Put a waterfall on the hill and make it rain."
 
 ### Install it yourself
 
@@ -152,7 +168,8 @@ Then fine-tune it in plain words while you look at the preview:
 3. **Add Anime Tree** (stands at the 3D cursor) or **Plant Trees** (scatters trees over the meadow)
 4. **Paint the Meadow:** click **Grass** and paint a path (it starts on **Make Path**), **Flowers** for a flower bed, **Grass Height** or **Colour**; then **Done Painting**
 5. Select your character and click **Make Grass Avoid It**; select a tree and pick an **Own Colour** in **This Object's Colour**
-6. Pick a **Season** and a **Paint Style**. Can't decide? **Shuffle**. Like it? **Save Look**. Render with **F12**
+6. **Water:** **Add Pond**, **Add Stream**, **Add Waterfall** (at the 3D cursor; if you never moved the cursor, where the camera sees it). Select a pond for **Active Water**: water type, size, water lilies, koi, a boat. **Weather** for rain and a rainbow
+7. Pick a **Season** and a **Paint Style**. Can't decide? **Shuffle**. Like it? **Save Look**. Render with **F12**
 
 <p align="center">
   <img src="docs/images/panel.jpg" alt="The Harappa panel in Blender (日本語, English, 简体中文, 한국어)" width="820">
@@ -202,6 +219,20 @@ Then fine-tune it in plain words while you look at the preview:
 </details>
 
 <details>
+<summary><b>Water & Weather (1.2)</b></summary>
+
+| Group | Settings |
+|---|---|
+| Water | Add Pond, Add Stream, Add Waterfall, Add Rock, Make Water from Curves, Fast Playback. Under More: all water (Caustics, Glints, Water Glow) and the shore (Reeds, Pebbles, bank width, height and slope) |
+| Active Water | Water Type (six), Pond Scale, Shape, Depth, Width, water lilies and flowers, Add Koi, Add Boat, koi count / size / speed, Add Stepping Stones, Drop Onto Meadow, Remove Water. Under More: Hue, Saturation, Brightness, Clarity, Shelf, Flow Speed |
+| Active Waterfall | Flow (live), Height, Width, Seed (rebuild), Remove Waterfall |
+| Active Rock / Boat | Size, Height Ratio, Seed, Moss / Draft, Bob, Sway, Speed |
+| Weather | Clear Sky, Cloudy, Rain, Storm; Rain Amount, Rain Area, Follow Camera, Rain Here; Rainbow and Strength; Dragonflies; Fireflies and Firefly Glow |
+| Active Meadow | Grass Only in Camera View |
+
+</details>
+
+<details>
 <summary><b>Light & Sky, Brushwork, Colours</b></summary>
 
 | Group | Settings |
@@ -237,6 +268,18 @@ Yes. Select your ground mesh and press Make Anime Meadow. Painting needs vertice
 <summary><b>Won't it be heavy?</b></summary>
 
 Grass, leaves and clouds stay instances, and far grass is thinned out automatically. If it's slow, lower the Density in Active Meadow or shorten the LOD Distance. Render samples are set to 16, which is plenty for cel shading.
+</details>
+
+<details>
+<summary><b>Playback got slow after I added water.</b></summary>
+
+Ponds and streams dig their bed into the meadow, and that runs every frame. Click **Fast Playback** in the **Water** panel: the dug banks are baked into the file and playback gets about four times faster (Harappa's own tools re-bake them for you). In big scenes, **Grass Only in Camera View** in **Active Meadow** helps too.
+</details>
+
+<details>
+<summary><b>My pond isn't in the picture.</b></summary>
+
+Ponds, streams and waterfalls are made at the 3D cursor. If you never moved the cursor (it is at the world origin), they go onto the meadow where the camera sees them. To choose the spot, click the ground first to move the cursor.
 </details>
 
 <details>

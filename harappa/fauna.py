@@ -131,6 +131,7 @@ def koi_material():
         g.link(dim, 0, dc, ch)
     col = g.mix(250, 300, "MULTIPLY", fac=1.0, a=g.mixout(col), b=only(dc.outputs))
     shading._emit_out(g, g.mixout(col), 400, 300, pal=pal)
+    shading._done(mat, "koi_material")
     return mat
 
 
@@ -588,6 +589,7 @@ def boat_material():
                  a=g.out(cel, "Color"), b=(0.018, 0.08, 0.16, 1.0))
     shading._emit_out(g, g.mixout(wcol), 300, 300, pal=pal)
     mat.use_backface_culling = False
+    shading._done(mat, "boat_material")
     return mat
 
 
@@ -748,6 +750,7 @@ def dragonfly_material():
                                    .outputs)).outputs), soft=True)
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
+    shading._done(mat, "dragonfly_material")
     return mat
 
 

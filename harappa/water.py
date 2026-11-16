@@ -20,7 +20,7 @@ import bpy
 from .util import G, fresh_group, iface, menu, mod_input, only, sock
 from . import shading
 
-WATER_VER = 66
+WATER_VER = 72
 SURFACE = "HRP Water Surface"
 CARVE = "HRP Water Carve"
 MAT_WATER = "HRP Water"
@@ -72,6 +72,13 @@ def _store(g, x, y, geo, name, value, dtype="FLOAT", domain="POINT"):
     else:
         sock.default_value = value
     return only(st.outputs)
+
+
+def _top_only(realize):
+    """Realize the water objects themselves, not what they carry (lily pads, reeds, koi stay instances and are left
+    out): the carve and the stream mouths only need the surfaces, and realizing every pad each frame is slow."""
+    sock(realize.inputs, "Realize All").default_value = False
+    sock(realize.inputs, "Depth").default_value = 2                   # the collection, its objects' surfaces
 
 
 def _xyz(g, x, y, vec):
@@ -129,15 +136,19 @@ def surface_group():
           "FACTOR")
     iface(ng, "Obstacles", "INPUT", "NodeSocketCollection",
           desc="Rocks standing in the water get a foam collar (Harappa Props)")
-    iface(ng, "Exit", "INPUT", "NodeSocketVector", desc="Where the stream leaves its pond (object space, set by Settle)")
-    iface(ng, "Entry", "INPUT", "NodeSocketVector", desc="Where the stream runs into a pond (object space, set by Settle)")
+    iface(ng, "Outflow Point", "INPUT", "NodeSocketVector",
+          desc="Where the stream leaves its pond (object space, set by Drop Onto Meadow)")
+    iface(ng, "Inflow Point", "INPUT", "NodeSocketVector",
+          desc="Where the stream runs into a pond (object space, set by Drop Onto Meadow)")
     iface(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
     gi = g.n("NodeGroupInput", -1800, 0)
     go = g.n("NodeGroupOutput", 2200, 0)
 
     res = g.n("GeometryNodeResampleCurve", -1600, 0)
     menu(res.inputs["Mode"], "Length")
-    res.inputs["Length"].default_value = 0.12
+    rlen = g.math("MAXIMUM", -1750, 100, only(g.math("DIVIDE", -1850, 100, g.out(g.n("GeometryNodeSplineLength", -2000, 100),
+                  "Length"), 400.0).outputs), 0.12)        # 12 cm, coarser only on very long curves (fast big ponds)
+    g.link(rlen, 0, res, "Length")
     g.link(gi, "Geometry", res, "Curve")
     cyc = g.n("GeometryNodeInputSplineCyclic", -1600, -250)
     sep = g.n("GeometryNodeSeparateGeometry", -1400, 0, domain="CURVE")
@@ -169,7 +180,13 @@ def surface_group():
     g.link(lofs, 0, lift, "Offset")
     sub = g.n("GeometryNodeSubdivideMesh", -450, -250)
     g.link(lift, 0, sub, "Mesh")
-    sub.inputs["Level"].default_value = 3
+    per = g.n("GeometryNodeAttributeStatistic", -650, -650, data_type="FLOAT", domain="CURVE")   # pond outline length
+    g.links.new(pond_c, per.inputs["Geometry"])
+    g.link(g.n("GeometryNodeSplineLength", -800, -700), "Length", per, "Attribute")
+    lvl_ = g.math("SUBTRACT", -500, -650, 3.0, only(g.math("ADD", -560, -700, only(g.math("GREATER_THAN", -620, -680,
+                  g.out(per, "Sum"), 45.0).outputs), only(g.math("GREATER_THAN", -620, -740, g.out(per, "Sum"),
+                  100.0).outputs)).outputs))          # level 3 for garden ponds, 2 and 1 for lakes
+    g.link(lvl_, 0, sub, "Level")
     outline = g.n("GeometryNodeCurveToMesh", -650, -500)
     g.link(sp, 0, outline, "Curve")
     prox = g.n("GeometryNodeProximity", -250, -450, target_element="EDGES")
@@ -181,6 +198,7 @@ def surface_group():
     sci = g.n("GeometryNodeCollectionInfo", -650, -800, transform_space="RELATIVE")
     g.link(gi, "Streams", sci, "Collection")
     sreal0 = g.n("GeometryNodeRealizeInstances", -550, -800)
+    _top_only(sreal0)
     g.link(sci, 0, sreal0, "Geometry")
     sreal = g.n("GeometryNodeSeparateGeometry", -450, -800, domain="FACE")
     g.link(sreal0, 0, sreal, "Geometry")
@@ -228,10 +246,10 @@ def surface_group():
         g.link(cpts, "Points", si, "Geometry")
         g.link(_named(g, x, y - 150, "hrp_u"), "Attribute", si, "Value")
         g.link(sn, "Index", si, "Index")
-        on = g.math("GREATER_THAN", x + 150, y - 150, g.out(gi, "Outlet" if sock_name == "Exit" else "Mouth"), 0.5)
+        on = g.math("GREATER_THAN", x + 150, y - 150, g.out(gi, "Outlet" if sock_name == "Outflow Point" else "Mouth"), 0.5)
         return _switch(g, x + 300, y, "FLOAT", g.out(on, 0), fallback, g.out(si, "Value", "VALUE"))
-    exit_u = cross_u("Exit", -1400, 1500, 0.0)
-    entry_u = cross_u("Entry", -1400, 1750, g.out(slen, "Length"))
+    exit_u = cross_u("Outflow Point", -1400, 1500, 0.0)
+    entry_u = cross_u("Inflow Point", -1400, 1750, g.out(slen, "Length"))
     from_exit = only(g.math("SUBTRACT", -1250, 1500, g.out(spl, "Length"), exit_u).outputs)
     to_entry = only(g.math("SUBTRACT", -1250, 1750, entry_u, g.out(spl, "Length")).outputs)
     # the hand-overs scale with how much stream shows between the shores: a short link between two ponds still flows
@@ -519,11 +537,12 @@ def carve_group():
     g = G(ng)
     iface(ng, "Geometry", "INPUT", "NodeSocketGeometry")
     iface(ng, "Water", "INPUT", "NodeSocketCollection", desc="The Harappa Water collection")
+    iface(ng, "Streams", "INPUT", "NodeSocketCollection", desc="The streams (a child collection of Harappa Water)")
     iface(ng, "Bank", "INPUT", "NodeSocketFloat", 0.32, 0.0, 50.0, "Width of the bare bank beside the water",
           "DISTANCE")
     iface(ng, "Bank Height", "INPUT", "NodeSocketFloat", 0.03, 0.0, 5.0,
           "How far the shore stands above the water line", "DISTANCE")
-    iface(ng, "Slope", "INPUT", "NodeSocketFloat", 0.45, 0.02, 5.0, "Steepness of the banks (rise per metre)")
+    iface(ng, "Bank Slope", "INPUT", "NodeSocketFloat", 0.45, 0.02, 5.0, "Steepness of the banks (rise per metre)")
     iface(ng, "Terrain", "INPUT", "NodeSocketCollection", desc="Raised terraces (waterfall tops, plateaus)")
     iface(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
     gi = g.n("NodeGroupInput", -2000, 0)
@@ -534,11 +553,20 @@ def carve_group():
     ci.inputs["Separate Children"].default_value = False
     ci.inputs["Reset Children"].default_value = False
     real = g.n("GeometryNodeRealizeInstances", -1600, -300)
+    _top_only(real)
     g.link(ci, 0, real, "Geometry")
+    sci_ = g.n("GeometryNodeCollectionInfo", -1800, -450, transform_space="RELATIVE")   # streams sit one level deeper
+    g.link(gi, "Streams", sci_, "Collection")
+    sreal_ = g.n("GeometryNodeRealizeInstances", -1600, -450)
+    _top_only(sreal_)
+    g.link(sci_, 0, sreal_, "Geometry")
+    wjoin = g.n("GeometryNodeJoinGeometry", -1550, -350)
+    g.link(sreal_, 0, wjoin, "Geometry")
+    g.link(real, 0, wjoin, "Geometry")
     wsurf = g.n("GeometryNodeSeparateGeometry", -1500, -200, domain="FACE")    # water surfaces, not pads or reeds
-    g.link(real, 0, wsurf, "Geometry")
-    # real water surfaces wsurf: after Realize, an attribute "exists" on every face of the joined mesh (a waterfall
-    # sheet included), so select by value: wsurf ponds and streams have a depth > 0 in hrp_carve
+    g.link(wjoin, 0, wsurf, "Geometry")
+    # real water surfaces only: after Realize, an attribute "exists" on every face of the joined mesh (a waterfall
+    # sheet included), so select by value: only ponds and streams have a depth > 0 in hrp_carve
     cvsel = _xyz(g, -1650, -50, g.out(_named(g, -1800, -50, "hrp_carve", "FLOAT_VECTOR"), "Attribute", "VECTOR"))
     g.link(g.math("GREATER_THAN", -1550, -100, g.out(cvsel, "Y"), 0.001), 0, wsurf, "Selection")
     wpos = g.n("GeometryNodeInputPosition", -1600, -500)
@@ -601,7 +629,7 @@ def carve_group():
     drop = g.math("MULTIPLY", -100, -700, fall, g.out(dl, 0))
     f_in = g.math("SUBTRACT", 50, -700, g.out(lip, 0), g.out(drop, 0))
     # outside: a bank that rises with the slope
-    rise = g.math("MULTIPLY", -250, -1000, s, g.out(gi, "Slope"))
+    rise = g.math("MULTIPLY", -250, -1000, s, g.out(gi, "Bank Slope"))
     f_out = g.math("ADD", 50, -1000, g.out(lip, 0), g.out(rise, 0))
     f = g.mixout(g.mix(250, -800, "MIX", "FLOAT", fac=g.out(inside, 0), a=g.out(f_out, 0), b=g.out(f_in, 0)))
 
@@ -648,7 +676,7 @@ def carve_group():
     g.link(pz, "X", np_, "X")
     g.link(pz, "Y", np_, "Y")
     g.links.new(znew, np_.inputs["Z"])
-    # work wsurf near water and terraces (fields are evaluated on the selection wsurf): far meadow is free
+    # work only near water and terraces (fields are evaluated on the selection only): far meadow is free
     jb = g.n("GeometryNodeJoinGeometry", 900, 1300)
     g.links.new(W, sock(jb.inputs, "Geometry"))
     g.link(tflat, 0, jb, "Geometry")
@@ -1225,6 +1253,7 @@ def water_material():
     mat["hrp_kind"] = "water"
     drive_time(bpy.context.scene)
     drive_moon(mat)
+    shading._done(mat, "water_material")
     return mat
 
 
@@ -1323,6 +1352,7 @@ def attach_carve(scene, ground):
         mod = ground.modifiers.new(CARVE_MOD, "NODES")
     mod.node_group = carve_group()
     mod_input(mod, "Water", coll)
+    mod_input(mod, "Streams", streams_collection(scene))
     mod_input(mod, "Terrain", terrain_collection(scene))
     idx = list(ground.modifiers).index(mod)
     if idx != 0:
@@ -1330,9 +1360,26 @@ def attach_carve(scene, ground):
     return mod
 
 
+def _bake_transform(ob):
+    """Water lies level in the world: a rotation or scale of the curve object (a circle added in front view, a curve
+    squashed flat) goes into the curve itself, so the object keeps only its location."""
+    from mathutils import Matrix, Quaternion, Vector
+    _loc, rot, sca = ob.matrix_basis.decompose()
+    if rot == Quaternion() and (sca - Vector((1.0, 1.0, 1.0))).length < 1e-6:
+        return
+    ob.data.transform(Matrix.LocRotScale(None, rot, sca))
+    ob.rotation_mode = "XYZ"
+    ob.rotation_euler = (0.0, 0.0, 0.0)
+    ob.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
+    ob.scale = (1.0, 1.0, 1.0)
+    bpy.context.view_layer.update()
+
+
 def make_water(context, ob, width=1.4, depth=0.6, shelf=None, speed=0.6):
     """Turn a curve object into a pond (closed curve) or stream (open curve)."""
     scene = context.scene
+    if ob.data.users == 1:
+        _bake_transform(ob)
     coll = water_collection(scene)
     is_pond = any(sp.use_cyclic_u for sp in ob.data.splines)
     target = coll if is_pond else streams_collection(scene)
@@ -1527,6 +1574,11 @@ def resize_pond(context, ob, size):
             else:
                 p.co = (cx + (p.co.x - cx) * k, cy + (p.co.y - cy) * k, p.co.z, p.co[3])
     ob["hrp_size"] = size
+    mw = ob.matrix_world
+    centre = mw @ type(mw.translation)((cx, cy, 0.0)) if pts else mw.translation
+    for b in [o for o in context.scene.objects if o.get("hrp_boat") == ob.name]:   # boats keep their place
+        b.location.x = centre.x + (b.location.x - centre.x) * k
+        b.location.y = centre.y + (b.location.y - centre.y) * k
     settle(context)
     refreeze(context)
 
@@ -1554,20 +1606,32 @@ def set_look(ob, kind=None, **vals):
     ob.update_tag()
 
 
-def in_water(context, x, y, margin=0.35, z=None, above=0.8):
-    """True when x, y (world) is on a pond or stream, or within margin of one. With z, only when that height is at
-    the water (no more than `above` over its surface): a tree on a rock, a roof or a cliff above the water is fine."""
-    from mathutils import Vector
+def water_bvhs(context):
+    """[(BVH, (xmin, ymin, xmax, ymax))] of every evaluated water surface, world space: build once, test many points."""
     from mathutils.bvhtree import BVHTree
     dg = context.evaluated_depsgraph_get()
+    out = []
     for o in context.scene.objects:
         if not is_water(o):
             continue
         ev = o.evaluated_get(dg)
         me = ev.to_mesh()
         mw = o.matrix_world
-        bvh = BVHTree.FromPolygons([mw @ v.co for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
+        vs = [mw @ v.co for v in me.vertices]
+        if vs:
+            out.append((BVHTree.FromPolygons(vs, [tuple(p.vertices) for p in me.polygons]),
+                        (min(v.x for v in vs), min(v.y for v in vs), max(v.x for v in vs), max(v.y for v in vs))))
         ev.to_mesh_clear()
+    return out
+
+
+def in_water(context, x, y, margin=0.35, z=None, above=0.8, bvhs=None):
+    """True when x, y (world) is on a pond or stream, or within margin of one. With z, only when that height is at
+    the water (no more than `above` over its surface): a tree on a rock, a roof or a cliff above the water is fine."""
+    from mathutils import Vector
+    for bvh, (x0, y0, x1, y1) in (bvhs if bvhs is not None else water_bvhs(context)):
+        if x < x0 - margin or x > x1 + margin or y < y0 - margin or y > y1 + margin:
+            continue
         for dx, dy in ((0, 0), (margin, 0), (-margin, 0), (0, margin), (0, -margin)):
             h = bvh.ray_cast(Vector((x + dx, y + dy, 1e4)), Vector((0, 0, -1)))[0]
             if h is not None and (z is None or z <= h.z + above):
@@ -1631,13 +1695,14 @@ def clear_trees(context, margin=1.0):
     Returns how many were removed."""
     sc = context.scene
     falls = [o for o in sc.objects if o.get("hrp_waterfall") is not None and o.get("hrp_wf_args") is not None]
+    bvhs = water_bvhs(context)
     gone = 0
     for root in [o for o in sc.objects if o.get("hrp_tree") is not None and o.parent is None
                  and o.get("hrp_waterfall") is None]:
         p = root.matrix_world.translation
         bad = any((p.to_2d() - f.matrix_world.translation.to_2d()).length < f["hrp_wf_args"][6] * 0.5 + 3.5
                   and p.z < f["hrp_wf_args"][2] + f["hrp_wf_args"][5] * 0.5        # at the pool, not up on the hill
-                  for f in falls) or in_water(context, p.x, p.y, margin, z=p.z)
+                  for f in falls) or in_water(context, p.x, p.y, margin, z=p.z, bvhs=bvhs)
         if bad:
             for o in [root] + list(root.children_recursive):
                 bpy.data.objects.remove(o)
@@ -1649,7 +1714,7 @@ def _ponds(scene, skip=None):
     """(polygon xy, level) of every pond curve: its bezier/poly points in world space."""
     out = []
     for o in scene.objects:
-        if o is skip or not is_water(o):
+        if o is skip or not is_water(o) or abs(o.matrix_world.determinant()) < 1e-12:   # (a squashed curve: no level)
             continue
         for sp in o.data.splines:
             if not sp.use_cyclic_u:
@@ -1664,7 +1729,7 @@ def _ponds(scene, skip=None):
 def _set_level(pond, z):
     """Move every point of a pond curve to world height z."""
     mw = pond.matrix_world
-    inv = mw.inverted()
+    inv = mw.inverted_safe()
     for sp in pond.data.splines:
         for p in (sp.bezier_points if sp.type == "BEZIER" else sp.points):
             w = mw @ p.co.to_3d()
@@ -1698,9 +1763,11 @@ def snap_stream(context, ob, below=0.06):
     grounds = _ground_bvhs(meadows(context.scene))
     ponds = [] if ob.get("hrp_fall_feed") else _ponds(context.scene, skip=ob)   # a waterfall's stream ends at the lip
     mw = ob.matrix_world
-    inv = mw.inverted()
+    inv = mw.inverted_safe()
     # where the stream crosses into a pond, add a point right on the shore: inside the pond it must lie flat at the
     # pond's level (its slope happens on the bank), or the bed under its last stretch is dug to the pond's depth
+    if not ob.get("hrp_fixed_z") and not ob.get("hrp_fall_feed"):
+        _downhill_first(ob, grounds, ponds)
     if ponds and not ob.get("hrp_fixed_z"):
         _join_ends(ob, ponds)
         _shore_points(ob, ponds)
@@ -1732,13 +1799,15 @@ def snap_stream(context, ob, below=0.06):
                 inside = [k for k in inside if k >= head]
                 if not inside:
                     continue
-            low = min(zs[k] for k in inside)
+            low = max(min(zs[k] for k in inside), lvl - 0.8)
             if low < lvl - 0.015:                            # the stream arrives lower: the pond settles to meet it
                 _set_level(pond, low + 0.015)
                 lowered.append(pond)
                 lvl = low + 0.015
             for k in inside:
                 zs[k] = lvl - 0.015
+            for k in range(max(inside) + 1, len(zs)):          # a stream running on out of the pond starts at its level
+                zs[k] = min(zs[k], lvl - 0.015)
             # ...and it grades down to the mouth gently (it cuts its way into the bank), never a chute at the end
             k0 = min(inside)
             run = 0.0
@@ -1843,17 +1912,38 @@ def _crossings(cos, ponds):
         if start is None:
             continue
         k = next((i for i in range(start + 1, len(cos)) if ins[i] and not ins[i - 1]), None)
-        if k is not None and entry_p is None:
+        if k is not None and entry_p is None and all(ins[k:]):     # it ends there (one passing through runs on)
             entry_p = bisect(poly, cos[k - 1], cos[k], False)
     return exit_p is not None, entry_p is not None, exit_p, entry_p
 
 
 def _pass_crossings(mod, ob):
-    for key, sock_ in (("hrp_exit", "Exit"), ("hrp_entry", "Entry")):
+    for key, sock_ in (("hrp_exit", "Outflow Point"), ("hrp_entry", "Inflow Point")):
         try:
             mod_input(mod, sock_, tuple(float(v) for v in ob.get(key, (0.0, 0.0, 0.0))))
         except (KeyError, TypeError):
             pass
+
+
+def _downhill_first(ob, grounds, ponds=(), rise=0.25):
+    """Water runs downhill: a stream drawn from low ground up to high ground is turned round (its first point is its
+    spring), instead of digging a trench uphill and pulling the pond at its end down."""
+    mw = ob.matrix_world
+    for sp in ob.data.splines:
+        if sp.type != "BEZIER" or sp.use_cyclic_u or len(sp.bezier_points) < 2:
+            continue
+        a, b = mw @ sp.bezier_points[0].co, mw @ sp.bezier_points[-1].co
+        if any(_inside(poly, a.x, a.y) for poly, _l, _p in ponds):      # it flows out of a pond: that is its source
+            continue
+        za, zb = _ground_z(grounds, a.x, a.y), _ground_z(grounds, b.x, b.y)
+        if za is None or zb is None or zb <= za + rise:
+            continue
+        pts = [(p.co.copy(), p.handle_left.copy(), p.handle_right.copy(), p.handle_left_type, p.handle_right_type)
+               for p in sp.bezier_points]
+        for p, (co, hl, hr, tl, tr) in zip(sp.bezier_points, reversed(pts)):
+            p.handle_left_type, p.handle_right_type = "FREE", "FREE"
+            p.co, p.handle_left, p.handle_right = co, hr, hl
+            p.handle_left_type, p.handle_right_type = tr, tl
 
 
 def _poly_near(poly, x, y):
@@ -1876,7 +1966,7 @@ def _join_ends(ob, ponds, reach=1.2, into=0.9):
     """A stream drawn up to a pond (its end within `reach` of the shore) runs into it; one that starts beside a pond
     flows out of it. The end is carried across the shore, so the two always meet (repeatable)."""
     mw = ob.matrix_world
-    inv = mw.inverted()
+    inv = mw.inverted_safe()
     for sp in ob.data.splines:
         if sp.type != "BEZIER" or sp.use_cyclic_u or len(sp.bezier_points) < 2:
             continue
@@ -1909,7 +1999,7 @@ def _join_ends(ob, ponds, reach=1.2, into=0.9):
 def _shore_points(ob, ponds):
     """Insert a control point where an open curve first enters a pond (once; repeatable)."""
     mw = ob.matrix_world
-    inv = mw.inverted()
+    inv = mw.inverted_safe()
     for sp in ob.data.splines:
         if sp.type != "BEZIER" or sp.use_cyclic_u:
             continue
@@ -1937,6 +2027,16 @@ def _shore_points(ob, ponds):
                 bp.co = inv @ c
                 bp.handle_left_type = bp.handle_right_type = "AUTO"
             break
+
+
+def sync_boats(context):
+    """A boat floats at its pond's level, wherever the level ended up (a spill level, a stream lowering it)."""
+    for b in context.scene.objects:
+        pond = bpy.data.objects.get(b.get("hrp_boat", "")) if b.get("hrp_boat") else None
+        if pond is not None and is_water(pond):
+            lv = pond_level(pond)
+            if abs(b.location.z - lv) > 1e-4:
+                b.location.z = lv
 
 
 def sync_falls(context):
@@ -1993,6 +2093,14 @@ def _spill_ponds(context):
         lv = spill_level(context.scene, o, grounds, terr)
         if lv is not None and abs(lv - pond_level(o)) > 1e-4:
             _set_level(o, lv)
+    ps = [(poly, o) for poly, _l, o in _ponds(context.scene) if not o.get("hrp_waterfall")]
+    for i, (pa, a) in enumerate(ps):                           # ponds that overlap share the lower level
+        for pb, b in ps[i + 1:]:
+            if any(_inside(pb, *q) for q in pa) or any(_inside(pa, *q) for q in pb):
+                lo = min(pond_level(a), pond_level(b))
+                for o in (a, b):
+                    if abs(pond_level(o) - lo) > 1e-4:
+                        _set_level(o, lo)
 
 
 def settle(context):
@@ -2014,10 +2122,11 @@ def settle(context):
                                      for poly, _l, _p in ponds for sp in o.data.splines
                                      for p in ((sp.bezier_points[0], sp.bezier_points[-1]) if sp.type == "BEZIER"
                                                and len(sp.bezier_points) else ()))
-            if touches and snap_stream(context, o):
+            stale = not touches and (o.get("hrp_outlet") or o.get("hrp_mouth"))   # its pond is gone
+            if (touches or stale) and snap_stream(context, o):
                 moved = True
             m_ = o.modifiers.get(SURFACE_MOD)
-            if m_ is not None and touches:
+            if m_ is not None and (touches or stale):
                 try:
                     mod_input(m_, "Outlet", float(o.get("hrp_outlet", 0.0)))
                     mod_input(m_, "Mouth", float(o.get("hrp_mouth", 0.0)))
@@ -2027,6 +2136,7 @@ def settle(context):
         if not moved:
             break
     sync_falls(context)
+    sync_boats(context)
 
 
 def add_stream(context, points, width=1.4, depth=0.45, feeds_fall=False, fixed_z=None):
@@ -2052,6 +2162,14 @@ def add_stream(context, points, width=1.4, depth=0.45, feeds_fall=False, fixed_z
 
 def remove_water(context, ob):
     coll = bpy.data.collections.get(COLLECTION)
+    name = ob.name
+    gone = list(ob.children_recursive)                         # its koi...
+    for o in list(context.scene.objects):                      # ...and the boats floating on it
+        if o.get("hrp_boat") == name or o.get("hrp_fish") == name:
+            gone += [o] + list(o.children_recursive)
+    for o in {x.name: x for x in gone}.values():
+        if o.name in bpy.data.objects and o is not ob:
+            bpy.data.objects.remove(o)
     data = ob.data
     bpy.data.objects.remove(ob)
     if data is not None and data.users == 0:
@@ -2062,4 +2180,5 @@ def remove_water(context, ob):
             m = gnd.modifiers.get(CARVE_MOD)
             if m is not None:
                 gnd.modifiers.remove(m)
+    settle(context)                                              # streams that ran into it lie back on the meadow
     refreeze(context)

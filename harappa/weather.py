@@ -21,7 +21,7 @@ from mathutils import Vector
 from . import shading
 from .util import G, fresh_group, iface, mod_input, only, sock, srgb
 
-WEATHER_VER = 12
+WEATHER_VER = 13
 RAIN = "HRP Rain"
 RAIN_OB = "Harappa Rain"
 RAIN_MOD = "Harappa Rain"
@@ -36,7 +36,7 @@ BLOOM = "HRP Bloom"
 
 WEATHERS = {
     # name, description, sky grey, sun, haze add, rain, cloud grey
-    "CLEAR": ("Clear", "The season as it is", 0.0, 1.0, 0.0, 0.0, 0.0),
+    "CLEAR": ("Clear Sky", "The season as it is", 0.0, 1.0, 0.0, 0.0, 0.0),
     "CLOUDY": ("Cloudy", "Grey sky, soft light", 0.45, 0.55, 0.12, 0.0, 0.35),
     "RAIN": ("Rain", "Rain streaks, raindrop rings on the water, a dim grey sky", 0.65, 0.35, 0.22, 0.6, 0.55),
     "STORM": ("Storm", "Heavy rain, strong wind in the grass and trees, a dark sky", 0.85, 0.2, 0.3, 1.0, 0.75),
@@ -74,6 +74,7 @@ def rain_material():
     g.link(ms, 0, out, "Surface")
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
+    shading._done(mat, "rain_material")
     return mat
 
 
@@ -266,6 +267,7 @@ def rainbow_material():
     g.link(ms, 0, out, "Surface")
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
+    shading._done(mat, "rainbow_material")
     return mat
 
 
@@ -356,6 +358,7 @@ def fly_material():
     out = g.n("ShaderNodeOutputMaterial", 200, 100)
     g.link(ms, 0, out, "Surface")
     mat.surface_render_method = "BLENDED"
+    shading._done(mat, "fly_material")
     return mat
 
 
@@ -385,8 +388,10 @@ def flies_group():
                6.0).outputs),
                only(g.math("SUBTRACT", -1100, -450, 1.0, g.out(gi, "Near Water")).outputs))
     w = g.math("MULTIPLY", -850, -300, g.out(w, 0), g.out(dry, "Result"))
+    ground = g.n("GeometryNodeSeparateComponents", -850, 100)      # the meadow's own surface, not its grass instances
+    g.link(oi, "Geometry", ground, "Geometry")
     dist = g.n("GeometryNodeDistributePointsOnFaces", -700, 0)
-    g.link(oi, "Geometry", dist, "Mesh")
+    g.link(ground, "Mesh", dist, "Mesh")
     g.link(w, 0, dist, "Density")
     g.link(gi, "Seed", dist, "Seed")
     idx = g.n("GeometryNodeInputIndex", -700, -300)

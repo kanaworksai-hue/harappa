@@ -363,6 +363,10 @@ bpy.ops.harappa.add_stream(length=10.0)
 stream = ctx.active_object
 zs = [p.co.z for p in stream.data.splines[0].bezier_points]
 check(all(b <= a + 1e-6 for a, b in zip(zs, zs[1:])), "stream runs downhill only")
+mid_ = stream.matrix_world @ stream.data.splines[0].bezier_points[len(zs) // 2].co
+gz_ = water._ground_z(water._ground_bvhs([wg]), mid_.x, mid_.y)
+zc_, _m = eval_z_mask(wg, mid_.x, mid_.y, 0.2)
+check(gz_ is not None and zc_ < gz_ - 0.15, f"the stream digs its channel into the meadow ({gz_:.2f} -> {zc_:.2f})")
 zs0 = [p.co.z for p in stream.data.splines[0].bezier_points]
 ctx.view_layer.objects.active = stream
 bpy.ops.harappa.drop_stream()

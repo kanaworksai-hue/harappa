@@ -128,9 +128,23 @@ def bl_info_version():
 # ---------------------------------------------------------------------------------------------
 # updates
 # ---------------------------------------------------------------------------------------------
+def _keep_weather(s, context):
+    """After a single colour, value or sky edit: grey skies and rain stay on top (the edit is the clear-day colour)."""
+    if getattr(s, "weather", "CLEAR") != "CLEAR" and not _busy["on"] and not _wx_busy["on"]:
+        _wx_busy["on"] = True
+        try:
+            _weather_overlay(s, context)
+        finally:
+            _wx_busy["on"] = False
+
+
+_wx_busy = {"on": False}
+
+
 def _upd_colour(key):
     def f(self, context):
         shading.palette_set(key, tuple(getattr(self, key)))
+        _keep_weather(self, context)
     return f
 
 
@@ -142,6 +156,7 @@ def _upd_value(key):
         shading.palette_set(key, getattr(self, key))
         if key in SKY_VALUE_KEYS and not _busy["on"]:
             _upd_sky(self, context)
+        _keep_weather(self, context)
     return f
 
 
@@ -158,6 +173,7 @@ def _upd_sky(self, context):
             hscene.set_night(w, st, mo, sc.camera)
         hscene.set_sky_colours(w, to_hex(self.sky_zenith), to_hex(self.sky_horizon), ground)
         _sky_extras(self, w)
+    _keep_weather(self, context)
 
 
 def _sky_extras(s, world):
@@ -250,6 +266,7 @@ def apply_season(self, context):
         hscene.set_night(w, st, mo, sc.camera)
     self.look_name = ""                                   # the season's colours replace a look's
     _rebase(self, context)
+    _weather_overlay(self, context)
 
 
 def _grey(rgb, k, target=(0.36, 0.40, 0.45)):
@@ -386,8 +403,11 @@ def _upd_rainbow(self, context):
 
 
 def _upd_dragonflies(self, context):
-    if self.dragonfly_count > 0 or bpy.data.objects.get(fauna.DRAGON_OB) is not None:
+    ob = bpy.data.objects.get(fauna.DRAGON_OB)
+    if self.dragonfly_count > 0:
         fauna.ensure_dragonflies(context, self.dragonfly_count)
+    elif ob is not None:                                       # 0 removes them, like the fireflies
+        bpy.data.objects.remove(ob)
 
 
 def _upd_fireflies(self, context):
@@ -472,6 +492,7 @@ def apply_style(self, context):
     quality.apply(context.scene)                          # the clouds' grid follows the style too
     _upd_sky(self, context)                               # the style also paints the sky
     _rebase(self, context)
+    _weather_overlay(self, context)
 
 
 def _rebase(s, context):
@@ -533,6 +554,7 @@ def apply_variation(self, context):
     # every tree gets its own tint and a new shape, meadows and clouds a new scatter
     _reseed(sc, rng)
     _refresh_all(self, context)
+    _weather_overlay(self, context)
 
 
 def _reseed(sc, rng):
@@ -608,6 +630,7 @@ def _refresh_all(s, context):
         shading.palette_set(k, getattr(s, k))
     _upd_sky(s, context)
     _upd_sun(s, context)
+    _weather_overlay(s, context)                           # the weather stays a layer on top of whatever came in
 
 
 # ---------------------------------------------------------------------------------------------
@@ -789,7 +812,7 @@ def _settings_annotations():
         "weather": bpy.props.EnumProperty(name="Weather", items=[(k, v[0], v[1]) for k, v in weather.WEATHERS.items()],
                                           default="CLEAR", update=_upd_weather,
                                           description="Clouds, rain or storm on top of the season"),
-        "rain_amount": bpy.props.FloatProperty(name="Rain", default=0.6, min=0.0, max=1.0, update=_upd_weather,
+        "rain_amount": bpy.props.FloatProperty(name="Rain Amount", default=0.6, min=0.0, max=1.0, update=_upd_weather,
                                                description="How hard it rains (Rain and Storm)"),
         "rain_radius": bpy.props.FloatProperty(name="Rain Area", default=25.0, min=1.0, max=1000.0,
                                                subtype="DISTANCE", update=_upd_weather,
@@ -1634,7 +1657,7 @@ class HRP_OT_revert(bpy.types.Operator):
         n = 0
         for ob in context.selected_objects:
             hit = False
-            for name in (build.GRASS_MOD, build.FLOWER_MOD, "Harappa Foliage", water.CARVE_MOD):
+            for name in (build.GRASS_MOD, build.FLOWER_MOD, "Harappa Foliage", water.CARVE_MOD, rocks.SHORE_MOD):
                 m = ob.modifiers.get(name)
                 if m is not None:
                     ob.modifiers.remove(m)
@@ -1651,7 +1674,10 @@ class HRP_OT_revert(bpy.types.Operator):
             if hit:
                 ob.visible_shadow = True
                 n += 1
-        self.report({"INFO"}, report(f"Removed from {n} object(s)"))
+        if n and not water.meadows(context.scene) and any(water.is_water(o) for o in context.scene.objects):
+            self.report({"WARNING"}, report("The ponds and streams are still there: remove them with Remove Water"))
+        else:
+            self.report({"INFO"}, report(f"Removed from {n} object(s)"))
         return {"FINISHED"}
 
 
@@ -1737,7 +1763,10 @@ class HRP_OT_set_enum(bpy.types.Operator):
             return ""
 
     def execute(self, context):
-        setattr(context.scene.harappa, self.prop, self.value)
+        try:
+            setattr(context.scene.harappa, self.prop, self.value)
+        except (TypeError, AttributeError):
+            return {"CANCELLED"}
         return {"FINISHED"}
 
 
@@ -2415,7 +2444,7 @@ class HRP_WaterSettings(bpy.types.PropertyGroup):
     clarity: bpy.props.FloatProperty(name="Clarity", default=0.0, min=-1.0, max=1.0, update=_upd_water,
                                      description="Clear water shows a wide bright shelf and caustics; murky water "
                                                  "turns deep quickly")
-    size: bpy.props.FloatProperty(name="Pond Scale", default=1.0, min=0.1, max=20.0, update=_upd_water_size,
+    size: bpy.props.FloatProperty(name="Pond Scale", default=1.0, min=0.1, max=5.0, update=_upd_water_size,
                                   description="Scale this pond around its centre (x1 = as made)")
     shape_seed: bpy.props.IntProperty(name="Shape", default=0, min=0, max=99999, update=_upd_water_shape,
                                       description="A different shoreline for this pond (same size)")
@@ -2467,7 +2496,7 @@ def _set_rmoss(self, v):
 class HRP_RockSettings(bpy.types.PropertyGroup):
     size: bpy.props.FloatProperty(name="Rock Size", min=0.05, max=20.0, get=_get_rsize, set=_set_rsize,
                                   description="Scale this rock")
-    flat: bpy.props.FloatProperty(name="Flatness", min=0.2, max=1.5, get=_get_rflat, set=_set_rflat,
+    flat: bpy.props.FloatProperty(name="Height Ratio", min=0.2, max=1.5, get=_get_rflat, set=_set_rflat,
                                   description="Low and flat (small) or tall and round (large)")
     seed: bpy.props.IntProperty(name="Seed", min=0, max=99999, get=_get_rseed, set=_set_rseed,
                                 description="A different shape for this rock")
@@ -2484,20 +2513,20 @@ def _wf_args(fall):
 
 
 def _wf_rebuild():
-    if not _wf_pending:
-        return None
-    tag, vals = next(iter(_wf_pending.items()))
+    pending = dict(_wf_pending)                                  # every waterfall edited since the last rebuild
     _wf_pending.clear()
     context = bpy.context
-    fall = waterfall.fall_of(context, tag)
-    if fall is None:
-        return None
-    new = waterfall.rebuild_waterfall(context, fall, **vals)
-    try:
-        _select(context, new)
-        bpy.ops.ed.undo_push(message="Edit Waterfall")
-    except Exception:
-        pass
+    new = None
+    for tag, vals in pending.items():
+        fall = waterfall.fall_of(context, tag)
+        if fall is not None:
+            new = waterfall.rebuild_waterfall(context, fall, **vals)
+    if new is not None:
+        try:
+            _select(context, new)
+            bpy.ops.ed.undo_push(message="Edit Waterfall")
+        except Exception:
+            pass
     return None
 
 
@@ -2516,6 +2545,9 @@ def _wf_setter(key, cast):
         if tag is None:
             return
         _wf_pending.setdefault(tag, {})[key] = cast(v)
+        if bpy.app.background:                                  # scripts and agents: no timers run, rebuild now
+            _wf_rebuild()
+            return
         if bpy.app.timers.is_registered(_wf_rebuild):
             bpy.app.timers.unregister(_wf_rebuild)
         bpy.app.timers.register(_wf_rebuild, first_interval=0.5)
@@ -2550,6 +2582,11 @@ class HRP_OT_set_water_enum(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
     value: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
+    @classmethod
+    def description(cls, context, props):
+        info = water.WATER_TYPES.get(props.value)
+        return i18n.t(info[1]) if info else ""
+
     def execute(self, context):
         ob = context.active_object
         if water.is_water(ob):
@@ -2572,6 +2609,37 @@ def _select(context, ob):
     context.view_layer.objects.active = ob
 
 
+def _water_spot(context, op, frame_y=0.33):
+    """Where new water goes: the 3D cursor. A cursor never moved from the world origin that the camera can't see
+    is taken as "anywhere": the water goes onto the meadow in the lower middle of the picture, so it is seen. A
+    cursor the user placed out of view is kept, with a note."""
+    from bpy_extras.object_utils import world_to_camera_view
+    sc = context.scene
+    c = sc.cursor.location.copy()
+    cam = sc.camera
+    if cam is None or cam.type != "CAMERA" or bpy.app.background:      # scripts and agents: exactly where asked
+        return c
+    bvhs = water._ground_bvhs(water.meadows(sc))
+    gz = water._ground_z(bvhs, c.x, c.y)
+    v = world_to_camera_view(sc, cam, Vector((c.x, c.y, gz if gz is not None else c.z)))
+    if v.z > 0 and 0.03 < v.x < 0.97 and 0.06 < v.y < 0.97:
+        return c
+    if c.length < 1e-6:
+        fr = [cam.matrix_world @ q for q in cam.data.view_frame(scene=sc)]       # corners: tr, br, bl, tl
+        bottom = fr[2].lerp(fr[1], 0.5)
+        top = fr[3].lerp(fr[0], 0.5)
+        aim = bottom.lerp(top, frame_y)
+        org = cam.matrix_world.translation
+        d = (aim - org).normalized()
+        hits = [h for h in (b.ray_cast(org, d) for b in bvhs) if h[0] is not None]
+        if hits:
+            hit = min(hits, key=lambda h: h[3])[0]
+            op.report({"INFO"}, report("Placed where the camera sees it: move the 3D cursor to choose the spot"))
+            return Vector((hit.x, hit.y, hit.z))
+    op.report({"WARNING"}, report("The 3D cursor is outside the camera view: the new water may not be in the picture"))
+    return c
+
+
 class HRP_OT_add_pond(bpy.types.Operator):
     bl_idname = "harappa.add_pond"
     bl_label = "Add Pond"
@@ -2579,7 +2647,7 @@ class HRP_OT_add_pond(bpy.types.Operator):
                       "from the bank. Edit the curve to reshape it")
     bl_options = {"REGISTER", "UNDO"}
 
-    radius: bpy.props.FloatProperty(name="Radius", default=2.5, min=0.2, max=200.0, subtype="DISTANCE",
+    radius: bpy.props.FloatProperty(name="Radius", default=2.5, min=0.2, max=40.0, subtype="DISTANCE",
                                     description="Rough radius of the pond")
     depth: bpy.props.FloatProperty(name="Depth", default=0.7, min=0.02, max=50.0, subtype="DISTANCE",
                                    description="Deepest point below the water line")
@@ -2590,7 +2658,7 @@ class HRP_OT_add_pond(bpy.types.Operator):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
-        ob = water.add_pond(context, context.scene.cursor.location, self.radius, self.seed, self.depth)
+        ob = water.add_pond(context, _water_spot(context, self), self.radius, self.seed, self.depth)
         _busy["on"] = True
         ob.harappa_water.shape_seed = self.seed
         _busy["on"] = False
@@ -2620,7 +2688,7 @@ class HRP_OT_add_stream(bpy.types.Operator):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
-        c = context.scene.cursor.location
+        c = _water_spot(context, self, 0.18)
         cam = context.scene.camera
         fwd = Vector((0.0, 1.0, 0.0))
         if cam is not None:
@@ -2657,6 +2725,7 @@ class HRP_OT_make_water(bpy.types.Operator):
             return {"CANCELLED"}
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
+        curves = [ob for ob in curves if not ob.get("hrp_terrace")]       # a waterfall's terrace is ground, not water
         for ob in curves:
             if not any(sp.use_cyclic_u for sp in ob.data.splines):
                 water.snap_stream(context, ob)
@@ -2699,7 +2768,7 @@ class HRP_OT_add_rock(bpy.types.Operator):
 
     size: bpy.props.FloatProperty(name="Size", default=1.0, min=0.05, max=100.0, subtype="DISTANCE",
                                   description="Rough size of the rock")
-    flat: bpy.props.FloatProperty(name="Flatness", default=0.65, min=0.2, max=1.5,
+    flat: bpy.props.FloatProperty(name="Height Ratio", default=0.65, min=0.2, max=1.5,
                                   description="Low and flat (small) or tall and round (large)")
     seed: bpy.props.IntProperty(name="Seed", default=-1, min=-1, max=99999, description="Shape seed (-1 = random)")
 
@@ -2741,7 +2810,7 @@ class HRP_OT_add_waterfall(bpy.types.Operator):
         if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
         sc = context.scene
-        c = sc.cursor.location.copy()
+        c = _water_spot(context, self, 0.25)
         fwd = Vector((0.0, 1.0, 0.0))
         if sc.camera is not None:
             f = sc.camera.matrix_world.to_3x3() @ Vector((0.0, 0.0, -1.0))
@@ -2825,7 +2894,7 @@ class HRP_OT_stepping_stones(bpy.types.Operator):
                       "their tops just above the water")
     bl_options = {"REGISTER", "UNDO"}
 
-    count: bpy.props.IntProperty(name="Stones", default=0, min=0, max=30,
+    count: bpy.props.IntProperty(name="Stone Count", default=0, min=0, max=30,
                                  description="How many stones (0 = enough to cross)")
 
     @classmethod

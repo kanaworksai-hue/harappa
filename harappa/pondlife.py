@@ -241,6 +241,7 @@ def ring_material():
     shading._emit_out(g, g.mixout(col), 0, 100, pal=pal, alpha=g.out(a, 0), shadow_off=True, soft=True)
     mat.surface_render_method = "BLENDED"
     mat["hrp_kind"] = "ring"
+    shading._done(mat, "ring_material")
     return mat
 
 
@@ -299,6 +300,7 @@ def leaf_material():
             mat.node_tree.links.remove(lk)
         cel.inputs[k].default_value = v
     shading._emit_out(g, g.out(cel, "Color"), 200, 300, pal=pal)
+    shading._done(mat, "leaf_material")
     return mat
 
 
@@ -352,6 +354,7 @@ def lily_material():
             mat.node_tree.links.remove(lk)
         cel.inputs[k].default_value = v
     shading._emit_out(g, g.out(cel, "Color"), 500, 300, pal=pal)
+    shading._done(mat, "lily_material")
     return mat
 
 
@@ -370,6 +373,7 @@ def lotus_material():
     cel = shading._cel_node(g, pal, -300, 300, g.out(geo, "Normal"), g.mixout(lit), g.mixout(sh),
                             g.out(pal, "bloom_deep"))
     shading._emit_out(g, g.out(cel, "Color"), 100, 300, pal=pal)
+    shading._done(mat, "lotus_material")
     return mat
 
 
@@ -390,6 +394,7 @@ def reed_material():
                             g.out(pal, "grass_deep"))
     shading._emit_out(g, g.out(cel, "Color"), 100, 300, pal=pal)
     mat.use_backface_culling = False
+    shading._done(mat, "reed_material")
     return mat
 
 

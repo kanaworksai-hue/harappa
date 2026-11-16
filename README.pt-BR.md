@@ -27,6 +27,8 @@ Combine **6 estações** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Lea
 
 **Novidades da 1.1:** pinte trilhas, canteiros de flores, grama alta e manchas de sol com um pincel; faça a grama abrir espaço para os seus personagens; dê a qualquer árvore, nuvem ou campo a sua própria cor; e salve as cores de que você gostou como um **Look** para usar em qualquer arquivo.
 
+**Novidades da 1.2: água e clima.** Lagos, riachos, cachoeiras e pedras com um clique. A água acompanha o relevo: um lago se enche até o ponto mais baixo da borda e transborda bem ali, o poço da cachoeira é escavado na encosta e a água que sai dele desce o campo em pequenas quedas. Ninfeias, juncos, carpas koi e um barco a remo; chuva, tempestades, arco-íris, vaga-lumes e libélulas.
+
 <p align="center">
   <img src="docs/images/hero_before_after.jpg" alt="Uma colina vazia (à esquerda) e o campo de anime depois de um clique (à direita)" width="820">
   <br><sub>Mesma colina, mesma câmera. À esquerda: nada ainda. À direita: depois de Make Anime Meadow.</sub>
@@ -53,10 +55,21 @@ Combine **6 estações** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Lea
 - **Cada objeto com a sua cor:** desloque o matiz, a saturação e o brilho de um único campo, árvore, nuvem ou cadeia de montanhas, ou dê a ele uma cor própria (uma cerejeira rosa entre árvores verdes). O Shuffle preserva isso.
 - **My Looks:** salve as cores, a luz, o céu e o estilo de pintura como um pequeno arquivo JSON e aplique-o em qualquer cena; importe e exporte looks para compartilhá-los.
 - **Detail Level:** Fast / Balanced / Best troca riqueza por velocidade em um clique (e também define as amostras de renderização).
+- **Beira d'água (1.2):** **Add Pond** (adicionar lago), **Add Stream** (adicionar riacho), **Add Waterfall** (adicionar cachoeira), **Add Rock** (adicionar pedra), ou transforme as suas próprias curvas em água com **Make Water from Curves**. A água escava o próprio leito no campo, e a grama abre espaço ao longo da margem. A água toon tem faixas de cor para o raso, o médio e o fundo, um leito que aparece através das partes rasas, cáusticas, reflexos da cena, linhas de correnteza nos riachos e corredeiras brancas, e acompanha cada estação e estilo de pintura.
+- **As leis da natureza (1.2):** a água corre morro abaixo. Um lago se enche até o ponto mais baixo da borda e transborda por ali; nunca fica pendurado acima da encosta. O poço de uma cachoeira é escavado no morro, e a água que transborda pela abertura cercada de pedras desce pelo caminho mais íngreme, em pequenos poços e quedas. Um riacho desenhado até um lago se liga a ele sozinho.
+- **Vida no lago (1.2):** ninfeias e suas folhas só onde a água tem de 0,2 a 1,6 m de profundidade, juncos no raso, seixos na margem, carpas koi que de vez em quando saltam para fora d'água e um barco a remo flutuando. No outono, as folhas caídas se juntam nas margens.
+- **Clima (1.2):** Clear Sky (céu limpo), Cloudy (nublado), Rain (chuva) e Storm (tempestade) como uma camada por cima da estação (as suas próprias cores são mantidas). A chuva acompanha a câmera ou cai só onde você quiser. Um arco-íris, vaga-lumes ao entardecer e à noite, libélulas de dia.
+- **Grass Only in Camera View (1.2):** a grama e as flores só crescem onde a câmera enxerga, com uma margem. A imagem não muda nem um pixel, e a quantidade de grama cai para algo entre a metade e um quinto.
 - **Leve e rápido:** grama, folhas e flores continuam como instâncias, então a viewport continua responsiva e uma renderização em 1920×1080 leva cerca de quatro segundos num Mac M1. Os valores ficam em node groups, então os arquivos renderizam igual mesmo sem o add-on instalado.
 - **Interface em English, 日本語, 简体中文 e 한국어:** segue automaticamente o idioma do Blender, ou escolha um no menu 🌐 no canto superior direito do painel.
 
 ## 🎨 Galeria
+
+### Água e clima (1.2)
+
+Lagos e cachoeiras com um clique, chuva, um arco-íris, uma noite de luar. A água acompanha o relevo e desce do poço da cachoeira até o lago em pequenas quedas.
+
+![Uma cachoeira e um lago num dia de céu limpo, ninfeias e carpas koi, o riacho saindo do poço, chuva, um arco-íris, uma noite de luar](docs/images/water.jpg)
 
 ### Seis estações
 
@@ -119,6 +132,7 @@ flowchart LR
 2. **Manchas de luz e sombra (shader):** "cúpulas" de Voronoi projetadas diretamente para baixo no espaço do mundo (em três tamanhos) são somadas à normal do chão e então iluminadas por Diffuse → Shader to RGB → normalizadas pela luz principal → divisão cel em 3 tons. A grama e o chão usam a mesma projeção, então as manchas de sombra atravessam o campo inteiro, e um ruído fino quebra a linha de transição em traços parecidos com folhas de grama. Segue a técnica de grama de anime de projetar uma textura de normais no espaço do objeto; o Harappa faz isso de forma procedural com nodes, sem bake.
 3. **Árvores e flores:** a copa é uma malha de esferas sobrepostas (edite-a e a árvore muda de forma). A superfície é coberta por cards de folhas alinhados à câmera (um atlas de pinceladas desenhado com numpy), com normais vindas das esferas e da copa inteira. AO e profundidade escurecem o interior, e cada card recebe um valor levemente diferente, para que as pinceladas pareçam marcas de pincel sobrepostas.
 4. **Céu:** o degradê, o sol e os cirros são pintados no shader do world e se reajustam à câmera. Cada nuvem é um aglomerado de bolhas transformado em uma malha suave (volume SDF → malha) e sombreado bolha por bolha com uma luz de pintor, de modo que os topos iluminados, a sombra azulada e a base plana parecem uma pintura de cenário. Todo material se dissolve na cor do horizonte conforme a distância da câmera.
+5. **Água (1.2):** um lago é uma curva fechada e um riacho, uma curva aberta; Geometry Nodes constroem a superfície. O primeiro modificador do campo escava margens e leitos de acordo com a distância até a água, e a grama e as flores se afastam da margem. O nível de um lago segue o terreno mais baixo da borda; um riacho segue o caminho mais íngreme morro abaixo e vira poços e quedas onde o terreno é íngreme. Onde um lago e um riacho se encontram, forma, cor e linhas de correnteza passam de um para o outro na margem, então os dois parecem uma só massa d'água.
 
 ## 🚀 Primeiros passos
 
@@ -135,6 +149,8 @@ Depois, faça os ajustes finos em linguagem comum enquanto olha a prévia:
 - "Adicione uma trilha atravessando o campo."
 - "Mais nuvens."
 - "Me mostre outra versão."
+- "Faça um lago na frente, com carpas koi."
+- "Coloque uma cachoeira no morro e faça chover."
 
 ### Instale você mesmo
 
@@ -152,7 +168,8 @@ Depois, faça os ajustes finos em linguagem comum enquanto olha a prévia:
 3. **Add Anime Tree** (adicionar árvore de anime; aparece no 3D cursor) ou **Plant Trees** (plantar árvores; espalha árvores pelo campo)
 4. **Paint the Meadow** (pintar o campo): clique em **Grass** e pinte uma trilha (começa em **Make Path**), em **Flowers** para um canteiro de flores, em **Grass Height** ou em **Colour**; depois, **Done Painting** (terminar a pintura)
 5. Selecione o seu personagem e clique em **Make Grass Avoid It**; selecione uma árvore e escolha uma **Own Colour** (cor própria) em **This Object's Colour** (cor deste objeto)
-6. Escolha uma **Season** (estação) e um **Paint Style** (estilo de pintura). Não consegue decidir? **Shuffle**. Gostou? **Save Look** (salvar look). Renderize com **F12**
+6. **Water** (água): **Add Pond**, **Add Stream**, **Add Waterfall** (no 3D cursor; se você nunca moveu o cursor, onde a câmera vê). Selecione um lago e, em **Active Water** (água ativa), escolha o tipo de água, o tamanho, as ninfeias, as carpas koi e um barco. **Weather** (clima) para chuva e arco-íris
+7. Escolha uma **Season** (estação) e um **Paint Style** (estilo de pintura). Não consegue decidir? **Shuffle**. Gostou? **Save Look** (salvar look). Renderize com **F12**
 
 <p align="center">
   <img src="docs/images/panel.jpg" alt="O painel do Harappa no Blender (日本語, English, 简体中文, 한국어)" width="820">
@@ -202,6 +219,20 @@ Depois, faça os ajustes finos em linguagem comum enquanto olha a prévia:
 </details>
 
 <details>
+<summary><b>Water & Weather (1.2)</b></summary>
+
+| Grupo | Opções |
+|---|---|
+| Water | Add Pond, Add Stream, Add Waterfall, Add Rock, Make Water from Curves, Fast Playback; em More: toda a água (Caustics, Glints, Water Glow) e a margem (Reeds, Pebbles, largura, altura e inclinação da margem) |
+| Active Water | Water Type (seis), Pond Scale, Shape, Depth, Width, ninfeias e flores, Add Koi, Add Boat, quantidade / tamanho / velocidade das carpas, Add Stepping Stones, Drop Onto Meadow, Remove Water; em More: Hue, Saturation, Brightness, Clarity, Shelf, Flow Speed |
+| Active Waterfall | Flow (ao vivo), Height, Width, Seed (reconstrói), Remove Waterfall |
+| Active Rock / Boat | Size, Height Ratio, Seed, Moss / Draft, Bob, Sway, Speed |
+| Weather | Clear Sky, Cloudy, Rain, Storm; Rain Amount, Rain Area, Follow Camera, Rain Here; Rainbow e Strength; Dragonflies; Fireflies e Firefly Glow |
+| Active Meadow | Grass Only in Camera View |
+
+</details>
+
+<details>
 <summary><b>Light & Sky, Brushwork, Colours</b></summary>
 
 | Grupo | Opções |
@@ -237,6 +268,18 @@ Sim. Selecione a sua malha de chão e clique em Make Anime Meadow. Pintar exige 
 <summary><b>Não vai ficar pesado?</b></summary>
 
 Grama, folhas e nuvens continuam como instâncias, e a grama distante é rareada automaticamente. Se estiver lento, diminua a Density em Active Meadow ou encurte a LOD Distance. As amostras de renderização ficam em 16, o que é mais do que suficiente para cel shading.
+</details>
+
+<details>
+<summary><b>A reprodução ficou lenta depois que adicionei água.</b></summary>
+
+Lagos e riachos escavam o leito no campo, e esse cálculo roda a cada frame. Clique em **Fast Playback** no painel **Water**: o Harappa faz o bake das margens escavadas no arquivo e a reprodução fica cerca de quatro vezes mais rápida (as ferramentas do próprio Harappa refazem o bake para você). Em cenas grandes, **Grass Only in Camera View** em **Active Meadow** também ajuda.
+</details>
+
+<details>
+<summary><b>O meu lago não aparece na imagem.</b></summary>
+
+Lagos, riachos e cachoeiras são criados no 3D cursor. Se você nunca moveu o cursor (ele está na origem do mundo), eles vão para o campo, onde a câmera os vê. Para escolher o lugar, clique antes no chão para mover o cursor.
 </details>
 
 <details>

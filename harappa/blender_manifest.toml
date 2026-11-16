@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "harappa"
-version = "1.1.2"
+version = "1.2.0"
 name = "Harappa"
-tagline = "One-click anime grass, trees and flowers (EEVEE)"
+tagline = "One-click anime meadows, ponds, waterfalls and weather (EEVEE)"
 maintainer = "Tokyo AI Visuals LLC"
 type = "add-on"
 website = "https://github.com/kanaworksai-hue/harappa"

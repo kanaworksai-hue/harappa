@@ -27,6 +27,8 @@ Combina **6 estaciones** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Lea
 
 **Novedades de la 1.1:** pinta caminos, macizos de flores, hierba alta y claros soleados con un pincel; deja que la hierba haga sitio a tus personajes; da su propio color a cualquier árbol, nube o prado; y guarda los colores que te gusten como un **Look** para usarlo en cualquier archivo.
 
+**Novedades de la 1.2: agua y clima.** Estanques, arroyos, cascadas y rocas con un clic. El agua sigue el terreno: un estanque se llena hasta el punto más bajo de su borde y se desborda justo por ahí, la poza de la cascada se excava en la ladera y el agua que sale de ella baja por el prado en pequeños saltos. Nenúfares, juncos, carpas koi y una barca de remos; lluvia, tormentas, un arcoíris, luciérnagas y libélulas.
+
 <p align="center">
   <img src="docs/images/hero_before_after.jpg" alt="Una colina vacía (izquierda) y el prado anime tras un solo clic (derecha)" width="820">
   <br><sub>La misma colina y la misma cámara. Izquierda: todavía nada. Derecha: después de Make Anime Meadow.</sub>
@@ -53,10 +55,21 @@ Combina **6 estaciones** (Summer Meadow, Spring Blossom, Golden Hour, Autumn Lea
 - **Cada objeto con su propio color:** desplaza el tono, la saturación y el brillo de un prado, árbol, nube o cordillera concretos, o dale su propio color (un cerezo rosa entre árboles verdes). Shuffle lo conserva.
 - **My Looks:** guarda los colores, la luz, el cielo y el estilo de pintura en un pequeño archivo JSON y aplícalo a cualquier escena; importa y exporta looks para compartirlos.
 - **Detail Level:** Fast / Balanced / Best cambia riqueza por velocidad con un clic (también ajusta las muestras de render).
+- **A la orilla del agua (1.2):** **Add Pond** (añadir estanque), **Add Stream** (añadir arroyo), **Add Waterfall** (añadir cascada), **Add Rock** (añadir roca), o convierte tus propias curvas en agua con **Make Water from Curves**. El agua excava su propio lecho en el prado y la hierba deja sitio a lo largo de la orilla. El agua toon tiene franjas de color para lo somero, lo intermedio y lo profundo, un fondo que se ve a través de las zonas poco profundas, cáusticas, reflejos de la escena, líneas de corriente en los arroyos y rápidos blancos, y se adapta a cada estación y estilo de pintura.
+- **Las leyes de la naturaleza (1.2):** el agua corre cuesta abajo. Un estanque se llena hasta el punto más bajo de su borde y se desborda por ahí; nunca se queda colgado sobre la pendiente. La poza de una cascada se excava en la ladera, y el agua que rebosa por su escotadura bordeada de piedras baja por el camino más empinado formando pequeñas pozas y saltos. Un arroyo dibujado hasta un estanque se une a él solo.
+- **Vida en el estanque (1.2):** nenúfares y sus hojas solo donde el agua tiene entre 0,2 y 1,6 m de profundidad, juncos en las zonas someras, guijarros en la orilla, carpas koi que de vez en cuando saltan fuera del agua y una barca de remos flotando. En otoño, las hojas caídas se amontonan en las orillas.
+- **Clima (1.2):** Clear Sky (despejado), Cloudy (nublado), Rain (lluvia) y Storm (tormenta) como una capa sobre la estación (tus propios colores se conservan). La lluvia sigue a la cámara o cae solo donde tú la pongas. Un arcoíris, luciérnagas al atardecer y de noche, libélulas de día.
+- **Grass Only in Camera View (1.2):** la hierba y las flores crecen solo donde la cámara alcanza a ver, con un margen. La imagen no cambia ni un píxel, y la cantidad de hierba se reduce a entre la mitad y una quinta parte.
 - **Ligero y rápido:** la hierba, las hojas y las flores siguen siendo instancias, así que el visor responde con fluidez y un render a 1920×1080 tarda unos cuatro segundos en un Mac M1. Los valores viven en grupos de nodos, por lo que los archivos se renderizan igual sin el complemento instalado.
 - **Interfaz en English, 日本語, 简体中文 y 한국어:** sigue automáticamente el idioma de Blender, o elige uno en el menú 🌐 arriba a la derecha del panel.
 
 ## 🎨 Galería
+
+### Agua y clima (1.2)
+
+Estanques y cascadas con un clic, lluvia, un arcoíris, una noche de luna. El agua sigue el terreno y baja a saltos desde la poza de la cascada hasta el estanque.
+
+![Una cascada y un estanque en un día despejado, nenúfares y carpas koi, el arroyo que sale de la poza, lluvia, un arcoíris, una noche de luna](docs/images/water.jpg)
 
 ### Seis estaciones
 
@@ -119,6 +132,7 @@ flowchart LR
 2. **Manchas de luz y sombra (shader):** "cúpulas" de Voronoi proyectadas en vertical en el espacio del mundo (en tres tamaños) se suman a la normal del suelo y luego se iluminan mediante Diffuse → Shader to RGB → normalización por la luz principal → una división cel en 3 tonos. La hierba y el suelo usan la misma proyección, así que las manchas de sombra recorren todo el campo, y un ruido fino rompe la línea de transición en trazos parecidos a briznas. Sigue la técnica de la hierba de anime que proyecta una textura de normales en el espacio del objeto; Harappa lo hace de forma procedural con nodos, sin horneado.
 3. **Árboles y flores:** la copa es una malla de esferas superpuestas (edítala y el árbol cambia de forma). Su superficie está cubierta de tarjetas de hojas alineadas con la cámara (un atlas de pinceladas dibujado con numpy) cuyas normales vienen de las esferas y de toda la copa. La oclusión ambiental y la profundidad oscurecen el interior, y cada tarjeta recibe un valor ligeramente distinto para que los toques se lean como pinceladas superpuestas.
 4. **Cielo:** el degradado, el sol y los cirros se pintan en el shader del mundo y se reajustan a la cámara. Cada nube es un grupo de bultos convertido en una malla suave (volumen SDF → malla) y sombreado bulto a bulto con una luz de pintor, de modo que las cimas iluminadas, la sombra azulada y la base plana se leen como en un fondo pintado. Todos los materiales se funden con el color del horizonte según la distancia a la cámara.
+5. **Agua (1.2):** un estanque es una curva cerrada y un arroyo, una abierta; Geometry Nodes construye la superficie. El primer modificador del prado excava orillas y lechos según la distancia al agua, y la hierba y las flores se apartan de la orilla. El nivel de un estanque se ajusta al terreno más bajo de su borde; un arroyo sigue la línea de máxima pendiente y se convierte en pozas y saltos donde el terreno es empinado. Donde se encuentran un estanque y un arroyo, la forma, el color y las líneas de corriente se relevan en la orilla, así que se leen como una sola masa de agua.
 
 ## 🚀 Primeros pasos
 
@@ -135,6 +149,8 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 - "Añade un camino que lo atraviese."
 - "Más nubes."
 - "Enséñame otra versión."
+- "Pon un estanque delante con carpas koi."
+- "Pon una cascada en la colina y haz que llueva."
 
 ### Instálalo tú mismo
 
@@ -152,7 +168,8 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 3. **Add Anime Tree** (añadir árbol anime; aparece en el cursor 3D) o **Plant Trees** (plantar árboles; los dispersa por el prado)
 4. **Paint the Meadow** (pintar el prado): haz clic en **Grass** y pinta un camino (empieza en **Make Path**), en **Flowers** para un macizo de flores, o en **Grass Height** o **Colour**; luego **Done Painting** (terminar de pintar)
 5. Selecciona tu personaje y haz clic en **Make Grass Avoid It**; selecciona un árbol y elige un **Own Colour** (color propio) en **This Object's Colour**
-6. Elige una **Season** (estación) y un **Paint Style** (estilo de pintura). ¿No te decides? **Shuffle**. ¿Te gusta? **Save Look** (guardar look). Renderiza con **F12**
+6. **Water** (agua): **Add Pond**, **Add Stream**, **Add Waterfall** (en el cursor 3D; si nunca has movido el cursor, donde lo ve la cámara). Selecciona un estanque y en **Active Water** (agua activa) elige el tipo de agua, el tamaño, los nenúfares, las koi y una barca. **Weather** (clima) para la lluvia y el arcoíris
+7. Elige una **Season** (estación) y un **Paint Style** (estilo de pintura). ¿No te decides? **Shuffle**. ¿Te gusta? **Save Look** (guardar look). Renderiza con **F12**
 
 <p align="center">
   <img src="docs/images/panel.jpg" alt="El panel de Harappa en Blender (日本語, English, 简体中文, 한국어)" width="820">
@@ -202,6 +219,20 @@ Después ajústalo con palabras sencillas mientras miras la vista previa:
 </details>
 
 <details>
+<summary><b>Water & Weather (1.2)</b></summary>
+
+| Grupo | Ajustes |
+|---|---|
+| Water | Add Pond, Add Stream, Add Waterfall, Add Rock, Make Water from Curves, Fast Playback; en More: toda el agua (Caustics, Glints, Water Glow) y la orilla (Reeds, Pebbles, anchura, altura y pendiente de la orilla) |
+| Active Water | Water Type (seis), Pond Scale, Shape, Depth, Width, nenúfares y flores, Add Koi, Add Boat, número / tamaño / velocidad de las koi, Add Stepping Stones, Drop Onto Meadow, Remove Water; en More: Hue, Saturation, Brightness, Clarity, Shelf, Flow Speed |
+| Active Waterfall | Flow (en directo), Height, Width, Seed (reconstruye), Remove Waterfall |
+| Active Rock / Boat | Size, Height Ratio, Seed, Moss / Draft, Bob, Sway, Speed |
+| Weather | Clear Sky, Cloudy, Rain, Storm; Rain Amount, Rain Area, Follow Camera, Rain Here; Rainbow y Strength; Dragonflies; Fireflies y Firefly Glow |
+| Active Meadow | Grass Only in Camera View |
+
+</details>
+
+<details>
 <summary><b>Light & Sky, Brushwork, Colours</b></summary>
 
 | Grupo | Ajustes |
@@ -237,6 +268,18 @@ Sí. Selecciona tu malla de suelo y pulsa Make Anime Meadow. Para pintar hacen f
 <summary><b>¿No será muy pesado?</b></summary>
 
 La hierba, las hojas y las nubes siguen siendo instancias, y la hierba lejana se aclara automáticamente. Si va lento, baja la Density en Active Meadow o acorta la LOD Distance. Las muestras de render están en 16, que es más que suficiente para el sombreado cel.
+</details>
+
+<details>
+<summary><b>Desde que añadí agua, la reproducción va lenta.</b></summary>
+
+Los estanques y arroyos excavan su lecho en el prado, y eso se recalcula en cada fotograma. Haz clic en **Fast Playback** en el panel **Water**: las orillas excavadas se hornean en el archivo y la reproducción va unas cuatro veces más rápida (las propias herramientas de Harappa las vuelven a hornear por ti). En escenas grandes también ayuda **Grass Only in Camera View** en **Active Meadow**.
+</details>
+
+<details>
+<summary><b>Mi estanque no sale en la imagen.</b></summary>
+
+Los estanques, arroyos y cascadas se crean en el cursor 3D. Si nunca has movido el cursor (está en el origen del mundo), se colocan sobre el prado donde los ve la cámara. Para elegir el sitio, haz clic antes en el suelo para mover el cursor.
 </details>
 
 <details>

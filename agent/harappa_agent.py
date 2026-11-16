@@ -97,6 +97,24 @@ def args(name):
     return [argv[i + 1] for i, a in enumerate(argv) if a == name and i + 1 < len(argv)]
 
 
+def nums(spec, flag, need=2):
+    """'1,2.5,3' -> floats, or a clean error naming the flag."""
+    try:
+        v = [float(x) for x in spec.split(",")]
+    except ValueError:
+        v = []
+    if len(v) < need:
+        fail(f"{flag} needs numbers like X,Y (got {spec!r})")
+    return v
+
+
+def on_meadow(H, scene, x, y, flag):
+    import importlib
+    hw = importlib.import_module(H.__name__ + ".water")
+    if hw._ground_z(hw._ground_bvhs(hw.meadows(scene)), x, y) is None:
+        fail(f"{flag} {x:g},{y:g} is off the meadow")
+
+
 def fail(msg):
     print("HARAPPA ERROR", msg)
     sys.exit(1)
@@ -278,6 +296,12 @@ def main():
         for key in ("season", "style", "new_shape"):
             for it in S[key].enum_items:
                 print(f"{key:9s} {it.identifier:10s} {it.name:18s} {it.description}")
+        for it in S["weather"].enum_items:
+            print(f"weather   {it.identifier:10s} {it.name:18s} {it.description}")
+        import importlib
+        hw = importlib.import_module(pkg().__name__ + ".water")
+        for k, v in hw.WATER_TYPES.items():
+            print(f"water     {k:10s} {v[0]:18s} {v[1]}")
         skip = {"rna_type", "name", "season", "style", "new_shape", "mask_paint"}
         print("settings:", " ".join(k for k in S.keys() if k not in skip))
         print("HARAPPA OK listed")
@@ -350,15 +374,14 @@ def main():
         for spec in args("--pond"):
             if ground is None:
                 fail("--pond needs a meadow (add --meadow)")
-            v = [float(x) for x in spec.split(",")]
-            if len(v) < 2:
-                fail("--pond needs X,Y or X,Y,R")
+            v = nums(spec, "--pond")
+            on_meadow(H, scene, v[0], v[1], "--pond")
             scene.cursor.location = (v[0], v[1], 0.0)
             bpy.ops.harappa.add_pond(radius=v[2] if len(v) > 2 else 2.5, seed=random.randint(0, 999))
         for spec in args("--stream"):
             if ground is None:
                 fail("--stream needs a meadow (add --meadow)")
-            pts = [tuple(float(x) for x in p.split(",")) for p in spec.split(":")]
+            pts = [tuple(nums(p, "--stream")) for p in spec.split(":")]
             if len(pts) < 2:
                 fail("--stream needs at least two points X,Y:X,Y")
             import importlib
@@ -367,11 +390,12 @@ def main():
         for spec in args("--waterfall"):
             if ground is None:
                 fail("--waterfall needs a meadow (add --meadow)")
-            v = [float(x) for x in spec.split(",")]
+            v = nums(spec, "--waterfall")
+            on_meadow(H, scene, v[0], v[1], "--waterfall")
             scene.cursor.location = (v[0], v[1], 0.0)
             bpy.ops.harappa.add_waterfall(height=v[2] if len(v) > 2 else 2.4, seed=random.randint(0, 999))
         for spec in args("--rock"):
-            v = [float(x) for x in spec.split(",")]
+            v = nums(spec, "--rock")
             scene.cursor.location = (v[0], v[1], 0.0)
             bpy.ops.harappa.add_rock(size=v[2] if len(v) > 2 else 1.0)
         if arg("--water-type"):
@@ -387,7 +411,7 @@ def main():
             s.water_rain = float(arg("--rain"))
         import importlib
         hw3 = importlib.import_module(H.__name__ + ".water")
-        ponds = [o for o in scene.objects if hw3.is_water(o) and o.get("hrp_pond") is not None
+        ponds = [o for o in scene.objects if hw3.is_water(o) and any(sp.use_cyclic_u for sp in o.data.splines)
                  and o.get("hrp_waterfall") is None]
         if arg("--koi") is not None:
             if not ponds:
@@ -477,7 +501,7 @@ def main():
         if wth:
             s.weather = wth
         if arg("--rain-at"):
-            v = [float(x) for x in arg("--rain-at").split(",")]
+            v = nums(arg("--rain-at"), "--rain-at")
             if len(v) < 2:
                 fail("--rain-at needs X,Y or X,Y,R")
             if s.weather not in ("RAIN", "STORM"):

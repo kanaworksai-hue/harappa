@@ -202,6 +202,7 @@ def rock_material():
                 a=g.mixout(col), b=g.out(pal, "rock_deep"))                  # a shaded recess (waterfall alcove)
     shading._emit_out(g, g.mixout(col), 500, 200, pal=pal)
     mat["hrp_kind"] = "rock"
+    shading._done(mat, "rock_material")
     return mat
 
 
@@ -253,7 +254,7 @@ def avoid_props(scene):
 def add_rock(context, loc, size=1.0, seed=0, flat=0.65, ground_z=None, block=False, kind=None):
     if kind is None:                                             # a natural mix: mostly boulders, some chunks
         kind = ("ROUND", "ROUND", "ANGULAR", "ROUND", "SLAB")[seed % 5] if not block else "ROUND"
-    me = rock_mesh(f"HRP Rock {'B' if block else ''}{kind[0]}{seed}", seed=seed, flat=flat, block=block, kind=kind)
+    me = rock_mesh(_rock_name(block, kind, seed, flat), seed=seed, flat=flat, block=block, kind=kind)
     if not me.materials:
         me.materials.append(rock_material())
     ob = bpy.data.objects.new("Harappa Rock", me)
@@ -261,14 +262,20 @@ def add_rock(context, loc, size=1.0, seed=0, flat=0.65, ground_z=None, block=Fal
     ob.scale = (size, size, size)
     ob.rotation_euler = (0.0, 0.0, random.Random(seed).uniform(0, math.tau))
     ob["hrp_rock"] = [size, seed, flat, 1 if block else 0]
+    ob["hrp_rock_kind"] = kind
     ob["hrp_rsize"] = float(size)
     props_collection(context.scene).objects.link(ob)
     avoid_props(context.scene)
     return ob
 
 
+def _rock_name(block, kind, seed, flat):
+    """One mesh per shape: rocks share it only when they really are the same rock (kind, seed and height ratio)."""
+    return f"HRP Rock {'B' if block else ''}{kind[0]}{int(seed)} {float(flat):.2f}"
+
+
 def edit_rock(ob, seed=None, flat=None):
-    """A new shape for an existing rock (same place, same scale)."""
+    """A new shape for an existing rock (same place, same scale, same kind)."""
     info = list(ob.get("hrp_rock", [1.0, 0, 0.65, 0]))
     while len(info) < 4:
         info.append(0)
@@ -277,8 +284,8 @@ def edit_rock(ob, seed=None, flat=None):
     if flat is not None:
         info[2] = float(flat)
     block = bool(info[3])
-    me = rock_mesh(f"HRP Rock {'B' if block else ''}{info[1]} {info[2]:.2f}", seed=int(info[1]), flat=info[2],
-                   block=block)
+    kind = str(ob.get("hrp_rock_kind", "ROUND"))
+    me = rock_mesh(_rock_name(block, kind, info[1], info[2]), seed=int(info[1]), flat=info[2], block=block, kind=kind)
     if not me.materials:
         me.materials.append(rock_material())
     old = ob.data

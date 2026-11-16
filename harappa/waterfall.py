@@ -16,7 +16,7 @@ from mathutils import Matrix, Vector
 from . import rocks, shading, water
 from .util import G, fresh_group, iface, mod_input, only, sock
 
-FALL_VER = 45
+FALL_VER = 46
 FALL = "HRP Waterfall"
 FALL_MOD = "Harappa Waterfall"
 MAT_FALL = "HRP Waterfall"
@@ -119,11 +119,11 @@ def fall_group():
     iface(ng, "Width", "INPUT", "NodeSocketFloat", 1.0, 0.05, 100.0, "Width at the lip", "DISTANCE")
     iface(ng, "Drop", "INPUT", "NodeSocketFloat", 2.5, 0.1, 500.0, "Height of the fall", "DISTANCE")
     iface(ng, "Throw", "INPUT", "NodeSocketFloat", 0.9, 0.0, 20.0, "Speed the water leaves the lip (m/s)")
-    iface(ng, "Spread", "INPUT", "NodeSocketFloat", 0.25, 0.0, 3.0, "How much wider the sheet gets as it falls")
+    iface(ng, "Sheet Spread", "INPUT", "NodeSocketFloat", 0.25, 0.0, 3.0, "How much wider the sheet gets as it falls")
     iface(ng, "Foam", "INPUT", "NodeSocketFloat", 1.0, 0.0, 3.0, "Size of the foam at the foot")
     iface(ng, "Material", "INPUT", "NodeSocketMaterial")
     iface(ng, "Foam Material", "INPUT", "NodeSocketMaterial")
-    iface(ng, "Mist", "INPUT", "NodeSocketFloat", 0.8, 0.0, 3.0, "Spray mist rising at the foot")
+    iface(ng, "Spray Mist", "INPUT", "NodeSocketFloat", 0.8, 0.0, 3.0, "Spray mist rising at the foot")
     iface(ng, "Mist Material", "INPUT", "NodeSocketMaterial")
     iface(ng, "Splash Material", "INPUT", "NodeSocketMaterial")
     iface(ng, "Skirt Material", "INPUT", "NodeSocketMaterial")
@@ -151,7 +151,7 @@ def fall_group():
                   g.out(gi, "Drop"), 2.0).outputs), G_ACC).outputs))
     t = g.math("MULTIPLY", -1150, -450, g.out(sv, 0), g.out(tmax, 0))
     wid = g.math("MULTIPLY", -1150, -250, only(g.math("MULTIPLY_ADD", -1250, -150, g.out(sv, 0),
-                 g.out(gi, "Spread"), 1.0).outputs), g.out(gi, "Width"))
+                 g.out(gi, "Sheet Spread"), 1.0).outputs), g.out(gi, "Width"))
     x = g.math("MULTIPLY", -1000, -250, only(g.math("SUBTRACT", -1100, -200, g.out(u, 0), 0.5).outputs), g.out(wid, 0))
     y = g.math("MULTIPLY", -1000, -400, g.out(t, 0), g.out(gi, "Throw"))
     y = g.math("MULTIPLY", -900, -400, g.out(y, 0), -1.0)
@@ -399,7 +399,7 @@ def fall_group():
     puff.inputs["Subdivisions"].default_value = 3
     puff.inputs["Radius"].default_value = 1.0
     psz = g.math("MULTIPLY", 850, -2700, only(g.math("MULTIPLY_ADD", 750, -2700, g.out(mph, 0), 0.35, 0.25).outputs),
-                 only(g.math("MULTIPLY", 700, -2800, g.out(gi, "Width"), g.out(gi, "Mist")).outputs))
+                 only(g.math("MULTIPLY", 700, -2800, g.out(gi, "Width"), g.out(gi, "Spray Mist")).outputs))
     mins = g.n("GeometryNodeInstanceOnPoints", 1000, -2300)
     g.link(msp, 0, mins, "Points")
     g.link(puff, "Mesh", mins, "Instance")
@@ -414,7 +414,7 @@ def fall_group():
     g.link(mfade, 0, mmat, "Geometry")
     g.link(gi, "Mist Material", mmat, "Material")
     msw = g.n("GeometryNodeSwitch", 1350, -2100, input_type="GEOMETRY")
-    g.link(g.math("GREATER_THAN", 1200, -2100, g.out(gi, "Mist"), 0.01), 0, msw, "Switch")
+    g.link(g.math("GREATER_THAN", 1200, -2100, g.out(gi, "Spray Mist"), 0.01), 0, msw, "Switch")
     g.link(mmat, 0, msw, "True")
     join = g.n("GeometryNodeJoinGeometry", 1400, 0)
     g.link(sm, 0, join, "Geometry")
@@ -586,6 +586,7 @@ def fall_material():
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
     mat["hrp_kind"] = "waterfall"
+    shading._done(mat, "fall_material")
     return mat
 
 
@@ -617,6 +618,7 @@ def mist_material():
     a = g.math("MULTIPLY", -350, 350, g.out(a, 0), 0.07)
     shading._emit_out(g, g.out(pal, "water_foam"), 0, 200, pal=pal, alpha=g.out(a, 0), shadow_off=True, soft=True)
     mat.surface_render_method = "BLENDED"
+    shading._done(mat, "mist_material")
     return mat
 
 
@@ -690,6 +692,7 @@ def splash_material():
     mat.surface_render_method = "BLENDED"
     mat.use_backface_culling = False
     mat["hrp_kind"] = "splash"
+    shading._done(mat, "splash_material")
     return mat
 
 
@@ -748,6 +751,7 @@ def skirt_material():
     col = g.mix(50, 250, "MULTIPLY", fac=1.0, a=g.mixout(col), b=only(gc.outputs))
     shading._emit_out(g, g.mixout(col), 250, 250, pal=pal, alpha=g.out(a, 0), shadow_off=True, soft=True)
     mat.surface_render_method = "BLENDED"
+    shading._done(mat, "skirt_material")
     return mat
 
 
@@ -768,6 +772,7 @@ def foam_material():
     cel = shading._cel_node(g, pal, -200, 200, g.out(geo, "Normal"), g.mixout(wlit), g.mixout(sh),
                             g.mixout(sh))
     shading._emit_out(g, g.out(cel, "Color"), 200, 200, pal=pal)
+    shading._done(mat, "foam_material")
     return mat
 
 
@@ -812,7 +817,7 @@ def set_flow(fall, flow):
         return
     fall["hrp_wf_flow"] = float(flow)
     mod_input(mod, "Throw", 0.45 + 0.5 * flow)
-    mod_input(mod, "Spread", 0.3 + 0.35 * flow)
+    mod_input(mod, "Sheet Spread", 0.3 + 0.35 * flow)
     mod_input(mod, "Foam", 0.4 + 0.6 * flow)
     fall.update_tag()
 

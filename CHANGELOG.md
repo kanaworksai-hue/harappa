@@ -2,7 +2,10 @@
 
 ## 1.2.0 — 2026-11-16 "Waterside & Weather"
 
-- **Grass Only in Camera View** (Meadow panel, off by default): grass and flowers grow only where the active
+- **Panels:** Water and Weather show once there is a meadow; Active Water, Active Waterfall, Active Rock and Active
+  Boat open by themselves for the selected thing, with the finer settings folded under More (like Active Meadow). A new
+  pond added with the 3D cursor still at the world origin goes where the camera sees it.
+- **Grass Only in Camera View** (Active Meadow panel, off by default): grass and flowers grow only where the active
   camera can see, with a 25 % margin, so big scenes get much lighter (about half to four fifths fewer tufts in our
   test shots). The render is pixel-identical, since off-screen grass casts no shadow; tufts never reshuffle as the
   camera moves.
@@ -29,9 +32,9 @@
 - **Add Waterfall:** a raised rocky knoll with trees, a stream across it, a lip of bedded slabs, the falling sheet
   (toon bands, a white lip, two layers of strands, torn edges, ropes in the lower part, a darker sheet behind), a
   crown splash, churning white water and foam on the plunge pool, expanding impact rings, and an outflow stream, in
-  one click. Selected Waterfall: Flow (live), Height, Width and Seed (rebuild).
+  one click. Active Waterfall: Flow (live), Height, Width and Seed (rebuild).
 - **Rocks:** Add Rock (rounded boulders, angular chunks and flat slabs, bedded into the ground on the low side of
-  their footprint); Selected Rock: size, flatness, seed, moss. Steep bare faces of the meadow (terrace and bank
+  their footprint); Active Rock: size, height ratio, seed, moss. Steep bare faces of the meadow (terrace and bank
   cliffs) are dressed with angular rock chunks. Add Stepping Stones across a
   stream. Waterfalls have spray mist at the foot (Mist on the Harappa Waterfall modifier).
 - **Pond life:** lily pads and water-lily flowers (only where the water is 0.2-1.6 m deep), reeds and cattails in
@@ -45,7 +48,7 @@
   on it, no reeds by a waterfall.
 - **Fixes:** rocks and trees no longer float a grass-height above the ground (the ground probe stopped on blade tips);
   a stream that enters a pond grades down gently instead of dropping in its last stretch.
-- **Fast Playback (Freeze Banks):** bakes the dug banks into the file (about 4x faster playback).
+- **Fast Playback** (Water panel): bakes the dug banks into the file (about 4x faster playback).
 - Agent CLI: `--pond`, `--stream`, `--stream-width`, `--rain`, `--water-type`, `--waterfall`, `--rock`, `--koi`,
   `--boat`, `--weather`, `--rain-at`, `--rainbow`, `--fireflies`, `--dragonflies`.
 ## 1.1.2 — 2026-11-13

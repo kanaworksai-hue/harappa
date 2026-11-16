@@ -416,6 +416,11 @@ class HRP_PT_avoid(HrpSub, bpy.types.Panel):
                 nb.label(text=f"{name}: {t(why)}", icon="ERROR", translate=False)
         box = layout.box()
         objs = list(coll.objects) if coll is not None else []
+        rocks_ = [o for o in objs if o.get("hrp_rock") is not None]     # Harappa's rocks: avoided by themselves
+        objs = [o for o in objs if o.get("hrp_rock") is None]
+        if rocks_:
+            box.label(text=i18n.report(f"+ {len(rocks_)} Harappa rocks (avoided automatically)"), icon="MESH_ICOSPHERE",
+                      translate=False)
         if not objs:
             box.label(text=t("Select your character, then click Avoid Selected"), icon="INFO", translate=False)
         for ob in objs[:12]:
@@ -609,125 +614,190 @@ class HRP_PT_tree(HrpSub, bpy.types.Panel):
                 _mod_inputs(col, mod, ("Wind Strength", "Wind Speed", "Wind Scale", "Wind Direction"))
 
 
+def _has_meadow(context):
+    from . import water
+    return bool(water.meadows(context.scene))
+
+
+def _more(layout, key):
+    """A folded "More" section (closed by default), like the 1.1 panels; None while folded."""
+    head, body = layout.panel(key, default_closed=True)
+    head.label(text=t("More"), translate=False)
+    return body
+
+
 class HRP_PT_water(HrpSub, bpy.types.Panel):
     bl_label = ""
     bl_idname = "HRP_PT_water"
     title = "Water"
 
+    @classmethod
+    def poll(cls, context):
+        return _has_meadow(context)
+
     def draw(self, context):
         from . import water
         s = context.scene.harappa
         layout = self.layout
-        ob = context.active_object
-        # 1. create
-        layout.label(text=t("Create"), translate=False)
-        row = layout.row(align=True)
-        row.scale_y = 1.3
+        col = layout.column(align=True)
+        col.scale_y = 1.3
+        row = col.row(align=True)
         _op(row, "harappa.add_pond", "Add Pond", icon="MOD_FLUIDSIM")
         _op(row, "harappa.add_stream", "Add Stream", icon="MOD_OCEAN")
-        row = layout.row(align=True)
-        row.scale_y = 1.3
+        row = col.row(align=True)
         _op(row, "harappa.add_waterfall", "Add Waterfall", icon="FORCE_FLUIDFLOW")
         _op(row, "harappa.add_rock", "Add Rock", icon="MESH_ICOSPHERE")
         _op(layout, "harappa.make_water", "Make Water from Curves", icon="OUTLINER_OB_CURVE")
-        # 2. the selected thing
-        if ob is not None and ob.get("hrp_waterfall") is not None:
-            from . import waterfall
-            fall = waterfall.fall_of(context, ob["hrp_waterfall"])
-            box = layout.box()
-            box.label(text=t("Selected Waterfall"), icon="FORCE_FLUIDFLOW", translate=False)
-            if fall is not None:
-                col = box.column(align=True)
-                _prop(col, fall.harappa_fall, "flow", slider=True)
-                _prop(col, fall.harappa_fall, "height")
-                _prop(col, fall.harappa_fall, "width")
-                _prop(col, fall.harappa_fall, "seed")
-            _op(box, "harappa.remove_waterfall", "Remove Waterfall", icon="TRASH")
-        if ob is not None and ob.get("hrp_rock") is not None:
-            box = layout.box()
-            box.label(text=t("Selected Rock"), icon="MESH_ICOSPHERE", translate=False)
-            col = box.column(align=True)
-            for k in ("size", "flat", "seed"):
-                _prop(col, ob.harappa_rock, k)
-            _prop(col, ob.harappa_rock, "moss", slider=True)
-        if ob is not None and ob.get("hrp_boat") is not None:
-            box = layout.box()
-            box.label(text=t("Selected Boat"), icon="MOD_OCEAN", translate=False)
-            _mod_inputs(box.column(align=True), ob.modifiers.get("Harappa Float"), ("Draft", "Bob", "Sway", "Speed"))
-        if water.is_water(ob):
-            pond = any(sp.use_cyclic_u for sp in ob.data.splines)
-            box = layout.box()
-            box.label(text=t("Selected Water") + ": " + ob.name, icon="MOD_FLUIDSIM", translate=False)
-            ws = ob.harappa_water
-            prop = ws.bl_rna.properties["kind"]
-            item = next((i.name for i in prop.enum_items if i.identifier == ws.kind), ws.kind)
-            row = box.row(align=True)
-            row.label(text=t("Water Type"), translate=False)
-            row.menu("HRP_MT_water_kind", text=t(item), translate=False)
-            col = box.column(align=True)
-            for k in ("hue", "saturation", "brightness", "clarity"):
-                _prop(col, ws, k, slider=True)
-            if pond:
-                row = box.row(align=True)
-                _prop(row, ws, "size")
-                if ob.get("hrp_pond") is not None:
-                    _prop(row, ws, "shape_seed")
-            col = box.column(align=True)
-            names = ("Depth", "Shelf") if pond else ("Width", "Depth", "Shelf", "Flow Speed")
-            _mod_inputs(col, ob.modifiers.get(water.SURFACE_MOD), names)
-            life = ob.modifiers.get("Harappa Pond Life")
-            if pond or life is not None:
-                sub = box.box()
-                sub.label(text=t("Pond Life"), translate=False)
-                if life is not None:
-                    _mod_inputs(sub.column(align=True), life, ("Lily Pads", "Pad Size", "Flowers", "Seed"))
-                if pond:
-                    row = sub.row(align=True)
-                    _op(row, "harappa.add_fish", "Add Koi", icon="OUTLINER_OB_FORCE_FIELD")
-                    _op(row, "harappa.add_boat", "Add Boat", icon="MOD_OCEAN")
-                    fish = next((c for c in ob.children if c.get("hrp_fish")), None)
-                    if fish is not None:
-                        _mod_inputs(sub.column(align=True), fish.modifiers.get("Harappa Fish"),
-                                    ("Count", "Size", "Speed"))
-            if not pond:
-                _op(box, "harappa.stepping_stones", "Add Stepping Stones", icon="OUTLINER_DATA_POINTCLOUD")
-            row = box.row(align=True)
-            if not pond:
-                _op(row, "harappa.drop_stream", "Drop Onto Meadow", icon="IMPORT")
-            _op(row, "harappa.remove_water", "Remove Water", icon="TRASH")
-        # 3. the shore of every pond and stream (on the meadow)
         gnd = next((m for m in water.meadows(context.scene) if m.modifiers.get(water.CARVE_MOD)), None)
-        if gnd is not None:
-            col = layout.column(align=True)
-            col.label(text=t("Shore (all ponds & streams)"), translate=False)
-            shore = gnd.modifiers.get("Harappa Shore")
-            if shore is not None:
-                _mod_inputs(col, shore, ("Reeds", "Reed Height", "Pebble Density", "Pebble Size"))
-            _mod_inputs(col, gnd.modifiers.get(water.CARVE_MOD), ("Bank", "Bank Height", "Slope"))
-        # 4. every water surface
-        col = layout.column(align=True)
-        col.label(text=t("All Water"), translate=False)
-        for k in ("water_rain", "water_caustics", "water_glints", "water_glow"):
-            _prop(col, s, k, slider=True)
-        # 5. playback speed
-        if gnd is not None:
-            col = layout.column(align=True)
-            col.label(text=t("Fast Playback (Freeze Banks)"), translate=False)
-            row = col.row(align=True)
+        if gnd is not None:                                   # playback speed: the one thing most people need here
+            row = layout.row(align=True)
             if gnd.get("hrp_banks_frozen"):
                 op = _op(row, "harappa.freeze_banks", "Update Banks", icon="FILE_REFRESH")
                 op.on = True
                 op = _op(row, "harappa.freeze_banks", "Live Banks", icon="UNLOCKED")
                 op.on = False
             else:
-                op = _op(row, "harappa.freeze_banks", "Freeze Banks", icon="LOCKED")
+                op = _op(row, "harappa.freeze_banks", "Fast Playback", icon="LOCKED")
                 op.on = True
+        body = _more(layout, "hrp_water_more")
+        if body is not None:
+            col = body.column(align=True)
+            col.label(text=t("All Water"), translate=False)
+            for k in ("water_caustics", "water_glints", "water_glow"):
+                _prop(col, s, k, slider=True)
+            if gnd is not None:
+                col = body.column(align=True)
+                col.label(text=t("Shore (all ponds & streams)"), translate=False)
+                shore = gnd.modifiers.get("Harappa Shore")
+                if shore is not None:
+                    _mod_inputs(col, shore, ("Reeds", "Reed Height", "Pebble Density", "Pebble Size"))
+                _mod_inputs(col, gnd.modifiers.get(water.CARVE_MOD), ("Bank", "Bank Height", "Bank Slope"))
+
+
+class HRP_PT_water_active(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_water_active"
+    title = "Active Water"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        from . import water
+        return water.is_water(context.active_object)
+
+    def draw(self, context):
+        from . import water
+        ob = context.active_object
+        layout = self.layout
+        pond = any(sp.use_cyclic_u for sp in ob.data.splines)
+        pool = ob.get("hrp_waterfall") is not None            # a waterfall's own plunge pool
+        ws = ob.harappa_water
+        prop = ws.bl_rna.properties["kind"]
+        item = next((i.name for i in prop.enum_items if i.identifier == ws.kind), ws.kind)
+        row = layout.split(factor=0.36, align=True)
+        row.label(text=t("Water Type"), translate=False)
+        row.menu("HRP_MT_water_kind", text=t(item), translate=False)
+        col = layout.column(align=True)
+        if pond and not pool:
+            _prop(col, ws, "size")
+            if ob.get("hrp_pond") is not None:
+                _prop(col, ws, "shape_seed")
+        _mod_inputs(col, ob.modifiers.get(water.SURFACE_MOD), ("Depth",) if pond else ("Width", "Depth"))
+        life = ob.modifiers.get("Harappa Pond Life")
+        if life is not None and not pool:
+            col = layout.column(align=True)
+            col.label(text=t("Pond Life"), translate=False)
+            _mod_inputs(col, life, ("Lily Pads", "Flowers"))
+        if pond and not pool:
+            row = layout.row(align=True)
+            _op(row, "harappa.add_fish", "Add Koi", icon="ANIM")
+            _op(row, "harappa.add_boat", "Add Boat", icon="MOD_FLUID")
+            fish = next((c for c in ob.children if c.get("hrp_fish")), None)
+            if fish is not None:
+                _mod_inputs(layout.column(align=True), fish.modifiers.get("Harappa Fish"), ("Count", "Size", "Speed"))
+        if not pond:
+            _op(layout, "harappa.stepping_stones", "Add Stepping Stones", icon="OUTLINER_DATA_POINTCLOUD")
+            _op(layout, "harappa.drop_stream", "Drop Onto Meadow", icon="IMPORT")
+        _op(layout, "harappa.remove_water", "Remove Water", icon="TRASH")
+        body = _more(layout, "hrp_water_active_more")
+        if body is not None:
+            col = body.column(align=True)
+            for k in ("hue", "saturation", "brightness", "clarity"):
+                _prop(col, ws, k, slider=True)
+            col = body.column(align=True)
+            _mod_inputs(col, ob.modifiers.get(water.SURFACE_MOD), ("Shelf",) if pond else ("Shelf", "Flow Speed"))
+            if life is not None and not pool:
+                _mod_inputs(body.column(align=True), life, ("Pad Size", "Seed"))
+
+
+class HRP_PT_fall_active(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_fall_active"
+    title = "Active Waterfall"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.get("hrp_waterfall") is not None
+
+    def draw(self, context):
+        from . import waterfall
+        ob = context.active_object
+        layout = self.layout
+        fall = waterfall.fall_of(context, ob["hrp_waterfall"])
+        if fall is not None:
+            col = layout.column(align=True)
+            _prop(col, fall.harappa_fall, "flow", slider=True)
+            _prop(col, fall.harappa_fall, "height")
+            _prop(col, fall.harappa_fall, "width")
+            _prop(col, fall.harappa_fall, "seed")
+        _op(layout, "harappa.remove_waterfall", "Remove Waterfall", icon="TRASH")
+
+
+class HRP_PT_rock_active(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_rock_active"
+    title = "Active Rock"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.get("hrp_rock") is not None
+
+    def draw(self, context):
+        ob = context.active_object
+        col = self.layout.column(align=True)
+        for k in ("size", "flat", "seed"):
+            _prop(col, ob.harappa_rock, k)
+        _prop(col, ob.harappa_rock, "moss", slider=True)
+
+
+class HRP_PT_boat_active(HrpSub, bpy.types.Panel):
+    bl_label = ""
+    bl_idname = "HRP_PT_boat_active"
+    title = "Active Boat"
+    bl_options = set()
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.get("hrp_boat") is not None
+
+    def draw(self, context):
+        ob = context.active_object
+        _mod_inputs(self.layout.column(align=True), ob.modifiers.get("Harappa Float"), ("Draft", "Bob", "Sway", "Speed"))
 
 
 class HRP_PT_weather(HrpSub, bpy.types.Panel):
     bl_label = ""
     bl_idname = "HRP_PT_weather"
     title = "Weather"
+
+    @classmethod
+    def poll(cls, context):
+        return _has_meadow(context)
 
     def draw(self, context):
         s = context.scene.harappa
@@ -744,15 +814,15 @@ class HRP_PT_weather(HrpSub, bpy.types.Panel):
         _prop(row, s, "rainbow")
         sub = row.row(align=True)
         sub.active = s.rainbow
-        _prop(sub, s, "rainbow_strength", slider=True)
-        _prop(layout, s, "dragonfly_count")
+        _prop(sub, s, "rainbow_strength", label="Strength", slider=True)
         col = layout.column(align=True)
+        _prop(col, s, "dragonfly_count")
         _prop(col, s, "firefly_count")
-        _prop(col, s, "fireflies", slider=True)
-        _prop(col, s, "firefly_colour")
-        if s.firefly_count > 0 and s.fireflies <= 0.0:
-            layout.label(text=t("Fireflies glow at Golden Hour and Night: raise Firefly Glow for day"), icon="INFO",
-                         translate=False)
+        if s.firefly_count > 0:
+            _prop(col, s, "fireflies", slider=True)
+            if s.fireflies <= 0.0:
+                layout.label(text=t("Fireflies glow at dusk and night"), icon="INFO", translate=False)
+                layout.label(text=t("Raise Firefly Glow to see them by day"), translate=False)
 
 
 class HRP_PT_light(HrpSub, bpy.types.Panel):
@@ -849,7 +919,8 @@ class HRP_PT_links(HrpSub, bpy.types.Panel):
 
 MENUS = ([_enum_menu(n) for n in ENUMS] + [_tree_enum_menu(n) for n in ("shape", "leaf_style")]
          + [HRP_MT_looks, HRP_MT_look_delete, HRP_MT_look_more, HRP_MT_water_kind])
-PANELS = (HRP_PT_main, HRP_PT_brush, HRP_PT_meadow, HRP_PT_tree, HRP_PT_cloud, HRP_PT_tint, HRP_PT_avoid,
+PANELS = (HRP_PT_main, HRP_PT_brush, HRP_PT_meadow, HRP_PT_tree, HRP_PT_cloud, HRP_PT_water_active,
+          HRP_PT_fall_active, HRP_PT_rock_active, HRP_PT_boat_active, HRP_PT_tint, HRP_PT_avoid,
           HRP_PT_water, HRP_PT_weather, HRP_PT_light, HRP_PT_paint, HRP_PT_colours, HRP_PT_links)
 
 

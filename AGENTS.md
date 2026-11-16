@@ -89,29 +89,38 @@ s.variation = 918                             # or bpy.ops.harappa.shuffle()
 s.clump_size = 2.5                            # any setting, see --list
 root.harappa_tree.shape = "CONIFER"           # per tree: shape / leaf_style / height / seed rebuild live
 bpy.ops.harappa.revert()                      # selected objects: remove grass/flowers/foliage, restore materials
-bpy.context.scene.cursor.location = (2, -4, 0)
-bpy.ops.harappa.add_pond(radius=2.5, depth=0.7)   # toon pond at the cursor; digs its bed, grass steps back
+bpy.context.scene.cursor.location = (2, 6, 0)  # on the default hill y 4..10 is in front of the camera
+bpy.ops.harappa.add_pond(radius=2.5, depth=0.7)   # toon pond at the cursor (radius up to 40 m); digs its bed, fills to
+                                              # the lowest point of its rim; grass steps back
 bpy.ops.harappa.add_stream(length=12, width=1.4)  # stream from the cursor away from the camera, downhill
-bpy.ops.harappa.make_water()                  # selected curves -> water (closed = pond, open = stream, upstream first)
+bpy.ops.harappa.make_water()                  # selected curves -> water (closed = pond, open = stream; a stream drawn
+                                              # uphill is turned round; ends within 1.2 m of a pond join it)
+bpy.ops.harappa.drop_stream()                 # active stream or pond after editing its curve: lay it back, re-level
+bpy.ops.harappa.remove_water()                # active pond or stream (its koi and boat too); the meadow fills back in
 s.water_rain = 0.4                            # raindrop rings; also water_caustics, water_glints, water_glow
 pond.harappa_water.kind = "LOTUS"             # SEASON CLEAR LOTUS GLACIER STREAM TEA; also hue/saturation/brightness/
-                                              # clarity, size (scale x1) and shape_seed per pond
+                                              # clarity, size (scale x1, up to x5) and shape_seed per pond
 bpy.ops.harappa.add_waterfall(height=2.4, width=1.4)  # pool at the cursor, rocky knoll + stream + rocks + trees + outflow
-fall.harappa_fall.flow = 1.5                  # per waterfall: flow (live), height / width / seed (rebuild it)
+fall.harappa_fall.flow = 1.5                  # per waterfall: flow (live), height / width / seed (rebuilds it;
+                                              # at once in -b scripts) ; bpy.ops.harappa.remove_waterfall()
 bpy.ops.harappa.add_rock(size=1.0, flat=0.65) # mossy rock on the ground under the cursor
-rock.harappa_rock.moss = 0.3                  # per rock: size, flat, seed, moss
+rock.harappa_rock.moss = 0.3                  # per rock: size, flat (height ratio), seed, moss
 bpy.ops.harappa.add_fish(count=6)             # active pond: koi ("Harappa Fish" modifier: Count, Size, Speed,
                                               #   Leap Every = seconds between leaps, 0 = never)
-bpy.ops.harappa.add_boat()                    # active pond: rowboat ("Harappa Float": Draft = buoyancy, Bob, Sway)
+bpy.ops.harappa.add_boat()                    # active pond: rowboat ("Harappa Float": Draft, Bob, Sway); it follows
+                                              # the pond's level and Pond Scale
 s.weather = "RAIN"                            # CLEAR CLOUDY RAIN STORM, a layer over the season (user colours kept)
 s.rain_radius = 8; bpy.ops.harappa.rain_here()   # rain only around the cursor (s.rain_follow = True: over the camera)
 s.rainbow = True; s.firefly_count = 200       # fireflies glow at GOLDEN / NIGHT (s.fireflies = glow)
 s.dragonfly_count = 10                        # dragonflies hovering and darting over the water (daytime)
 bpy.ops.harappa.stepping_stones()             # active stream: flat stones across it, nearest the 3D cursor
-bpy.ops.harappa.freeze_banks(on=True)         # bake the dug banks: fast playback (Harappa re-bakes after its tools)
+bpy.ops.harappa.freeze_banks(on=True)         # "Fast Playback": bake the dug banks (Harappa re-bakes after its tools)
+s.camera_culling = True                       # grass and flowers only where the camera sees (same picture, lighter)
 ```
-Nature's rules are built in: trees are not planted in water, lily pads grow only on water 0.2-1.6 m deep, reeds stand
-in the shallows (not by a waterfall), pebbles lie on the bank.
+Nature's rules are built in: water runs downhill and ponds fill to the lowest point of their rim (never held up above
+the ground); a waterfall's plunge pool is dug into the slope and spills through a stone-lined notch, its outflow takes
+the steepest way down as step-pools; trees are not planted in water, lily pads grow only on water 0.2-1.6 m deep,
+reeds stand in the shallows (not by a waterfall), pebbles lie on the bank.
 Grass density, height and wind live on each meadow's **Harappa Grass** / **Harappa Flowers** modifiers; leaves on the
 **Harappa Foliage** modifier of a tree's canopy object (`harappa.util.mod_input(mod, "Wind Strength", 0.3)`).
 
