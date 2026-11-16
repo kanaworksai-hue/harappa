@@ -15,7 +15,7 @@ import bpy
 from mathutils import Vector, noise
 
 from . import shading
-from .util import G, fresh_group, iface, menu, mod_input, only, sock
+from .util import G, fresh_group, iface, menu, mod_input, only, sock, stamp
 
 ROCK_VER = 18
 MAT_ROCK = "HRP Rock"
@@ -540,6 +540,7 @@ def shore_group():
     g.link(rin, 0, join, "Geometry")
     g.link(cbed, 0, join, "Geometry")
     g.link(join, 0, go, "Geometry")
+    stamp(ng, ROCK_VER + 10)                                   # built: not rebuilt on every use
     return ng
 
 

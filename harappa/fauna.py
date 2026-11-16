@@ -15,7 +15,7 @@ import bpy
 from mathutils import Vector
 
 from . import shading, water
-from .util import G, fresh_group, iface, mod_input, only, sock
+from .util import G, fresh_group, iface, mod_input, only, sock, stamp
 
 FAUNA_VER = 22
 FISH = "HRP Fish"
@@ -306,6 +306,7 @@ def fish_group():
     sth.inputs["Name"].default_value = "hrp_head"
     g.link(head, 0, sth, "Value", bkind="VALUE")
     g.link(sth, 0, inst, "Points")
+    stamp(ng, FAUNA_VER)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -648,6 +649,7 @@ def float_group():
     nob.inputs["Name"].default_value = "hrp_noobst"
     nob.inputs["Value"].default_value = 1.0
     g.link(nob, 0, go, "Geometry")
+    stamp(ng, FAUNA_VER)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -843,6 +845,7 @@ def dragon_group():
     g.link(sti, 0, sm, "Geometry")
     g.link(gi, "Material", sm, "Material")
     g.link(sm, 0, go, "Geometry")
+    stamp(ng, FAUNA_VER)                                   # built: not rebuilt on every use
     return ng
 
 

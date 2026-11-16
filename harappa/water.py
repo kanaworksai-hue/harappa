@@ -17,7 +17,7 @@ import random
 
 import bpy
 
-from .util import G, fresh_group, iface, menu, mod_input, only, sock
+from .util import G, fresh_group, iface, menu, mod_input, only, sock, stamp
 from . import shading
 
 WATER_VER = 72
@@ -422,6 +422,7 @@ def surface_group():
     smooth = g.n("GeometryNodeSetShadeSmooth", 2000, 0)
     g.link(sm, 0, smooth, "Geometry")
     g.link(smooth, 0, go, "Geometry")
+    stamp(ng, WATER_VER)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -491,6 +492,7 @@ def terrace_group():
     g.link(cl, 0, pack, "Z")
     out = _store(g, 250, 0, g.out(sub, 0), "hrp_terr", only(pack.outputs), "FLOAT_VECTOR")
     g.links.new(out, sock(go.inputs, "Geometry"))
+    stamp(ng, WATER_VER)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -754,6 +756,7 @@ def carve_group():
         bake.bake_items.new("GEOMETRY", "Geometry")
     g.links.new(out, bake.inputs["Geometry"])
     g.links.new(bake.outputs["Geometry"], go.inputs["Geometry"])
+    stamp(ng, WATER_VER)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -843,6 +846,7 @@ def rain_zone_group():
         g.link(r0, 0, z, "From Max")
         g.link(z, "Result", go, "Zone")
     drive_rain_zone()
+    stamp(ng, 2)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -1287,6 +1291,7 @@ def time_group():
         v = g.n("ShaderNodeValue", 0, 0, label="seconds")
         out = g.n("NodeGroupOutput", 200, 0)
         g.links.new(only(v.outputs), sock(out.inputs, "Seconds"))
+    stamp(ng, WATER_VER)                                   # built: not rebuilt on every use
     return ng
 
 

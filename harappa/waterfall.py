@@ -14,7 +14,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 from . import rocks, shading, water
-from .util import G, fresh_group, iface, mod_input, only, sock
+from .util import G, fresh_group, iface, mod_input, only, sock, stamp
 
 FALL_VER = 46
 FALL = "HRP Waterfall"
@@ -426,6 +426,7 @@ def fall_group():
     g.link(lumps, 0, join, "Geometry")
     g.link(splm, 0, join, "Geometry")
     g.link(join, 0, go, "Geometry")
+    stamp(ng, FALL_VER)                                   # built: not rebuilt on every use
     return ng
 
 

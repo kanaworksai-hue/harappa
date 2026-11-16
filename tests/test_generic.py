@@ -367,6 +367,16 @@ mid_ = stream.matrix_world @ stream.data.splines[0].bezier_points[len(zs) // 2].
 gz_ = water._ground_z(water._ground_bvhs([wg]), mid_.x, mid_.y)
 zc_, _m = eval_z_mask(wg, mid_.x, mid_.y, 0.2)
 check(gz_ is not None and zc_ < gz_ - 0.15, f"the stream digs its channel into the meadow ({gz_:.2f} -> {zc_:.2f})")
+tg_ = bpy.data.node_groups.get(water.TIME)
+sec_ = tg_.nodes.get("seconds") if tg_ else None
+vals_ = []
+for f_ in (1, 25):
+    sc.frame_set(f_)
+    vals_.append(sec_.outputs[0].default_value if sec_ else None)
+water.surface_group(); water.carve_group(); water.time_group()        # using the groups again must not rebuild them
+sc.frame_set(49)
+check(sec_ is not None and vals_[1] - vals_[0] > 0.5 and tg_.nodes.get("seconds").outputs[0].default_value > vals_[1],
+      f"the water flows with time (seconds {vals_})")
 zs0 = [p.co.z for p in stream.data.splines[0].bezier_points]
 ctx.view_layer.objects.active = stream
 bpy.ops.harappa.drop_stream()

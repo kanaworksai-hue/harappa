@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 — 2026-11-16
+
+- **Water flows again.** In 1.2.0 the waterfall sheet, the flow lines and white rapids on streams and the ripples
+  on the water stood still: the water's node groups were rebuilt each time they were used, which also dropped the
+  driver that turns frames into seconds. They are now built once, so the water moves with the timeline, and adding
+  or editing water no longer rebuilds every water node group.
+- Tests check that the water's time advances from frame to frame.
+
 ## 1.2.0 — 2026-11-16 "Waterside & Weather"
 
 - **Panels:** Water and Weather show once there is a meadow; Active Water, Active Waterfall, Active Rock and Active

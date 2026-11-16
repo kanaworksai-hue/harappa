@@ -19,7 +19,7 @@ import bpy
 from mathutils import Vector
 
 from . import shading
-from .util import G, fresh_group, iface, mod_input, only, sock, srgb
+from .util import G, fresh_group, iface, mod_input, only, sock, srgb, stamp
 
 WEATHER_VER = 13
 RAIN = "HRP Rain"
@@ -162,6 +162,7 @@ def rain_group():
     g.link(sm, 0, jn2, "Geometry")
     g.link(sw, 0, jn2, "Geometry")
     g.link(jn2, 0, go, "Geometry")
+    stamp(ng, WEATHER_VER)                                   # built: not rebuilt on every use
     return ng
 
 
@@ -451,6 +452,7 @@ def flies_group():
     g.link(real, 0, sm, "Geometry")
     g.link(gi, "Material", sm, "Material")
     g.link(sm, 0, go, "Geometry")
+    stamp(ng, WEATHER_VER)                                   # built: not rebuilt on every use
     return ng
 
 

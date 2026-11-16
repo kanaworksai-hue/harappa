@@ -14,7 +14,7 @@ import bmesh
 import bpy
 
 from . import shading
-from .util import G, fresh_group, iface, menu, mod_input, only, sock
+from .util import G, fresh_group, iface, menu, mod_input, only, sock, stamp
 
 LIFE_VER = 14
 LIFE = "HRP Pond Life"
@@ -639,6 +639,7 @@ def life_group():
     g.link(rins, 0, join, "Geometry")
     g.link(lst, 0, join, "Geometry")
     g.link(join, 0, go, "Geometry")
+    stamp(ng, LIFE_VER + 5)                                   # built: not rebuilt on every use
     return ng
 
 
