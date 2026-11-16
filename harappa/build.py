@@ -54,6 +54,11 @@ def make_meadow(context, ob, density=40.0, height=0.35, flowers=True, max_tufts=
     mod_input(mod, "Density", dens)
     mod_input(mod, "Height", height)
     mod_input(mod, "Seed", seed)
+    cull = bool(getattr(getattr(scene, "harappa", None), "camera_culling", False))
+    try:
+        mod_input(mod, "Camera Culling", cull)
+    except KeyError:
+        pass
     if flowers:
         card = tree.card_object(scene, "flower")
         fm = ob.modifiers.get(FLOWER_MOD)
@@ -64,7 +69,15 @@ def make_meadow(context, ob, density=40.0, height=0.35, flowers=True, max_tufts=
         mod_input(fm, "Height", height * 0.85)
         mod_input(fm, "Size", height * 0.26)
         mod_input(fm, "Seed", seed)
+        try:
+            mod_input(fm, "Camera Culling", cull)
+        except KeyError:
+            pass
     # the ground (and its grass instances) receive shadows but don't cast them: faster, cleaner
     ob.visible_shadow = False
     ob["hrp_ground"] = True
+    from . import water
+    wc = bpy.data.collections.get(water.COLLECTION)
+    if wc is not None and wc.all_objects and not ob.get("hrp_far_hills"):
+        water.attach_carve(scene, ob)                       # meadows made after the water still get a bed
     return mod

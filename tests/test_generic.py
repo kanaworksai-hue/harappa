@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 import numpy as np  # noqa: E402
 
 import harappa as H  # noqa: E402
-from harappa import build, i18n, presets, scatter, shading  # noqa: E402
+from harappa import build, i18n, pondlife, presets, rocks, scatter, shading  # noqa: E402
 from harappa.util import mod_input  # noqa: E402
 
 H.register()
@@ -257,6 +257,310 @@ for tup in re.findall(r'_mod_inputs\([^)]*\(([^)]*)\)\)', src):
 msgids = {m for m in msgids if m and not m.startswith("HRP") and m not in ("Name", "Prop", "Value ")}
 missing = sorted(m for m in msgids if m not in i18n.UI and m not in i18n.OPS)
 check(not missing, f"{len(msgids)} UI strings translated (missing: {missing})")
+
+# --- 5b. water: pond + stream carve a bed, clear the grass, follow the seasons, clean up -------------------
+from harappa import water  # noqa: E402
+bpy.ops.object.select_all(action="DESELECT")
+bpy.ops.mesh.primitive_grid_add(x_subdivisions=100, y_subdivisions=100, size=24, location=(60, 0, 0))
+wg = ctx.active_object
+bpy.ops.harappa.make_meadow()
+dg = ctx.evaluated_depsgraph_get()
+
+
+def eval_z_mask(ob, x, y, r=0.4):
+    dg_ = ctx.evaluated_depsgraph_get()
+    me = ob.evaluated_get(dg_).to_mesh()
+    co = np.zeros(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3) + np.array(ob.location)
+    sel = np.hypot(co[:, 0] - x, co[:, 1] - y) < r
+    a = me.attributes.get("hrp_grass")
+    m = np.zeros(len(a.data) * 4)
+    a.data.foreach_get("color", m)
+    m = m.reshape(-1, 4)[:, 0]
+    z, mm = float(co[sel, 2].min()), float(m[sel].mean())
+    ob.evaluated_get(dg_).to_mesh_clear()
+    return z, mm
+
+
+z_before, _ = eval_z_mask(wg, 60, 0)
+sc.cursor.location = (60, 0, 0)
+bpy.ops.harappa.add_pond(radius=3.0, depth=0.7)
+pond = ctx.active_object
+check(water.is_water(pond), "Add Pond made a water curve")
+check(wg.modifiers[0].name == water.CARVE_MOD, "carve is the first modifier on the meadow")
+z_after, m_in = eval_z_mask(wg, 60, 0)
+check(z_after < z_before - 0.4, f"pond lowered the meadow ({z_before:.2f} -> {z_after:.2f})")
+check(m_in < 0.05, f"no grass in the pond (mask {m_in:.2f})")
+_, m_far = eval_z_mask(wg, 60, 10.5, 0.6)
+check(m_far > 0.95, f"grass kept away from the water (mask {m_far:.2f})")
+pe = pond.evaluated_get(ctx.evaluated_depsgraph_get()).to_mesh()
+check(len(pe.polygons) > 100 and pe.attributes.get("hrp_shore") is not None, "pond surface mesh with shore distance")
+pond.evaluated_get(ctx.evaluated_depsgraph_get()).to_mesh_clear()
+pond.harappa_water.kind = "TEA"
+from harappa.util import srgb  # noqa: E402
+check(pond.get("hrp_wuse") == 1.0 and max(abs(a - b) for a, b in zip(pond["hrp_wcol_m"],
+      srgb(water.WATER_TYPES["TEA"][3][1]))) < 1e-5 and pond.harappa_water.clarity < 0,
+      "water type gives that pond its own colours")
+ext0 = max(p.co.x for p in pond.data.splines[0].bezier_points) - min(p.co.x for p in pond.data.splines[0].bezier_points)
+pond.harappa_water.size = 1.3
+ext1 = max(p.co.x for p in pond.data.splines[0].bezier_points) - min(p.co.x for p in pond.data.splines[0].bezier_points)
+check(abs(ext1 / ext0 - 1.3) < 1e-3 and abs(pond.scale.x - 1.0) < 1e-6,
+      "pond Size reshapes the shoreline (object scale stays 1, pads keep their size)")
+pond.harappa_water.size = 1.0
+sc.cursor.location = (60, 0, 0)
+n_trees = len([o for o in bpy.data.objects if H.tree_root(o) is o])
+r_ = bpy.ops.harappa.add_tree(shape="ROUND", height=4.0, seed=3)
+check(r_ == {"CANCELLED"} and len([o for o in bpy.data.objects if H.tree_root(o) is o]) == n_trees,
+      "no tree planted in the pond")
+sc.cursor.location = (52, -9, 0)
+bpy.ops.harappa.add_stream(length=10.0)
+stream = ctx.active_object
+zs = [p.co.z for p in stream.data.splines[0].bezier_points]
+check(all(b <= a + 1e-6 for a, b in zip(zs, zs[1:])), "stream runs downhill only")
+zs0 = [p.co.z for p in stream.data.splines[0].bezier_points]
+ctx.view_layer.objects.active = stream
+bpy.ops.harappa.drop_stream()
+bpy.ops.harappa.drop_stream()
+zs2 = [p.co.z for p in stream.data.splines[0].bezier_points]
+check(max(abs(a - b) for a, b in zip(zs0, zs2)) < 1e-5, "Drop Onto Meadow is repeatable (no sinking)")
+water.make_water(ctx, pond)
+check(sum(1 for m in pond.modifiers if m.name == water.SURFACE_MOD) == 1
+      and sum(1 for m in wg.modifiers if m.name == water.CARVE_MOD) == 1, "re-running makes no duplicates")
+sc.harappa.season = "NIGHT"
+check(abs(shading.palette_get("water_glow") - 1.0) < 1e-6, "night makes the water glow")
+sc.harappa.season = "SUMMER"
+check(shading.palette_get("water_glow") == 0.0, "summer water does not glow")
+img = render("water")
+check(img.std() > 0.03, "water scene renders")
+bpy.ops.object.select_all(action="DESELECT")
+for w_ in (pond, stream):
+    ctx.view_layer.objects.active = w_
+    bpy.ops.harappa.remove_water()
+check(wg.modifiers.get(water.CARVE_MOD) is None, "removing all water removes the carve")
+z_back, m_back = eval_z_mask(wg, 60, 0)
+check(abs(z_back - z_before) < 1e-4 and m_back > 0.95, "meadow restored after removing the water")
+bpy.data.objects.remove(wg)
+# stream first, then a pond over its lower end: they still meet (no step at the mouth)
+bpy.ops.mesh.primitive_grid_add(x_subdivisions=100, y_subdivisions=100, size=24, location=(60, 0, 0))
+wg2 = ctx.active_object
+bpy.ops.harappa.make_meadow()
+st2 = water.add_stream(ctx, [(52, -8, 0), (56, -3, 0), (59, 0, 0), (61, 1, 0)])
+pd2 = water.add_pond(ctx, (60.5, 0.5, 0.0), radius=2.6, depth=0.7)
+lvl2 = sum(p.co.z for p in pd2.data.splines[0].bezier_points) / len(pd2.data.splines[0].bezier_points)
+poly2 = [((pd2.matrix_world @ p.co).x, (pd2.matrix_world @ p.co).y) for p in pd2.data.splines[0].bezier_points]
+inside2 = [p.co.z for p in st2.data.splines[0].bezier_points if water._inside(poly2, p.co.x, p.co.y)]
+check(inside2 and max(abs(z - (lvl2 - 0.015)) for z in inside2) < 1e-4,
+      f"pond added after the stream: mouth meets the pond ({[round(z - lvl2, 3) for z in inside2]})")
+for o in (st2, pd2):
+    ctx.view_layer.objects.active = o
+    bpy.ops.harappa.remove_water()
+bpy.data.objects.remove(wg2)
+# lily pads only in the floating-leaf zone, reeds in the shallows
+sc.cursor.location = (60, 0, 0)
+pd3 = water.add_pond(ctx, (60.0, 0.0, 0.0), radius=3.0, depth=0.9)
+ctx.view_layer.update()
+dg3 = ctx.evaluated_depsgraph_get()
+ev3 = pd3.evaluated_get(dg3)
+pads = [ii.matrix_world.translation.copy() for ii in dg3.object_instances
+        if ii.is_instance and ii.parent and ii.parent.original == pd3]
+check(len(pads) > 5, f"lily pads on the pond ({len(pads)})")
+lvl3 = water.pond_level(pd3)
+in_zone = all(water.in_water(ctx, t_.x, t_.y, 0.0) for t_ in pads)
+check(in_zone, "every lily pad floats on the water")
+ctx.view_layer.objects.active = pd3
+bpy.ops.harappa.remove_water()
+# rocks, pond life and a waterfall
+bpy.ops.mesh.primitive_grid_add(x_subdivisions=120, y_subdivisions=120, size=30, location=(60, 0, 0))
+wg3 = ctx.active_object
+bpy.ops.harappa.make_meadow()
+sc.cursor.location = (60, 6, 0)
+bpy.ops.harappa.add_rock(size=1.2, seed=5)
+rk = ctx.active_object
+check(rk.name in bpy.data.collections["Harappa Props"].objects, "Add Rock joins Harappa Props")
+check(mod_input(wg3.modifiers[build.GRASS_MOD], "Avoid") == bpy.data.collections["Harappa Props"],
+      "grass grows around the props")
+sc.cursor.location = (68, 8, 0)
+bpy.ops.harappa.add_tree(shape="ROUND", height=3.0, seed=2)
+old_tree = ctx.active_object.name
+bpy.ops.mesh.primitive_cube_add(size=1.0, location=(69.0, 8.4, 1.5))   # a block standing 2 m above the coming pond
+blk = ctx.active_object
+sc.cursor.location = (69.0, 8.4, 2.0)
+bpy.ops.harappa.add_tree(shape="ROUND", height=1.5, seed=3)
+high_tree = ctx.active_object.name
+bpy.ops.harappa.add_pond(radius=2.0, seed=1)
+check(bpy.data.objects.get(old_tree) is None, "a new pond clears a tree that stood there")
+check(bpy.data.objects.get(high_tree) is not None, "...but not a tree up on a block above the water")
+ht = bpy.data.objects.get(high_tree)
+for o_ in ([ht] + list(ht.children_recursive) if ht else []) + [blk]:
+    bpy.data.objects.remove(o_)
+bpy.ops.harappa.remove_water()
+sc.cursor.location = (60, -6, 0)
+bpy.ops.harappa.add_waterfall(height=2.2, width=1.0, seed=3)
+fall = ctx.active_object
+tag = fall.get("hrp_waterfall")
+parts = [o for o in sc.objects if o.get("hrp_waterfall") == tag]
+check(len(parts) > 8 and any(o.get("hrp_terrace") for o in parts), f"Add Waterfall built its parts ({len(parts)})")
+feed = next(o for o in parts if o.get("hrp_fall_feed"))
+zs3 = [p.co.z for p in feed.data.splines[0].bezier_points]
+check(mod_input(fall.modifiers[0], "Drop") > 1.5 and max(zs3) - min(zs3) < 0.05, "the stream stays on the terrace, the drop is real")
+pool = next(o for o in parts if water.is_water(o) and o.get("hrp_pond") is not None)
+check(any(water.is_water(o) and o is not feed and o.get("hrp_pond") is None for o in parts) and
+      any(o.get("hrp_tree") for o in parts), "the pool spills into an outflow stream, trees stand on the terrace")
+check(abs(mod_input(fall.modifiers[0], "Drop") - 2.2) < 0.15, f"the drop matches the height asked for ({mod_input(fall.modifiers[0], 'Drop'):.2f})")
+check(pool.modifiers.get(pondlife.LIFE_MOD) is not None and wg3.modifiers[-1].name == rocks.SHORE_MOD,
+      "pond life on the pool, shore pebbles last on the meadow")
+# Freeze Banks: same ground, the carve is no longer re-run every frame
+import time  # noqa: E402
+z_live, m_live = eval_z_mask(wg3, 60, -5.0, 1.0)
+sc.frame_set(1)
+t0 = time.perf_counter()
+for f_ in range(2, 12):
+    sc.frame_set(f_)
+t_live = (time.perf_counter() - t0) / 10
+bpy.ops.harappa.freeze_banks(on=True)
+z_fz, m_fz = eval_z_mask(wg3, 60, -5.0, 1.0)
+t0 = time.perf_counter()
+for f_ in range(12, 22):
+    sc.frame_set(f_)
+t_fz = (time.perf_counter() - t0) / 10
+print(f"PERF waterfall meadow: live {t_live * 1000:.0f} ms/frame, frozen {t_fz * 1000:.0f} ms/frame")
+check(abs(z_fz - z_live) < 1e-4 and t_fz < t_live * 0.8, "Freeze Banks keeps the ground and speeds up playback")
+bpy.ops.harappa.freeze_banks(on=False)
+# Grass Only in Camera View: off by default, fewer tufts when on, all back when off again
+def n_inst(ob_):
+    dg_ = ctx.evaluated_depsgraph_get()
+    return sum(1 for i_ in dg_.object_instances if i_.is_instance and i_.parent and i_.parent.original == ob_)
+n_all = n_inst(wg3)
+sc.harappa.camera_culling = True
+n_cull = n_inst(wg3)
+sc.harappa.camera_culling = False
+check(n_cull < n_all * 0.9 and n_inst(wg3) == n_all and
+      mod_input(wg3.modifiers[build.GRASS_MOD], "Camera Culling") is False,
+      f"Grass Only in Camera View thins what the camera can't see ({n_all} -> {n_cull})")
+# Selected Waterfall: Flow is live, Height rebuilds the whole fall in place
+fall.harappa_fall.flow = 1.8
+check(abs(mod_input(fall.modifiers[0], "Throw") - (0.45 + 0.5 * 1.8)) < 1e-4, "waterfall Flow changes the sheet live")
+from harappa import waterfall as hwf  # noqa: E402
+fall = hwf.rebuild_waterfall(ctx, fall, height=3.0)
+tag = fall.get("hrp_waterfall")
+parts = [o for o in sc.objects if o.get("hrp_waterfall") == tag]
+pool = next(o for o in parts if water.is_water(o) and o.get("hrp_pond") is not None)
+check(abs(mod_input(fall.modifiers[0], "Drop") - 3.0) < 0.2 and abs(fall.harappa_fall.flow - 1.8) < 1e-5 and
+      abs(fall.harappa_fall.height - 3.0) < 1e-5, "waterfall Height rebuilds it in place, Flow kept")
+# Selected Rock: size / seed / moss straight on the object
+sc0 = tuple(rk.scale)
+rk.harappa_rock.size = 2.4
+me0 = rk.data
+rk.harappa_rock.seed = 77
+rk.harappa_rock.moss = 0.2
+check(abs(rk.scale[0] - sc0[0] * 2.0) < 1e-4 and rk.data is not me0 and rk.harappa_rock.seed == 77 and
+      abs(rk.get("hrp_nomoss") - 0.8) < 1e-5, "Selected Rock: size, seed and moss edit the rock")
+# water type keeps the user's tint and a lily amount the user chose
+pool.harappa_water.hue = 0.1
+lm = pool.modifiers[pondlife.LIFE_MOD]
+mod_input(lm, "Lily Pads", 0.33)
+pool.harappa_water.kind = "LOTUS"
+check(abs(pool.harappa_water.hue - 0.1) < 1e-6 and abs(mod_input(lm, "Lily Pads") - 0.33) < 1e-5,
+      "changing water type keeps the user's hue and lily amount")
+mod_input(lm, "Lily Pads", water.LILY_COVER["LOTUS"])
+pool.harappa_water.kind = "CLEAR"
+check(abs(mod_input(lm, "Lily Pads") - water.LILY_COVER["CLEAR"]) < 1e-5, "...but follows the type when untouched")
+# koi, a boat, weather, rainbow, fireflies
+from harappa import fauna, weather as hwe  # noqa: E402
+ctx.view_layer.objects.active = pool
+bpy.ops.harappa.add_fish(count=4)
+fish_ob = next((c for c in pool.children if c.get("hrp_fish")), None)
+check(fish_ob is not None, "Add Koi makes a fish object on the pond")
+bpy.ops.harappa.add_boat()
+check(ctx.active_object.get("hrp_boat") == pool.name, "Add Boat floats a boat on the pond")
+sc.harappa.weather = "RAIN"
+grass_before = tuple(sc.harappa.grass_lit)
+check(bpy.data.objects.get(hwe.RAIN_OB) is not None and shading.palette_get("water_rain") > 0.3, "rain: streaks and rings")
+check(shading.palette_get("grass_lit")[1] < grass_before[1] - 0.02 and tuple(sc.harappa.grass_lit) == grass_before,
+      "rain dims the sunlit grass without touching the user's colours")
+rob = bpy.data.objects[hwe.RAIN_OB]
+check(any(c.type == "COPY_LOCATION" for c in rob.constraints), "rain follows the camera by default")
+sc.cursor.location = (60, -6, 0)
+sc.harappa.rain_radius = 5.0
+bpy.ops.harappa.rain_here()
+ctx.view_layer.update()
+zone = bpy.data.node_groups[water.RAIN_ZONE]
+check(not rob.constraints and abs(rob.location.x - 60) < 1e-4 and not sc.harappa.rain_follow and
+      abs(zone.nodes["R"].outputs[0].default_value - 5.0) < 1e-3 and abs(zone.nodes["X"].outputs[0].default_value - 60)
+      < 1e-3, "Rain Here: rain (and its ripples) only around the cursor")
+sc.harappa.rain_follow = True
+check(any(c.type == "COPY_LOCATION" for c in rob.constraints), "Follow Camera puts it back over the view")
+gm = wg3.modifiers[build.GRASS_MOD]
+w0 = mod_input(gm, "Wind Strength")
+sc.harappa.weather = "STORM"
+w1 = mod_input(gm, "Wind Strength")
+sc.harappa.weather = "CLEAR"
+check(abs(w1 - min(2.0, w0 * 2)) < 1e-5 and abs(mod_input(gm, "Wind Strength") - w0) < 1e-6,
+      "Storm doubles the grass wind, Clear puts it back")
+check(shading.palette_get("water_rain") == sc.harappa.water_rain and
+      max(abs(a - b) for a, b in zip(shading.palette_get("grass_lit"), grass_before)) < 1e-5, "clear weather undoes it")
+sc.harappa.rainbow = True
+check(bpy.data.objects.get(hwe.RAINBOW_OB) is not None, "rainbow in the sky")
+sc.harappa.rainbow = False
+sc.harappa.dragonfly_count = 6
+dfo = bpy.data.objects.get(fauna.DRAGON_OB)
+dg_ = ctx.evaluated_depsgraph_get()
+n_df = len([i for i in dg_.object_instances if i.is_instance and i.parent and i.parent.original == dfo]) if dfo else 0
+check(dfo is not None and n_df > 0, f"dragonflies over the water ({n_df})")
+sc.harappa.dragonfly_count = 0
+check(mod_input(fall.modifiers[0], "Mist Material") is not None, "waterfall spray mist has its material")
+sc.harappa.firefly_count = 50
+check(bpy.data.objects.get(hwe.FLIES_OB) is not None, "fireflies by the water")
+sc.harappa.firefly_count = 0
+img = render("water_life")
+check(img.std() > 0.03, "pond life scene renders")
+feed_ = next((o for o in parts if o.get("hrp_fall_feed")), None)
+ctx.view_layer.objects.active = feed_
+sc.cursor.location = feed_.matrix_world @ feed_.data.splines[0].bezier_points[2].co
+bpy.ops.harappa.stepping_stones()
+stones = [o for o in sc.objects if o.get("hrp_stone") == feed_.name]
+check(len(stones) >= 2, f"stepping stones across the stream ({len(stones)})")
+for o in stones:
+    bpy.data.objects.remove(o)
+hwf.remove_waterfall(ctx, tag)
+check(not [o for o in sc.objects if o.get("hrp_waterfall") == tag], "remove the whole waterfall")
+bpy.data.objects.remove(rk)
+bpy.data.objects.remove(wg3)
+# the agent CLI with water flags (dev copy: the agent finds the registered package)
+import runpy  # noqa: E402
+_argv = sys.argv
+sys.argv = [_argv[0], "--", "--meadow", "--pond", "2,-4,2.4", "--stream", "-7,8:-4,3:-1,-1:1.2,-3.6",
+            "--rain", "0.3", "--water-type", "LOTUS", "--rock", "6,3,0.8", "--koi", "3", "--boat",
+            "--weather", "CLOUDY", "--rainbow", "--fireflies", "30"]
+n_before = len([o for o in bpy.data.objects if water.is_water(o)])
+try:
+    runpy.run_path(os.path.join(HERE, "..", "agent", "harappa_agent.py"), run_name="__main__")
+    cli_ok = True
+except SystemExit as e:
+    cli_ok = e.code in (None, 0)
+sys.argv = _argv
+n_after = len([o for o in bpy.data.objects if water.is_water(o)])
+check(cli_ok and n_after - n_before == 2, f"CLI --pond/--stream made water ({n_after - n_before})")
+check(abs(sc.harappa.water_rain - 0.3) < 1e-6, "CLI --rain sets the rain ripples")
+check(sc.harappa.weather == "CLOUDY" and sc.harappa.rainbow and sc.harappa.firefly_count == 30 and
+      any(o.get("hrp_boat") for o in sc.objects) and any(o.get("hrp_fish") for o in sc.objects),
+      "CLI --koi/--boat/--weather/--rainbow/--fireflies")
+sc.harappa.weather = "CLEAR"
+sc.harappa.rainbow = False
+sc.harappa.firefly_count = 0
+for o in [o for o in sc.objects if o.get("hrp_boat") or o.get("hrp_fish")]:
+    bpy.data.objects.remove(o)
+for o in [o for o in bpy.data.objects if water.is_water(o)]:
+    ctx.view_layer.objects.active = o
+    bpy.ops.harappa.remove_water()
+# an older file: the palette is rebuilt on upgrade and must not leave the meadow materials unlinked
+palng = bpy.data.node_groups[shading.PALETTE]
+palng["hrp_ver"] = shading.SHADER_VER - 1
+check(H.ensure_shading(ctx), "upgrade detected")
+gmat = bpy.data.materials[shading.MAT_GRASS]
+pal_users = [n for n in gmat.node_tree.nodes if n.type == "GROUP" and n.node_tree == palng]
+check(pal_users and any(o.is_linked for n in pal_users for o in n.outputs), "materials relinked to the palette after upgrade")
 
 # --- 6. revert and unregister ---------------------------------------------------------------------------
 bpy.ops.object.select_all(action="DESELECT")

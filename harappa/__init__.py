@@ -13,7 +13,8 @@ import bmesh
 import bpy
 from mathutils import Vector, noise
 
-from . import build, clouds, i18n, presets, scatter, scene as hscene, shading, tree, ui
+from . import build, clouds, fauna, i18n, pondlife, presets, rocks, scatter, scene as hscene, shading, tree, ui, \
+    water, waterfall, weather
 from .i18n import report
 from .util import mod_input, srgb, to_hex
 
@@ -30,6 +31,11 @@ COLOUR_PROPS = [
     ("flower_centre", "Flower Centre"), ("flower_shade", "Flower Shade"), ("sun_tint", "Sunlight Tint"),
     ("cloud_lit", "Cloud Lit"), ("cloud_shadow", "Cloud Shadow"), ("cloud_deep", "Cloud Deep Shadow"),
     ("haze_colour", "Haze"), ("rim_colour", "Rim Light"),
+    ("water_shallow", "Water Shallow"), ("water_mid", "Water Mid"), ("water_deep", "Water Deep"),
+    ("water_foam", "Water Foam"), ("water_line", "Water Lines"), ("water_sky", "Water Reflection"),
+    ("water_shade", "Water Shade"),
+    ("rock_lit", "Rock Lit"), ("rock_lit2", "Rock Patches"), ("rock_shadow", "Rock Shadow"),
+    ("rock_deep", "Rock Deep Shadow"), ("firefly_colour", "Firefly Colour"),
 ]
 VALUE_PROPS = [
     # key, label, min, max, description
@@ -52,6 +58,12 @@ VALUE_PROPS = [
     ("haze_end", "Haze End", 0.0, 100000.0, "Camera distance in metres where the haze is full"),
     ("flower_dim", "Flower Brightness", 0.0, 2.0, "Brightness of the meadow flowers (lower at night)"),
     ("rim_amount", "Rim Light", 0.0, 1.0, "Warm light along the sun-facing edges of trees"),
+    ("water_caustics", "Caustics", 0.0, 1.0, "Light net on the bottom of shallow water"),
+    ("water_rain", "Rain Ripples", 0.0, 1.0, "How many raindrop rings spread on the water"),
+    ("water_glints", "Glints", 0.0, 2.0, "Small sparkles of sunlight on the water"),
+    ("water_glow", "Water Glow", 0.0, 3.0, "Foam, ripples and the water itself give off light (night)"),
+    ("rock_moss", "Moss", 0.0, 1.0, "Moss on the tops of rocks, in the meadow's grass colours"),
+    ("fireflies", "Firefly Glow", 0.0, 2.0, "How brightly the fireflies glow (none by day)"),
 ]
 SKY_PROPS = [("sky_zenith", "Sky Top"), ("sky_horizon", "Sky Horizon")]
 TREE_SHAPES = [
@@ -157,11 +169,167 @@ def apply_season(self, context):
         hscene.key_sun(sc, sc.camera, sp["elevation"], sp["side"], sp["colour"], sp["strength"])
     _upd_sky(self, context)
     _season_blossom(sc, presets.SEASONS[self.season].get("blossom", 0.0))
+    for o in sc.objects:                                         # autumn: leaves afloat on the ponds
+        m = o.modifiers.get(pondlife.LIFE_MOD) if water.is_water(o) else None
+        if m is not None:
+            try:
+                mod_input(m, "Fallen Leaves", 1.0 if self.season == "AUTUMN" else 0.0)
+            except KeyError:
+                pass
+    _weather_overlay(self, context)
     w = bpy.data.worlds.get(hscene.WORLD)
     if w is not None:
         st, mo = presets.SEASONS[self.season].get("night", (0.0, 0.0))
         hscene.set_night(w, st, mo, sc.camera)
     _rebase(self, context)
+
+
+def _grey(rgb, k, target=(0.36, 0.40, 0.45)):
+    lum = 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2]
+    g = [lum * 0.6 + t * 0.4 for t in target]
+    return tuple(c * (1 - k) + gg * k for c, gg in zip(rgb, g))
+
+
+LIT_TO_SHADOW = (("grass_lit", "grass_shadow"), ("grass_lit2", "grass_shadow"), ("grass_tip", "grass_shadow"),
+                 ("leaf_lit", "leaf_mid"), ("leaf_hi", "leaf_mid"), ("dirt_lit", "dirt_shadow"),
+                 ("rock_lit", "rock_shadow"), ("rock_lit2", "rock_shadow"), ("bloom_lit", "bloom_shadow"))
+
+
+def _weather_overlay(s, context):
+    """Clouds, rain and storm as a layer on top of the season: the palette and the world are changed, the user's
+    colour settings are not (Clear puts the palette back from them)."""
+    _n, _d, grey, sunk, haze, rain, cgrey = weather.WEATHERS[s.weather]
+    k = {"CLEAR": 0.0, "CLOUDY": 0.45, "RAIN": 0.6, "STORM": 0.8}[s.weather]
+    if s.rainbow and k > 0:                                              # a rainbow: the sun comes back out
+        k, grey, cgrey, haze = min(k, 0.2), max(0.5, min(grey, 0.6)), min(cgrey, 0.4), min(haze, 0.08)   # rain curtain
+    for key, _lb in COLOUR_PROPS:
+        shading.palette_set(key, tuple(getattr(s, key)))
+    for key, *_ in VALUE_PROPS:
+        shading.palette_set(key, getattr(s, key))
+    if k > 0:
+        for lit, sh in LIT_TO_SHADOW:                                    # no sunlit side under a grey sky
+            a, b = getattr(s, lit), getattr(s, sh)
+            shading.palette_set(lit, tuple(x * (1 - k) + y * k * 1.12 for x, y in zip(a, b)))
+        cg = (0.42, 0.46, 0.55) if s.weather == "STORM" else (0.62, 0.65, 0.72)
+        for key, dk in (("cloud_lit", 1.0), ("cloud_shadow", 0.82), ("cloud_deep", 0.7)):
+            c = getattr(s, key)
+            shading.palette_set(key, tuple(x * (1 - cgrey) + y * dk * cgrey for x, y in zip(c, cg)))
+        shading.palette_set("sun_tint", tuple(x * (1 - k * 0.6) + y * k * 0.6
+                                              for x, y in zip(s.sun_tint, (0.78, 0.82, 0.9))))
+        shading.palette_set("threshold", min(0.9, s.threshold + 0.18 * k))
+        shading.palette_set("rim_amount", 0.0)
+        shading.palette_set("haze_amount", min(1.0, s.haze_amount + haze))
+        if s.weather == "STORM":                                           # slate sky, grey-teal water, muted meadow
+            for key in ("grass_lit", "grass_lit2", "grass_shadow", "grass_tip", "leaf_lit", "leaf_mid", "leaf_hi",
+                        "leaf_shadow", "water_shallow", "water_mid", "water_deep", "bloom_lit", "flower_a",
+                        "flower_b", "flower_c"):
+                c = shading.palette_get(key)
+                lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
+                shading.palette_set(key, tuple(x * 0.5 + lum * 0.5 for x in c))
+        w = bpy.data.worlds.get(hscene.WORLD)
+        if w is not None:
+            if s.weather == "STORM":                                       # #5A6070 slate, not a dust storm
+                slate = (0.102, 0.117, 0.162)
+                z = tuple(c * 0.1 + t * 0.9 for c, t in zip(s.sky_zenith, slate))
+                h = tuple(c * 0.15 + t * 0.85 for c, t in zip(s.sky_horizon, (0.15, 0.17, 0.2)))
+                shading.palette_set("haze_colour", tuple(c * 0.2 + t * 0.8 for c, t in
+                                                          zip(s.haze_colour, (0.195, 0.216, 0.181))))
+            else:
+                z = _grey(tuple(s.sky_zenith), grey)
+                h = _grey(tuple(s.sky_horizon), grey * 0.8)
+            ground = to_hex([c * 0.9 + 0.1 * hh for c, hh in zip(h, (0.4, 0.5, 0.4))])
+            hscene.set_sky_colours(w, to_hex(z), to_hex(h), ground)
+    else:
+        _upd_sky(s, context)
+    sun = bpy.data.objects.get(hscene.SUN)
+    if sun is not None:
+        sun.data.energy = presets.SEASONS[s.season]["sun"]["strength"] * (sunk if not s.rainbow else max(sunk, 0.8))
+    amt = rain * s.rain_amount / 0.6 if rain > 0 else 0.0
+    if s.rainbow and amt > 0:
+        amt *= 0.07                                                      # the rain thins out when the bow appears
+    if amt > 0 or bpy.data.objects.get(weather.RAIN_OB) is not None:
+        weather.ensure_rain(context, min(1.0, amt), radius=s.rain_radius, follow=s.rain_follow,
+                            wind=0.8 if s.weather == "STORM" else 0.25)
+    _storm_wind(context.scene, s.weather == "STORM")
+    shading.palette_set("water_rain", max(s.water_rain, min(1.0, amt * 1.1)))
+
+
+def _storm_wind(scene, on):
+    """Storm doubles the wind in the grass and trees; any other weather puts it back."""
+    for ob in scene.objects:
+        for m in ob.modifiers:
+            if m.type != "NODES" or m.node_group is None or ob.name == weather.RAIN_OB:
+                continue
+            key = "hrp_wind0_" + m.name
+            try:
+                cur = mod_input(m, "Wind Strength")
+            except KeyError:
+                continue
+            if on:
+                if key not in ob:
+                    ob[key] = float(cur)
+                    mod_input(m, "Wind Strength", min(2.0, ob[key] * 2.0))
+            elif key in ob:
+                mod_input(m, "Wind Strength", ob[key])
+                del ob[key]
+            ob.update_tag()
+
+
+def _upd_culling(self, context):
+    for ob in context.scene.objects:
+        if ob.type != "MESH" or not ob.get("hrp_ground"):
+            continue
+        for name in (build.GRASS_MOD, build.FLOWER_MOD):
+            m = ob.modifiers.get(name)
+            if m is None or m.node_group is None:
+                continue
+            try:
+                mod_input(m, "Camera Culling", bool(self.camera_culling))
+            except KeyError:                                     # an older grass group: rebuild it first
+                pass
+            ob.update_tag()
+
+
+def _upd_rain_follow(self, context):
+    ob = bpy.data.objects.get(weather.RAIN_OB)
+    if ob is not None:
+        weather.follow_camera(ob, context.scene, self.rain_follow)
+        water.drive_rain_zone()
+
+
+def _upd_weather(self, context):
+    if _busy["on"]:
+        return
+    _weather_overlay(self, context)
+
+
+def _upd_rainbow(self, context):
+    _weather_overlay(self, context)
+    ob = bpy.data.objects.get(weather.RAINBOW_OB)
+    if self.rainbow:
+        if ob is None:
+            ob = weather.add_rainbow(context, self.rainbow_strength)
+        if ob is not None:
+            ob["hrp_rainbow"] = float(self.rainbow_strength)
+            ob.hide_render = ob.hide_viewport = False
+            ob.update_tag()
+    elif ob is not None:
+        ob.hide_render = ob.hide_viewport = True
+
+
+def _upd_dragonflies(self, context):
+    if self.dragonfly_count > 0 or bpy.data.objects.get(fauna.DRAGON_OB) is not None:
+        fauna.ensure_dragonflies(context, self.dragonfly_count)
+
+
+def _upd_fireflies(self, context):
+    ob = bpy.data.objects.get(weather.FLIES_OB)
+    if self.firefly_count > 0:
+        gnd = next(iter(water.meadows(context.scene)), None)
+        if gnd is not None:
+            weather.ensure_fireflies(context, gnd, self.firefly_count)
+    elif ob is not None:
+        bpy.data.objects.remove(ob)
 
 
 def _season_blossom(sc, amount):
@@ -335,6 +503,31 @@ def _settings_annotations():
                                              description="How many trees Plant Trees adds"),
         "cloud_count": bpy.props.IntProperty(name="Clouds", default=4, min=0, max=60,
                                              description="How many clouds Add Clouds builds (0 removes them)"),
+        "weather": bpy.props.EnumProperty(name="Weather", items=[(k, v[0], v[1]) for k, v in weather.WEATHERS.items()],
+                                          default="CLEAR", update=_upd_weather,
+                                          description="Clouds, rain or storm on top of the season"),
+        "rain_amount": bpy.props.FloatProperty(name="Rain", default=0.6, min=0.0, max=1.0, update=_upd_weather,
+                                               description="How hard it rains (Rain and Storm)"),
+        "rain_radius": bpy.props.FloatProperty(name="Rain Area", default=25.0, min=1.0, max=1000.0,
+                                               subtype="DISTANCE", update=_upd_weather,
+                                               description="Size of the rain area (the circle in the viewport)"),
+        "camera_culling": bpy.props.BoolProperty(
+            name="Grass Only in Camera View", default=False, update=_upd_culling,
+            description="Grow grass and flowers only where the active camera can see (with a margin). Big scenes get "
+                        "much lighter and faster; the rendered picture stays the same"),
+        "rain_follow": bpy.props.BoolProperty(name="Follow Camera", default=True, update=_upd_rain_follow,
+                                              description="Rain over wherever the camera looks. Off: it rains only "
+                                                          "where Rain Here put the rain area"),
+        "rainbow": bpy.props.BoolProperty(name="Rainbow", default=False, update=_upd_rainbow,
+                                          description="A rainbow in the sky behind the scene"),
+        "rainbow_strength": bpy.props.FloatProperty(name="Rainbow Strength", default=1.0, min=0.0, max=2.0,
+                                                    update=_upd_rainbow, description="How bright the rainbow is"),
+        "dragonfly_count": bpy.props.IntProperty(name="Dragonflies", default=0, min=0, max=500,
+                                                 update=_upd_dragonflies,
+                                                 description="Dragonflies hovering over the ponds and streams, "
+                                                             "darting from spot to spot"),
+        "firefly_count": bpy.props.IntProperty(name="Fireflies", default=0, min=0, max=3000, update=_upd_fireflies,
+                                               description="Fireflies by the water (they glow at dusk and night)"),
         "mask_paint": bpy.props.EnumProperty(name="Paint", items=[("GRASS", "Grass", "Paint grass back in"),
                                                                   ("PATH", "Path", "Paint a bare path")],
                                              default="PATH", description="What the brush paints"),
@@ -453,15 +646,36 @@ def _add_camera(context, target):
     return cam
 
 
-def _ground_hit(context, loc, ignore=()):
+def _mesh_hit(ob, dg, origin):
+    """Hit on an object's evaluated MESH only (a meadow's grass and flowers are instances: rays stop on blade tips,
+    and a rock or tree put there floats a grass-height above the ground)."""
+    from mathutils.bvhtree import BVHTree
+    ev = ob.evaluated_get(dg)
+    try:
+        me = ev.to_mesh()
+    except RuntimeError:
+        return None
+    mw = ob.matrix_world
+    bvh = BVHTree.FromPolygons([mw @ v.co for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
+    ev.to_mesh_clear()
+    return bvh.ray_cast(origin, Vector((0, 0, -1)))[0]
+
+
+def _ground_hit(context, loc, ignore=(), through_water=False):
     dg = context.evaluated_depsgraph_get()
     origin = Vector((loc.x, loc.y, loc.z + 1000.0))
-    for _ in range(8):
+    for _ in range(12):
         ok, hit, _n, _i, ob, _m = context.scene.ray_cast(dg, origin, Vector((0, 0, -1)))
         if not ok:
             return None
         root = tree_root(ob)
-        if root is None and ob not in ignore:
+        if through_water and water.is_water(ob):
+            pass
+        elif root is None and ob not in ignore:
+            if ob.get("hrp_ground"):
+                g = _mesh_hit(ob, dg, Vector((loc.x, loc.y, loc.z + 1000.0)))
+                if g is not None:
+                    return g
             return hit
         origin = hit + Vector((0, 0, -0.01))
     return None
@@ -551,6 +765,9 @@ class HRP_OT_add_tree(bpy.types.Operator):
         bl = self.blossom if self.blossom >= 0 else sc.harappa.new_blossom
         loc = sc.cursor.location.copy()
         hit = _ground_hit(context, loc)
+        if water.in_water(context, loc.x, loc.y, margin=self.height * 0.08, z=hit.z if hit is not None else loc.z):
+            self.report({"WARNING"}, report("Trees don't grow in water: put the 3D cursor on dry ground"))
+            return {"CANCELLED"}
         if hit is not None:
             loc.z = hit.z - 0.02 * self.height
         root = tree.add_tree(context, self.shape, self.height, seed, loc, blossom=bl)
@@ -596,6 +813,14 @@ class HRP_OT_plant_trees(bpy.types.Operator):
         me = ground.data
         mw = ground.matrix_world
         mask = me.color_attributes.get(scatter.MASK_ATTR)
+        wet = None
+        if ground.modifiers.get(water.CARVE_MOD) is not None:          # not in ponds, streams or on their banks
+            ev = ground.evaluated_get(context.evaluated_depsgraph_get())
+            em = ev.to_mesh()
+            wa = em.attributes.get("hrp_wet")
+            if wa is not None and len(wa.data) == len(me.vertices):
+                wet = [d.value for d in wa.data]
+            ev.to_mesh_clear()
         polys = list(me.polygons)
         areas = [p.area for p in polys]
         tot = sum(areas)
@@ -613,6 +838,8 @@ class HRP_OT_plant_trees(bpy.types.Operator):
                     break
             vi = p.vertices[rng.randrange(len(p.vertices))]
             if mask is not None and mask.data[vi].color[0] < 0.7:
+                continue
+            if wet is not None and max(wet[v] for v in p.vertices) > 0.02:
                 continue
             co = mw @ p.center
             h = self.height * rng.uniform(0.7, 1.3)
@@ -864,6 +1091,10 @@ class HRP_OT_paint_mask(bpy.types.Operator):
         return meadow_of(context.active_object) is not None
 
     def execute(self, context):
+        gnd0 = meadow_of(context.active_object)
+        if gnd0 is not None and gnd0.get("hrp_banks_frozen"):           # the bake would hide every stroke
+            water.freeze_banks(context, gnd0, False)
+            self.report({"INFO"}, report("Banks are live while you paint (Freeze Banks again when done)"))
         ob = context.active_object
         build.ensure_mask(ob.data)
         if context.mode != "PAINT_VERTEX":
@@ -938,7 +1169,7 @@ class HRP_OT_revert(bpy.types.Operator):
         n = 0
         for ob in context.selected_objects:
             hit = False
-            for name in (build.GRASS_MOD, build.FLOWER_MOD, "Harappa Foliage"):
+            for name in (build.GRASS_MOD, build.FLOWER_MOD, "Harappa Foliage", water.CARVE_MOD):
                 m = ob.modifiers.get(name)
                 if m is not None:
                     ob.modifiers.remove(m)
@@ -981,11 +1212,577 @@ class HRP_OT_set_enum(bpy.types.Operator):
         return {"FINISHED"}
 
 
+# ---------------------------------------------------------------------------------------------
+# water
+# ---------------------------------------------------------------------------------------------
+def ensure_shading(context):
+    """After an upgrade the palette node group is rebuilt (new keys) and every material linked to it loses its
+    links: rebuild the materials, put the scene's colours back and re-attach the drivers."""
+    ng = bpy.data.node_groups.get(shading.PALETTE)
+    stale = [m for m in bpy.data.materials if m.get("hrp_ver") is not None and m.get("hrp_ver") != shading.SHADER_VER]
+    if ng is None or (ng.get("hrp_ver") == shading.SHADER_VER and not stale):
+        return False
+    shading.palette_group()
+    for mat in bpy.data.materials:                          # every Harappa material lost its palette links
+        if mat.get("hrp_ver") is not None:
+            mat["hrp_ver"] = -1
+            if "hrp_water_ver" in mat:
+                mat["hrp_water_ver"] = -1
+    shading.all_materials()
+    if bpy.data.materials.get(water.MAT_WATER) is not None:
+        water.water_material()
+    _refresh_all(context.scene.harappa, context)
+    shading.drive_light_scale(bpy.data.objects.get(hscene.SUN))
+    water.drive_time(context.scene)
+    return True
+
+
+@bpy.app.handlers.persistent
+def _on_load(_dummy):
+    try:
+        ensure_shading(bpy.context)
+    except Exception as e:                                  # never block opening a file
+        print("[Harappa] upgrade skipped:", e)
+
+
+def _upd_water(self, context):
+    if _busy["on"]:
+        return
+    ob = self.id_data
+    water.set_look(ob, hrp_hue=self.hue, hrp_sat=self.saturation, hrp_val=self.brightness,
+                   hrp_clarity=self.clarity)
+
+
+def _upd_water_kind(self, context):
+    if _busy["on"]:
+        return
+    _busy["on"] = True
+    try:
+        self.clarity = water.WATER_TYPES[self.kind][2]                  # hue / saturation / brightness are kept
+    finally:
+        _busy["on"] = False
+    water.set_look(self.id_data, self.kind)
+
+
+def _upd_water_size(self, context):
+    if _busy["on"]:
+        return
+    water.resize_pond(context, self.id_data, self.size)
+
+
+def _upd_water_shape(self, context):
+    if not _busy["on"]:
+        water.reshape_pond(context, self.id_data, self.shape_seed)
+
+
+class HRP_WaterSettings(bpy.types.PropertyGroup):
+    kind: bpy.props.EnumProperty(
+        name="Water Type", default="SEASON", update=_upd_water_kind, description="What kind of water this is",
+        items=[(k, v[0], v[1]) for k, v in water.WATER_TYPES.items()])
+    hue: bpy.props.FloatProperty(name="Hue Shift", default=0.0, min=-0.5, max=0.5, update=_upd_water,
+                                 description="Shifts the colour of this water")
+    saturation: bpy.props.FloatProperty(name="Saturation", default=0.0, min=-1.0, max=1.0, update=_upd_water,
+                                        description="More or less colourful water")
+    brightness: bpy.props.FloatProperty(name="Brightness", default=0.0, min=-1.0, max=1.0, update=_upd_water,
+                                        description="Lighter or darker water")
+    clarity: bpy.props.FloatProperty(name="Clarity", default=0.0, min=-1.0, max=1.0, update=_upd_water,
+                                     description="Clear water shows a wide bright shelf and caustics; murky water "
+                                                 "turns deep quickly")
+    size: bpy.props.FloatProperty(name="Pond Scale", default=1.0, min=0.1, max=20.0, update=_upd_water_size,
+                                  description="Scale this pond around its centre (x1 = as made)")
+    shape_seed: bpy.props.IntProperty(name="Shape", default=0, min=0, max=99999, update=_upd_water_shape,
+                                      description="A different shoreline for this pond (same size)")
+
+
+# --- Active Rock: read/written straight from the object's own data, so every rock (the waterfall's too) is editable
+def _rock_info(ob):
+    info = list(ob.get("hrp_rock", [1.0, 0, 0.65, 0]))
+    return info + [0] * (4 - len(info))
+
+
+def _get_rsize(self):
+    return float(self.id_data.get("hrp_rsize", 1.0))
+
+
+def _set_rsize(self, v):
+    ob = self.id_data
+    k = v / max(1e-4, float(ob.get("hrp_rsize", 1.0)))
+    ob.scale = tuple(x * k for x in ob.scale)
+    ob["hrp_rsize"] = float(v)
+
+
+def _get_rflat(self):
+    return float(_rock_info(self.id_data)[2])
+
+
+def _set_rflat(self, v):
+    rocks.edit_rock(self.id_data, flat=v)
+
+
+def _get_rseed(self):
+    return int(_rock_info(self.id_data)[1])
+
+
+def _set_rseed(self, v):
+    rocks.edit_rock(self.id_data, seed=v)
+
+
+def _get_rmoss(self):
+    return 1.0 - float(self.id_data.get("hrp_nomoss", 0.0))
+
+
+def _set_rmoss(self, v):
+    ob = self.id_data
+    ob["hrp_nomoss"] = 1.0 - float(v)
+    ob.update_tag()
+
+
+class HRP_RockSettings(bpy.types.PropertyGroup):
+    size: bpy.props.FloatProperty(name="Rock Size", min=0.05, max=20.0, get=_get_rsize, set=_set_rsize,
+                                  description="Scale this rock")
+    flat: bpy.props.FloatProperty(name="Flatness", min=0.2, max=1.5, get=_get_rflat, set=_set_rflat,
+                                  description="Low and flat (small) or tall and round (large)")
+    seed: bpy.props.IntProperty(name="Seed", min=0, max=99999, get=_get_rseed, set=_set_rseed,
+                                description="A different shape for this rock")
+    moss: bpy.props.FloatProperty(name="Moss", min=0.0, max=1.0, get=_get_rmoss, set=_set_rmoss,
+                                  description="Moss on this rock (the colour and overall amount are in Colours)")
+
+
+# --- Active Waterfall: Flow changes live; Height, Width and Seed rebuild it a moment after you stop dragging
+_wf_pending = {}
+
+
+def _wf_args(fall):
+    return list(fall.get("hrp_wf_args", [0, 0, 0, 0, 1, 2.4, 1.1, 0]))
+
+
+def _wf_rebuild():
+    if not _wf_pending:
+        return None
+    tag, vals = next(iter(_wf_pending.items()))
+    _wf_pending.clear()
+    context = bpy.context
+    fall = waterfall.fall_of(context, tag)
+    if fall is None:
+        return None
+    new = waterfall.rebuild_waterfall(context, fall, **vals)
+    try:
+        _select(context, new)
+        bpy.ops.ed.undo_push(message="Edit Waterfall")
+    except Exception:
+        pass
+    return None
+
+
+def _wf_getter(i, key, cast=float):
+    def get(self):
+        ob = self.id_data
+        p = _wf_pending.get(ob.get("hrp_waterfall"), {})
+        return cast(p.get(key, _wf_args(ob)[i]))
+    return get
+
+
+def _wf_setter(key, cast):
+    def set_(self, v):
+        ob = self.id_data
+        tag = ob.get("hrp_waterfall")
+        if tag is None:
+            return
+        _wf_pending.setdefault(tag, {})[key] = cast(v)
+        if bpy.app.timers.is_registered(_wf_rebuild):
+            bpy.app.timers.unregister(_wf_rebuild)
+        bpy.app.timers.register(_wf_rebuild, first_interval=0.5)
+    return set_
+
+
+def _get_flow(self):
+    return float(self.id_data.get("hrp_wf_flow", 1.0))
+
+
+def _set_flow(self, v):
+    waterfall.set_flow(self.id_data, v)
+
+
+class HRP_FallSettings(bpy.types.PropertyGroup):
+    height: bpy.props.FloatProperty(name="Height", min=0.5, max=50.0, subtype="DISTANCE",
+                                    get=_wf_getter(5, "height"), set=_wf_setter("height", float),
+                                    description="Height of the fall (rebuilds the waterfall's rocks and trees)")
+    width: bpy.props.FloatProperty(name="Width", min=0.2, max=20.0, subtype="DISTANCE",
+                                   get=_wf_getter(6, "width"), set=_wf_setter("width", float),
+                                   description="Width of the falling water (rebuilds the waterfall's rocks and trees)")
+    seed: bpy.props.IntProperty(name="Seed", min=0, max=99999, get=_wf_getter(7, "seed", int), set=_wf_setter("seed", int),
+                                description="Another arrangement of rocks and trees (rebuilds the waterfall)")
+    flow: bpy.props.FloatProperty(name="Flow", min=0.0, max=2.0, get=_get_flow, set=_set_flow,
+                                  description="How much water comes over the lip")
+
+
+class HRP_OT_set_water_enum(bpy.types.Operator):
+    bl_idname = "harappa.set_water_enum"
+    bl_label = "Set"
+    bl_description = "Choose this option"
+    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+    value: bpy.props.StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        ob = context.active_object
+        if water.is_water(ob):
+            ob.harappa_water.kind = self.value
+        return {"FINISHED"}
+
+
+def _need_meadow(op, context):
+    ensure_shading(context)
+    if not water.meadows(context.scene):
+        op.report({"WARNING"}, report("Make a meadow first: water carves its bed into the meadow"))
+        return False
+    return True
+
+
+def _select(context, ob):
+    for o in context.selected_objects:
+        o.select_set(False)
+    ob.select_set(True)
+    context.view_layer.objects.active = ob
+
+
+class HRP_OT_add_pond(bpy.types.Operator):
+    bl_idname = "harappa.add_pond"
+    bl_label = "Add Pond"
+    bl_description = ("A toon pond at the 3D cursor. It digs its own bed into the meadow and the grass steps back "
+                      "from the bank. Edit the curve to reshape it")
+    bl_options = {"REGISTER", "UNDO"}
+
+    radius: bpy.props.FloatProperty(name="Radius", default=2.5, min=0.2, max=200.0, subtype="DISTANCE",
+                                    description="Rough radius of the pond")
+    depth: bpy.props.FloatProperty(name="Depth", default=0.7, min=0.02, max=50.0, subtype="DISTANCE",
+                                   description="Deepest point below the water line")
+    seed: bpy.props.IntProperty(name="Seed", default=0, min=0, description="Shape of the shoreline")
+
+    def execute(self, context):
+        if not _need_meadow(self, context):
+            return {"CANCELLED"}
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        ob = water.add_pond(context, context.scene.cursor.location, self.radius, self.seed, self.depth)
+        _busy["on"] = True
+        ob.harappa_water.shape_seed = self.seed
+        _busy["on"] = False
+        _select(context, ob)
+        water.clear_trees(context)
+        self.report({"INFO"}, report("Pond added"))
+        return {"FINISHED"}
+
+
+class HRP_OT_add_stream(bpy.types.Operator):
+    bl_idname = "harappa.add_stream"
+    bl_label = "Add Stream"
+    bl_description = ("A winding toon stream starting at the 3D cursor and running away from the camera. It "
+                      "follows the meadow downhill and carves its own channel. Edit the curve, then Drop Onto "
+                      "Meadow")
+    bl_options = {"REGISTER", "UNDO"}
+
+    length: bpy.props.FloatProperty(name="Length", default=12.0, min=1.0, max=2000.0, subtype="DISTANCE",
+                                    description="Length of the new stream")
+    width: bpy.props.FloatProperty(name="Width", default=1.4, min=0.05, max=100.0, subtype="DISTANCE",
+                                   description="Stream width in metres")
+    depth: bpy.props.FloatProperty(name="Depth", default=0.45, min=0.02, max=50.0, subtype="DISTANCE",
+                                   description="Deepest point below the water line")
+
+    def execute(self, context):
+        if not _need_meadow(self, context):
+            return {"CANCELLED"}
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        c = context.scene.cursor.location
+        cam = context.scene.camera
+        fwd = Vector((0.0, 1.0, 0.0))
+        if cam is not None:
+            f = cam.matrix_world.to_3x3() @ Vector((0.0, 0.0, -1.0))
+            f.z = 0.0
+            if f.length > 1e-4:
+                fwd = f.normalized()
+        side = Vector((-fwd.y, fwd.x, 0.0))
+        pts = []
+        for i in range(6):
+            u = i / 5
+            p = c + fwd * (self.length * u) + side * (math.sin(u * math.pi * 1.6) * self.length * 0.1)
+            pts.append((p.x, p.y, p.z))
+        ob = water.add_stream(context, pts, self.width, self.depth)
+        _select(context, ob)
+        water.clear_trees(context)
+        self.report({"INFO"}, report("Stream added"))
+        return {"FINISHED"}
+
+
+class HRP_OT_make_water(bpy.types.Operator):
+    bl_idname = "harappa.make_water"
+    bl_label = "Make Water from Curves"
+    bl_description = ("Turn the selected curves into water: closed curves become ponds, open curves become streams "
+                      "(drawn from upstream to downstream)")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if not _need_meadow(self, context):
+            return {"CANCELLED"}
+        curves = [o for o in context.selected_objects if o.type == "CURVE"]
+        if not curves:
+            self.report({"WARNING"}, report("Select one or more curves"))
+            return {"CANCELLED"}
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        for ob in curves:
+            if not any(sp.use_cyclic_u for sp in ob.data.splines):
+                water.snap_stream(context, ob)
+            water.make_water(context, ob)
+        water.settle(context)                                    # spill levels, streams meeting ponds
+        water.clear_trees(context)
+        water.refreeze(context)
+        self.report({"INFO"}, report(f"Water from {len(curves)} curve(s)"))
+        return {"FINISHED"}
+
+
+class HRP_OT_drop_stream(bpy.types.Operator):
+    bl_idname = "harappa.drop_stream"
+    bl_label = "Drop Onto Meadow"
+    bl_description = ("Lay the active stream back onto the meadow after editing it (running downhill only), or re-level an "
+                      "edited pond to its lowest rim; streams nearby join it again")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return water.is_water(context.active_object)
+
+    def execute(self, context):
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        if not any(sp.use_cyclic_u for sp in context.active_object.data.splines):   # (a pond: just re-level it)
+            water.snap_stream(context, context.active_object)
+        water.settle(context)
+        water.clear_trees(context)
+        water.refreeze(context)
+        return {"FINISHED"}
+
+
+class HRP_OT_add_rock(bpy.types.Operator):
+    bl_idname = "harappa.add_rock"
+    bl_label = "Add Rock"
+    bl_description = ("A painted rock with moss on top at the 3D cursor; grass and flowers grow around it. "
+                      "Press again for another shape")
+    bl_options = {"REGISTER", "UNDO"}
+
+    size: bpy.props.FloatProperty(name="Size", default=1.0, min=0.05, max=100.0, subtype="DISTANCE",
+                                  description="Rough size of the rock")
+    flat: bpy.props.FloatProperty(name="Flatness", default=0.65, min=0.2, max=1.5,
+                                  description="Low and flat (small) or tall and round (large)")
+    seed: bpy.props.IntProperty(name="Seed", default=-1, min=-1, max=99999, description="Shape seed (-1 = random)")
+
+    def execute(self, context):
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        ensure_shading(context)
+        seed = self.seed if self.seed >= 0 else random.randint(0, 99999)
+        loc = context.scene.cursor.location.copy()
+        hit = _ground_hit(context, loc, through_water=True)            # on the bed, not floating on a pond
+        gz = None if hit is None else hit.z
+        if gz is not None:                                              # on a slope: seat it on the low side
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                h2 = _ground_hit(context, loc + Vector((dx, dy, 0)) * 0.38 * self.size, through_water=True)
+                if h2 is not None:
+                    gz = min(gz, h2.z)
+        ob = rocks.add_rock(context, loc, self.size, seed, self.flat, gz)
+        _select(context, ob)
+        return {"FINISHED"}
+
+
+class HRP_OT_add_waterfall(bpy.types.Operator):
+    bl_idname = "harappa.add_waterfall"
+    bl_label = "Add Waterfall"
+    bl_description = ("A waterfall whose plunge pool is at the 3D cursor: a raised terrace behind it, a stream "
+                      "across the top, a rock ledge it drops from, rock walls on both sides and foam at the foot. "
+                      "It faces the camera")
+    bl_options = {"REGISTER", "UNDO"}
+
+    height: bpy.props.FloatProperty(name="Height", default=2.4, min=0.5, max=50.0, subtype="DISTANCE",
+                                    description="Height of the fall")
+    width: bpy.props.FloatProperty(name="Width", default=1.4, min=0.2, max=20.0, subtype="DISTANCE",
+                                   description="Width of the water at the lip")
+    seed: bpy.props.IntProperty(name="Seed", default=-1, min=-1, max=99999, description="Shape seed (-1 = random)")
+
+    def execute(self, context):
+        if not _need_meadow(self, context):
+            return {"CANCELLED"}
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        sc = context.scene
+        c = sc.cursor.location.copy()
+        fwd = Vector((0.0, 1.0, 0.0))
+        if sc.camera is not None:
+            f = sc.camera.matrix_world.to_3x3() @ Vector((0.0, 0.0, -1.0))
+            f.z = 0.0
+            if f.length > 1e-4:
+                fwd = f.normalized()
+        seed = self.seed if self.seed >= 0 else random.randint(0, 99999)
+        ob = waterfall.add_waterfall(context, c, fwd, self.height, self.width, seed)
+        water.clear_trees(context)
+        water.refreeze(context)
+        _select(context, ob)
+        return {"FINISHED"}
+
+
+class HRP_OT_remove_waterfall(bpy.types.Operator):
+    bl_idname = "harappa.remove_waterfall"
+    bl_label = "Remove Waterfall"
+    bl_description = "Delete the whole waterfall the active object belongs to (terrace, stream, rocks, pool, sheet)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob is not None and ob.get("hrp_waterfall") is not None
+
+    def execute(self, context):
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        waterfall.remove_waterfall(context, context.active_object["hrp_waterfall"])
+        water.settle(context)
+        water.clear_trees(context)
+        water.refreeze(context)
+        return {"FINISHED"}
+
+
+class HRP_OT_add_fish(bpy.types.Operator):
+    bl_idname = "harappa.add_fish"
+    bl_label = "Add Koi"
+    bl_description = "Koi swimming slow loops in the deep water of the active pond"
+    bl_options = {"REGISTER", "UNDO"}
+
+    count: bpy.props.IntProperty(name="Count", default=6, min=1, max=200, description="How many koi")
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return water.is_water(ob) and any(sp.use_cyclic_u for sp in ob.data.splines)
+
+    def execute(self, context):
+        ensure_shading(context)
+        fauna.add_fish(context, context.active_object, self.count)
+        return {"FINISHED"}
+
+
+class HRP_OT_add_boat(bpy.types.Operator):
+    bl_idname = "harappa.add_boat"
+    bl_label = "Add Boat"
+    bl_description = ("A small wooden rowboat floating on the active pond (at the 3D cursor when it is on the "
+                      "water). Draft, bob and rock live on its Harappa Float modifier")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return water.is_water(ob) and any(sp.use_cyclic_u for sp in ob.data.splines)
+
+    def execute(self, context):
+        ensure_shading(context)
+        pond = context.active_object
+        c = context.scene.cursor.location
+        at = c if water.in_water(context, c.x, c.y, 0.0) else None
+        boat = fauna.add_boat(context, pond, at=at)
+        _select(context, boat)
+        return {"FINISHED"}
+
+
+class HRP_OT_stepping_stones(bpy.types.Operator):
+    bl_idname = "harappa.stepping_stones"
+    bl_label = "Add Stepping Stones"
+    bl_description = ("A row of flat stones across the active stream where it passes closest to the 3D cursor, "
+                      "their tops just above the water")
+    bl_options = {"REGISTER", "UNDO"}
+
+    count: bpy.props.IntProperty(name="Stones", default=0, min=0, max=30,
+                                 description="How many stones (0 = enough to cross)")
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return water.is_water(ob) and not any(sp.use_cyclic_u for sp in ob.data.splines)
+
+    def execute(self, context):
+        ensure_shading(context)
+        made = water.stepping_stones(context, context.active_object, context.scene.cursor.location, self.count)
+        if not made:
+            self.report({"WARNING"}, report("Could not find the stream near the 3D cursor"))
+            return {"CANCELLED"}
+        self.report({"INFO"}, report(f"{len(made)} stepping stones"))
+        return {"FINISHED"}
+
+
+class HRP_OT_rain_here(bpy.types.Operator):
+    bl_idname = "harappa.rain_here"
+    bl_label = "Rain Here"
+    bl_description = ("Make it rain only around the 3D cursor (inside the Rain Area circle); ponds outside stay "
+                      "calm. Turns Follow Camera off")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        ensure_shading(context)
+        s = context.scene.harappa
+        if s.weather not in ("RAIN", "STORM"):
+            s.weather = "RAIN"
+        c = context.scene.cursor.location
+        weather.ensure_rain(context, at=(c.x, c.y), amount=max(0.01, min(1.0, s.rain_amount / 0.6 *
+                            weather.WEATHERS[s.weather][5])), radius=s.rain_radius)
+        _busy["on"] = True
+        try:
+            s.rain_follow = False
+        finally:
+            _busy["on"] = False
+        water.drive_rain_zone()
+        return {"FINISHED"}
+
+
+class HRP_OT_freeze_banks(bpy.types.Operator):
+    bl_idname = "harappa.freeze_banks"
+    bl_label = "Freeze Banks"
+    bl_description = ("Bake the dug banks of every meadow into the file so playback is fast. Harappa re-bakes after "
+                      "its own water tools; after editing a curve by hand press Update Banks")
+    bl_options = {"REGISTER", "UNDO"}
+
+    on: bpy.props.BoolProperty(default=True, options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        for gnd in water.meadows(context.scene):
+            if self.on and gnd.get("hrp_banks_frozen"):
+                water.freeze_banks(context, gnd, False)
+            water.freeze_banks(context, gnd, self.on)
+        return {"FINISHED"}
+
+
+class HRP_OT_remove_water(bpy.types.Operator):
+    bl_idname = "harappa.remove_water"
+    bl_label = "Remove Water"
+    bl_description = "Delete the active pond or stream; the meadow fills back in"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return water.is_water(context.active_object)
+
+    def execute(self, context):
+        if context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        water.remove_water(context, context.active_object)
+        return {"FINISHED"}
+
+
 CLASSES = (
     HRP_Settings, HRP_TreeSettings, HRP_OT_make_meadow, HRP_OT_add_tree, HRP_OT_plant_trees,
     HRP_OT_rebuild_tree, HRP_OT_set_tree_enum, HRP_OT_edit_canopy,
     HRP_OT_make_foliage, HRP_OT_add_clouds, HRP_OT_setup_scene, HRP_OT_paint_mask, HRP_OT_shuffle, HRP_OT_reset,
     HRP_OT_revert, HRP_OT_set_enum,
+    HRP_WaterSettings, HRP_RockSettings, HRP_FallSettings, HRP_OT_set_water_enum, HRP_OT_add_pond, HRP_OT_add_stream, HRP_OT_add_rock,
+    HRP_OT_add_waterfall, HRP_OT_remove_waterfall, HRP_OT_add_fish, HRP_OT_add_boat, HRP_OT_stepping_stones, HRP_OT_rain_here, HRP_OT_freeze_banks, HRP_OT_make_water, HRP_OT_drop_stream, HRP_OT_remove_water,
 )
 
 
@@ -995,11 +1792,24 @@ def register():
         bpy.utils.register_class(c)
     bpy.types.Scene.harappa = bpy.props.PointerProperty(type=HRP_Settings)
     bpy.types.Object.harappa_tree = bpy.props.PointerProperty(type=HRP_TreeSettings)
+    bpy.types.Object.harappa_water = bpy.props.PointerProperty(type=HRP_WaterSettings)
+    bpy.types.Object.harappa_rock = bpy.props.PointerProperty(type=HRP_RockSettings)
+    bpy.types.Object.harappa_fall = bpy.props.PointerProperty(type=HRP_FallSettings)
     ui.register()
+    if _on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_on_load)
+    bpy.app.timers.register(lambda: (_on_load(None), None)[1], first_interval=0.2)   # updated while a file is open
 
 
 def unregister():
+    if _on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_on_load)
     ui.unregister()
+    del bpy.types.Object.harappa_water
+    del bpy.types.Object.harappa_rock
+    del bpy.types.Object.harappa_fall
+    if bpy.app.timers.is_registered(_wf_rebuild):
+        bpy.app.timers.unregister(_wf_rebuild)
     del bpy.types.Object.harappa_tree
     del bpy.types.Scene.harappa
     for c in reversed(CLASSES):

@@ -14,7 +14,7 @@ import bpy
 
 from .util import G, fresh_group, iface
 
-GN_VER = 27
+GN_VER = 29
 WIND = "HRP Wind"
 GRASS = "HRP Grass"
 FLOWERS = "HRP Flowers"
@@ -244,6 +244,7 @@ def grass_group():
     iface(ng, "Seed", "INPUT", "NodeSocketInt", 0)
     iface(ng, "Show Ground", "INPUT", "NodeSocketBool", True)
     _avoid_inputs(ng)
+    _cull_inputs(ng)
     iface(ng, "Geometry", "OUTPUT", "NodeSocketGeometry")
     gi = g.n("NodeGroupInput", -2200, 0)
     go = g.n("NodeGroupOutput", 1800, 0)
@@ -274,6 +275,7 @@ def grass_group():
     far_ok = g.math("GREATER_THAN", -1450, -1000, g.out(dist, "Value"), g.out(near, 0))
     sel0 = g.math("GREATER_THAN", -1400, -250, mask, 0.3)
     sel = g.math("MULTIPLY", -1250, -250, g.out(sel0, 0), g.out(far_ok, 0))
+    sel = g.math("MULTIPLY", -1220, -280, g.out(sel, 0), _cam_visible(g, gi, -2900, -1600))
 
     dp = g.n("GeometryNodeDistributePointsOnFaces", -1200, 0, distribute_method="RANDOM")
     g.link(gi, "Geometry", dp, "Mesh")
@@ -355,6 +357,58 @@ def grass_group():
 
 
 # ----------------------------------------------------------------------------------------------
+def _cull_inputs(ng):
+    iface(ng, "Camera Culling", "INPUT", "NodeSocketBool", False,
+          desc="Only grow it where the active camera can see (plus a margin): much lighter big scenes. Off-screen "
+               "grass casts no shadow in Harappa, so the picture does not change")
+    iface(ng, "Cull Margin", "INPUT", "NodeSocketFloat", 0.25, 0.0, 3.0, subtype="FACTOR",
+          desc="Extra room around the camera view (0.25 = a quarter wider), so a moving camera never shows an edge")
+
+
+def _cam_visible(g, gi, x, y):
+    """1 where the active camera sees this spot (a square frustum as wide as the sensor's long side, plus the margin,
+    plus 1 m for the tuft itself), else 0; always 1 when culling is off, the camera is orthographic or missing."""
+    pos = g.n("GeometryNodeInputPosition", x, y - 300)
+    cam = g.n("GeometryNodeInputActiveCamera", x, y)
+    oi = g.n("GeometryNodeObjectInfo", x + 150, y, transform_space="RELATIVE")
+    g.link(cam, 0, oi, "Object")
+    inv = g.n("FunctionNodeInvertMatrix", x + 300, y)
+    g.link(oi, "Transform", inv, "Matrix")
+    tp = g.n("FunctionNodeTransformPoint", x + 450, y)
+    g.link(pos, 0, tp, "Vector")
+    g.link(inv, "Matrix", tp, "Transform")
+    sp = g.n("ShaderNodeSeparateXYZ", x + 600, y)
+    g.link(tp, 0, sp, 0)
+    info = g.n("GeometryNodeCameraInfo", x + 150, y - 200)
+    g.link(cam, 0, info, "Camera")
+    foc = g.out(info, "Focal Length")
+    sen = g.n("ShaderNodeSeparateXYZ", x + 250, y - 200)             # the frame's width and height on the sensor
+    g.link(info, "Sensor", sen, 0)
+    f2 = g.math("MULTIPLY", x + 250, y - 300, foc, 2.0).outputs[0]
+    grow = g.math("ADD", x + 350, y - 300, g.out(gi, "Cull Margin"), 1.0).outputs[0]
+    depth = g.math("MULTIPLY", x + 750, y - 100, g.out(sp, "Z"), -1.0)
+    dpos = g.math("MAXIMUM", x + 800, y - 200, g.out(depth, 0), 0.0).outputs[0]
+
+    def limit(axis, yy):
+        half = g.math("MULTIPLY", x + 450, yy, g.math("DIVIDE", x + 350, yy, g.out(sen, axis), f2).outputs[0], grow)
+        return g.math("MULTIPLY_ADD", x + 900, yy, dpos, g.out(half, 0), 1.0)
+    okx = g.math("LESS_THAN", x + 1050, y, g.math("ABSOLUTE", x + 900, y, g.out(sp, "X")).outputs[0],
+                 g.out(limit("X", y - 150), 0))
+    oky = g.math("LESS_THAN", x + 1050, y - 100, g.math("ABSOLUTE", x + 900, y - 50, g.out(sp, "Y")).outputs[0],
+                 g.out(limit("Y", y - 250), 0))
+    okz = g.math("GREATER_THAN", x + 1050, y - 200, g.out(depth, 0), -2.0)          # (just behind the lens too)
+    vis = g.math("MULTIPLY", x + 1200, y - 50, g.math("MULTIPLY", x + 1150, y, g.out(okx, 0), g.out(oky, 0)).outputs[0],
+                 g.out(okz, 0))
+    off = g.n("FunctionNodeBooleanMath", x + 1050, y - 350, operation="NOT")
+    g.link(gi, "Camera Culling", off, 0)
+    bor = g.n("FunctionNodeBooleanMath", x + 1150, y - 400, operation="OR")
+    g.link(off, 0, bor, 0)
+    g.link(info, "Is Orthographic", bor, 1)
+    nofoc = g.math("LESS_THAN", x + 1100, y - 500, foc, 0.001)
+    keep = g.math("MAXIMUM", x + 1300, y - 400, g.out(bor, 0), g.out(nofoc, 0))
+    return g.math("MAXIMUM", x + 1400, y - 100, g.out(vis, 0), g.out(keep, 0)).outputs[0]
+
+
 def _camera_facing(g, x, y, seed_sock, seed_off):
     """Rotation of the active camera with a random roll around the view axis."""
     cam = g.n("GeometryNodeInputActiveCamera", x, y)
@@ -387,6 +441,7 @@ def flowers_group():
     iface(ng, "Height", "INPUT", "NodeSocketFloat", 0.3, 0.0, 100.0, desc="Height of the flower heads",
           subtype="DISTANCE")
     iface(ng, "Mask Attribute", "INPUT", "NodeSocketString", "hrp_grass")
+    _cull_inputs(ng)
     _wind_inputs(ng, 0.22)
     iface(ng, "Seed", "INPUT", "NodeSocketInt", 0)
     _avoid_inputs(ng)
@@ -412,6 +467,7 @@ def flowers_group():
     dfac = g.math("MULTIPLY", -1000, -500, g.out(pf, "Result"), g.out(mk, "Result"))
     dp = g.n("GeometryNodeDistributePointsOnFaces", -800, 0, distribute_method="RANDOM")
     g.link(gi, "Geometry", dp, "Mesh")
+    g.links.new(_cam_visible(g, gi, -2600, -1400), dp.inputs["Selection"])
     dens = g.math("MULTIPLY", -900, -150, g.out(gi, "Density"), g.out(dfac, 0))
     g.link(dens, 0, dp, "Density")
     sd = g.math("ADD", -1000, -200, g.out(gi, "Seed"), 101)

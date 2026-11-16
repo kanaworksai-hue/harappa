@@ -68,7 +68,29 @@ s.variation = 918                             # or bpy.ops.harappa.shuffle()
 s.clump_size = 2.5                            # any setting, see --list
 root.harappa_tree.shape = "CONIFER"           # per tree: shape / leaf_style / height / seed rebuild live
 bpy.ops.harappa.revert()                      # selected objects: remove grass/flowers/foliage, restore materials
+bpy.context.scene.cursor.location = (2, -4, 0)
+bpy.ops.harappa.add_pond(radius=2.5, depth=0.7)   # toon pond at the cursor; digs its bed, grass steps back
+bpy.ops.harappa.add_stream(length=12, width=1.4)  # stream from the cursor away from the camera, downhill
+bpy.ops.harappa.make_water()                  # selected curves -> water (closed = pond, open = stream, upstream first)
+s.water_rain = 0.4                            # raindrop rings; also water_caustics, water_glints, water_glow
+pond.harappa_water.kind = "LOTUS"             # SEASON CLEAR LOTUS GLACIER STREAM TEA; also hue/saturation/brightness/
+                                              # clarity, size (scale x1) and shape_seed per pond
+bpy.ops.harappa.add_waterfall(height=2.4, width=1.4)  # pool at the cursor, rocky knoll + stream + rocks + trees + outflow
+fall.harappa_fall.flow = 1.5                  # per waterfall: flow (live), height / width / seed (rebuild it)
+bpy.ops.harappa.add_rock(size=1.0, flat=0.65) # mossy rock on the ground under the cursor
+rock.harappa_rock.moss = 0.3                  # per rock: size, flat, seed, moss
+bpy.ops.harappa.add_fish(count=6)             # active pond: koi ("Harappa Fish" modifier: Count, Size, Speed,
+                                              #   Leap Every = seconds between leaps, 0 = never)
+bpy.ops.harappa.add_boat()                    # active pond: rowboat ("Harappa Float": Draft = buoyancy, Bob, Sway)
+s.weather = "RAIN"                            # CLEAR CLOUDY RAIN STORM, a layer over the season (user colours kept)
+s.rain_radius = 8; bpy.ops.harappa.rain_here()   # rain only around the cursor (s.rain_follow = True: over the camera)
+s.rainbow = True; s.firefly_count = 200       # fireflies glow at GOLDEN / NIGHT (s.fireflies = glow)
+s.dragonfly_count = 10                        # dragonflies hovering and darting over the water (daytime)
+bpy.ops.harappa.stepping_stones()             # active stream: flat stones across it, nearest the 3D cursor
+bpy.ops.harappa.freeze_banks(on=True)         # bake the dug banks: fast playback (Harappa re-bakes after its tools)
 ```
+Nature's rules are built in: trees are not planted in water, lily pads grow only on water 0.2-1.6 m deep, reeds stand
+in the shallows (not by a waterfall), pebbles lie on the bank.
 Grass density, height and wind live on each meadow's **Harappa Grass** / **Harappa Flowers** modifiers; leaves on the
 **Harappa Foliage** modifier of a tree's canopy object (`harappa.util.mod_input(mod, "Wind Strength", 0.3)`).
 
@@ -108,6 +130,20 @@ On later tweaks, omit what they didn't mention: the current season, style and va
 | They say | option |
 |---|---|
 | a path, a road, 道, 小道, 小路 | `--path X,Y:X,Y:…` (world points; width `--path-width 1.2`) |
+| a pond, a lake, 池, 湖, 池塘 | `--pond X,Y` or `--pond X,Y,R` (radius in metres, default 2.5; repeatable) |
+| a stream, a brook, a river, 小川, 川, 小溪, 小河 | `--stream X,Y:X,Y:…` (world points, upstream first; width `--stream-width 1.4`) |
+| rain on the water, 雨の波紋, 雨点 | `--rain 0.4` |
+| clear / blue / lotus / glacier / mountain / brown water, 澄んだ湖, 蓮池, 清澈的湖, 荷塘 | `--water-type CLEAR` (`SEASON CLEAR LOTUS GLACIER STREAM TEA`) |
+| a waterfall, 滝, 瀑布 | `--waterfall X,Y` or `--waterfall X,Y,H` (pool at X,Y, height H, default 2.4 m) |
+| a rock, a boulder, 岩, 石, 岩石 | `--rock X,Y` or `--rock X,Y,S` (size in metres; repeatable) |
+| koi, fish, 鯉, 魚, 锦鲤, 鱼 | `--koi 6` (in every pond) |
+| a boat, 小舟, ボート, 小船 | `--boat` (on the first pond) |
+| cloudy, overcast, 曇り, くもり, 阴天 | `--weather CLOUDY` |
+| rain, rainy, 雨, 下雨 | `--weather RAIN` (only in one place: `--rain-at X,Y,R`) |
+| storm, 嵐, 暴風雨, 暴风雨 | `--weather STORM` |
+| rainbow, 虹, 彩虹 | `--rainbow` (after rain: `--weather RAIN --rainbow`) |
+| dragonflies, トンボ, 蜻蜓 | `--dragonflies 10` |
+| fireflies, ホタル, 蛍, 萤火虫 | `--fireflies 200 --season NIGHT` (or `GOLDEN`) |
 | more / fewer trees, 木を増やして, 多种点树 | `--trees N` |
 | one big tree, 一本の木, 一棵大树 | `--tree ROUND --at 0,5 --tree-height 7` |
 | cherry tree, blossoms, 桜の木, 樱花树 | `--tree WIDE --blossom 0.55 --season SPRING` |

@@ -19,7 +19,22 @@ Options:
   --no-flowers          grass only
   --density N           grass tufts per m² (default 40)        --grass-height M   grass height in metres (0.35)
   --path X0,Y0:X1,Y1:…  paint a bare path through the meadow along these world points (width --path-width, 1.2 m)
-  --trees N             plant N trees over the meadow (mixed shapes, off the path)
+  --pond X,Y[,R]        a toon pond centred at X,Y (radius R, default 2.5 m); repeatable. It digs its own bed
+  --stream X0,Y0:X1,Y1:…  a toon stream through these world points, upstream first (width --stream-width 1.4 m);
+                        repeatable. It follows the meadow downhill and carves its channel
+  --rain F              raindrop ripples on all water, 0..1
+  --water-type T        SEASON CLEAR LOTUS GLACIER STREAM TEA, for every pond and stream
+  --waterfall X,Y[,H]   a waterfall whose plunge pool is at X,Y (height H, default 2.4 m), facing the camera
+  --rock X,Y[,S]        a mossy rock at X,Y (size S, default 1 m); repeatable
+  --koi N               N koi swimming in every pond (not the waterfall pools)
+  --boat                a small rowboat on the first pond
+  --weather W           CLEAR CLOUDY RAIN STORM (a layer over the season; Storm also doubles the wind)
+  --rain-at X,Y[,R]     rain only inside a circle at X,Y (radius R, default 8 m); implies --weather RAIN
+                        unless --weather STORM is given. Without it the rain follows the camera
+  --rainbow             a rainbow in the sky (the rain thins out and the sun comes back)
+  --fireflies N         N fireflies by the water (they glow at GOLDEN and NIGHT)
+  --dragonflies N       N dragonflies hovering and darting over the water (daytime)
+  --trees N             plant N trees over the meadow (mixed shapes, off the path and away from water)
   --tree SHAPE          add one tree: ROUND TALL WIDE BUSH CONIFER (repeatable; positions from --at, repeatable)
   --at X,Y              where the matching --tree stands (it is dropped onto the ground)
   --tree-height M       tree height in metres (default 5)        --blossom F   share of blossoms 0..1
@@ -207,7 +222,8 @@ def main():
         report = "reverted"
     else:
         job = ("--meadow", "--trees", "--tree", "--foliage", "--clouds", "--season", "--style", "--variation",
-               "--shuffle", "--set", "--wind", "--path", "--save", "--render")
+               "--shuffle", "--set", "--wind", "--path", "--pond", "--stream", "--rain", "--water-type", "--waterfall",
+               "--rock", "--koi", "--boat", "--weather", "--rain-at", "--rainbow", "--fireflies", "--dragonflies", "--save", "--render")
         if not any(a in argv for a in job):
             print("HARAPPA OK", "installed" if zip_path else "nothing to do")
             return
@@ -236,6 +252,60 @@ def main():
             if len(pts) < 2:
                 fail("--path needs at least two points X,Y:X,Y")
             paint_path(ground, pts, float(arg("--path-width", 1.2)))
+        for spec in args("--pond"):
+            if ground is None:
+                fail("--pond needs a meadow (add --meadow)")
+            v = [float(x) for x in spec.split(",")]
+            if len(v) < 2:
+                fail("--pond needs X,Y or X,Y,R")
+            scene.cursor.location = (v[0], v[1], 0.0)
+            bpy.ops.harappa.add_pond(radius=v[2] if len(v) > 2 else 2.5, seed=random.randint(0, 999))
+        for spec in args("--stream"):
+            if ground is None:
+                fail("--stream needs a meadow (add --meadow)")
+            pts = [tuple(float(x) for x in p.split(",")) for p in spec.split(":")]
+            if len(pts) < 2:
+                fail("--stream needs at least two points X,Y:X,Y")
+            import importlib
+            hw = importlib.import_module(H.__name__ + ".water")
+            hw.add_stream(ctx, [(p[0], p[1], 0.0) for p in pts], width=float(arg("--stream-width", 1.4)))
+        for spec in args("--waterfall"):
+            if ground is None:
+                fail("--waterfall needs a meadow (add --meadow)")
+            v = [float(x) for x in spec.split(",")]
+            scene.cursor.location = (v[0], v[1], 0.0)
+            bpy.ops.harappa.add_waterfall(height=v[2] if len(v) > 2 else 2.4, seed=random.randint(0, 999))
+        for spec in args("--rock"):
+            v = [float(x) for x in spec.split(",")]
+            scene.cursor.location = (v[0], v[1], 0.0)
+            bpy.ops.harappa.add_rock(size=v[2] if len(v) > 2 else 1.0)
+        if arg("--water-type"):
+            wt = arg("--water-type").upper()
+            import importlib
+            hw2 = importlib.import_module(H.__name__ + ".water")
+            if wt not in hw2.WATER_TYPES:
+                fail(f"unknown water type {wt!r} ({' '.join(hw2.WATER_TYPES)})")
+            for o in scene.objects:
+                if hw2.is_water(o):
+                    o.harappa_water.kind = wt
+        if arg("--rain") is not None:
+            s.water_rain = float(arg("--rain"))
+        import importlib
+        hw3 = importlib.import_module(H.__name__ + ".water")
+        ponds = [o for o in scene.objects if hw3.is_water(o) and o.get("hrp_pond") is not None
+                 and o.get("hrp_waterfall") is None]
+        if arg("--koi") is not None:
+            if not ponds:
+                fail("--koi needs a pond (add --pond)")
+            for p in ponds:
+                select_only(ctx, [p])
+                bpy.ops.harappa.add_fish(count=int(arg("--koi")))
+        if arg("--boat", flag=True):
+            if not ponds:
+                fail("--boat needs a pond (add --pond)")
+            select_only(ctx, [ponds[0]])
+            scene.cursor.location = ponds[0].matrix_world.translation
+            bpy.ops.harappa.add_boat()
         if arg("--foliage", flag=True):
             if not objs:
                 fail("--foliage needs --objects")
@@ -292,6 +362,26 @@ def main():
                             pass
         if not H._scene_ready(scene):
             H.setup_scene(ctx)
+        wth = (arg("--weather") or "").upper()
+        if wth and wth not in ("CLEAR", "CLOUDY", "RAIN", "STORM"):
+            fail(f"unknown weather {wth!r} (CLEAR CLOUDY RAIN STORM)")
+        if wth:
+            s.weather = wth
+        if arg("--rain-at"):
+            v = [float(x) for x in arg("--rain-at").split(",")]
+            if len(v) < 2:
+                fail("--rain-at needs X,Y or X,Y,R")
+            if s.weather not in ("RAIN", "STORM"):
+                s.weather = "RAIN"
+            s.rain_radius = v[2] if len(v) > 2 else 8.0
+            scene.cursor.location = (v[0], v[1], 0.0)
+            bpy.ops.harappa.rain_here()
+        if arg("--rainbow", flag=True):
+            s.rainbow = True
+        if arg("--fireflies") is not None:
+            s.firefly_count = int(arg("--fireflies"))
+        if arg("--dragonflies") is not None:
+            s.dragonfly_count = int(arg("--dragonflies"))
         n_trees = len([o for o in scene.objects if "hrp_tree" in o])
         report = (f"season {s.season}, style {s.style}, variation {s.variation}, "
                   f"{len([o for o in scene.objects if H.meadow_of(o)])} meadow(s), {n_trees} tree(s)")

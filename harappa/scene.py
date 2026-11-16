@@ -42,6 +42,13 @@ def setup_render(scene):
                 setattr(ee, attr, val)
             except (TypeError, AttributeError):
                 pass
+    try:                                                   # water mirrors the scene (screen-space rays)
+        ee.use_raytracing = True
+        ee.ray_tracing_method = "SCREEN"
+        ee.ray_tracing_options.resolution_scale = "1"
+        ee.ray_tracing_options.screen_trace_quality = 0.5
+    except (TypeError, AttributeError, KeyError):
+        pass
 
 
 def sky_world(scene, zenith="#4E9BD6", horizon="#DCEEF0", ground="#C9DFD8"):
@@ -119,6 +126,8 @@ def set_night(world, stars=0.0, moon=0.0, camera=None):
         d = _moon_direction(camera)
         for c, v in zip("XYZ", d):
             md.inputs[c].default_value = v
+        from . import water                                  # its glint on the ponds points the same way
+        water.drive_moon()
 
 
 def _moon_direction(camera):
@@ -190,5 +199,6 @@ def key_sun(scene, camera=None, elevation=42.0, side=-55.0, colour="#FFF6E6", st
     el = math.radians(elevation)
     to_light = Vector((math.cos(yaw) * math.cos(el), math.sin(yaw) * math.cos(el), math.sin(el)))
     sun.rotation_euler = to_light.to_track_quat("Z", "Y").to_euler()
+    sun["hrp_to_light"] = list(to_light)                     # (the water's moon glint reads it)
     shading.drive_light_scale(sun)
     return sun

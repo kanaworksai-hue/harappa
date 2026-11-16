@@ -17,7 +17,7 @@ import bpy
 from . import assets
 from .util import G, fresh_group, iface, srgb
 
-SHADER_VER = 24
+SHADER_VER = 34
 PALETTE = "HRP Palette"
 CLUMP = "HRP Clump Normal"
 CEL = "HRP Cel"
@@ -59,6 +59,27 @@ PALETTE_KEYS = {
     "flower_d": ("RGB", "#B79CFF"),
     "flower_centre": ("RGB", "#FFC531"),
     "flower_shade": ("RGB", "#B7B9E8"),     # multiplied in on the shadow side
+    # night life
+    "firefly_colour": ("RGB", "#E9FF8C"),
+    "fireflies": ("VALUE", 0.0),           # 0 by day, 1 at night
+    # rocks
+    "rock_lit": ("RGB", "#C8BBA0"),
+    "rock_lit2": ("RGB", "#C2B9A6"),
+    "rock_shadow": ("RGB", "#8D879C"),
+    "rock_deep": ("RGB", "#5F5B72"),
+    "rock_moss": ("VALUE", 0.6),
+    # water
+    "water_shallow": ("RGB", "#8CC7B0"),
+    "water_mid": ("RGB", "#3A97B8"),
+    "water_deep": ("RGB", "#2A5F8E"),
+    "water_foam": ("RGB", "#FFFFFF"),
+    "water_line": ("RGB", "#D2F7F4"),      # caustics and flow streaks
+    "water_sky": ("RGB", "#CFE9F5"),       # reflection at grazing angles
+    "water_shade": ("RGB", "#9AA6D8"),     # multiplied in where trees shade the water
+    "water_caustics": ("VALUE", 0.6),
+    "water_rain": ("VALUE", 0.0),          # share of rain-ripple cells that are active
+    "water_glints": ("VALUE", 1.0),
+    "water_glow": ("VALUE", 0.0),          # night: lines and water give off light
     # light & tone
     "sun_tint": ("RGB", "#FFFFFF"),
     "haze_colour": ("RGB", "#CFE6F2"),
@@ -311,8 +332,9 @@ def _haze(g, pal, x, y, color_sock, amount=1.0):
     return g.mixout(m)
 
 
-def _emit_out(g, color_sock, x, y, alpha=None, shadow_off=False, pal=None, haze=1.0):
-    """Emission of the cel colour (+ haze); optional alpha cut-out; optional 'no cast shadow'."""
+def _emit_out(g, color_sock, x, y, alpha=None, shadow_off=False, pal=None, haze=1.0, soft=False):
+    """Emission of the cel colour (+ haze); optional alpha cut-out (soft=True: real transparency, for blended
+    materials); optional 'no cast shadow'."""
     if pal is not None and (isinstance(haze, bpy.types.NodeSocket) or haze > 0):
         color_sock = _haze(g, pal, x, y, color_sock, haze)
     em = g.n("ShaderNodeEmission", x, y)
@@ -321,9 +343,12 @@ def _emit_out(g, color_sock, x, y, alpha=None, shadow_off=False, pal=None, haze=
     shader = em.outputs[0]
     if alpha is not None:
         tr = g.n("ShaderNodeBsdfTransparent", x, y + 150)
-        step = g.math("GREATER_THAN", x - 180, y + 250, alpha, 0.5)
         ms = g.n("ShaderNodeMixShader", x + 200, y + 50)
-        g.link(step, 0, ms, 0)
+        if soft:
+            g.links.new(alpha, ms.inputs[0])
+        else:
+            step = g.math("GREATER_THAN", x - 180, y + 250, alpha, 0.5)
+            g.link(step, 0, ms, 0)
         g.links.new(tr.outputs[0], ms.inputs[1])
         g.links.new(shader, ms.inputs[2])
         shader = ms.outputs[0]
@@ -357,9 +382,46 @@ def _grass_colours(g, pal, x, y, mask, pos):
     m2 = g.math("ADD", x + 360, y - 200, mask, g.out(me, 0))
     mf = g.maprange(x + 540, y - 200, g.out(m2, 0), 0.38, 0.5, smooth=True)
     f = g.out(mf, "Result")
-    lit = g.mix(x + 720, y + 200, fac=f, a=g.out(pal, "dirt_lit"), b=g.mixout(glit))
-    sh = g.mix(x + 720, y, fac=f, a=g.out(pal, "dirt_shadow"), b=g.out(pal, "grass_shadow"))
-    dp = g.mix(x + 720, y - 200, fac=f, a=g.out(pal, "dirt_deep"), b=g.out(pal, "grass_deep"))
+    # a water bank is wet earth, darker and greener towards the water line, not the pale path dirt
+    wet = g.out(g.n("ShaderNodeAttribute", x, y - 450, attribute_name="hrp_wet", attribute_type="GEOMETRY"), "Fac")
+    sdn = g.out(g.n("ShaderNodeAttribute", x, y - 600, attribute_name="hrp_sd", attribute_type="GEOMETRY"), "Fac")
+    wn_ = g.n("ShaderNodeTexNoise", x, y - 750, noise_dimensions="2D")
+    g.set(wn_, "Scale", 3.0)
+    g.links.new(pos, wn_.inputs["Vector"])
+    sdj = g.math("MULTIPLY_ADD", x + 180, y - 700, g.out(wn_, "Fac"), 0.3, g.math("SUBTRACT", x + 100, y - 600, sdn,
+                                                                                 0.15).outputs[0])
+    near = g.maprange(x + 360, y - 650, g.out(sdj, 0), 0.65, 0.0, smooth=True)
+    wf = g.math("MULTIPLY", x + 540, y - 550, wet, g.out(near, "Result"))
+    wf = g.math("MULTIPLY", x + 600, y - 500, g.out(wf, 0), 0.85).outputs[0]
+    dl = g.mixout(g.mix(x + 600, y + 350, "MULTIPLY", fac=wf, a=g.out(pal, "dirt_lit"), b=(0.6, 0.58, 0.46, 1.0)))
+    ds = g.mixout(g.mix(x + 600, y + 150, "MULTIPLY", fac=wf, a=g.out(pal, "dirt_shadow"), b=(0.66, 0.64, 0.52, 1.0)))
+    dd = g.mixout(g.mix(x + 600, y - 50, "MULTIPLY", fac=wf, a=g.out(pal, "dirt_deep"), b=(0.72, 0.7, 0.6, 1.0)))
+    # a steep bare face (a terrace or waterfall cliff) is rock, not a dirt slide
+    ngeo = g.n("ShaderNodeNewGeometry", x, y - 900)
+    nzz = g.n("ShaderNodeSeparateXYZ", x + 150, y - 900)
+    g.link(ngeo, "Normal", nzz, 0)
+    stp = g.maprange(x + 300, y - 900, g.out(nzz, "Z"), 0.78, 0.55, smooth=True)
+    stp = g.math("MULTIPLY", x + 450, y - 900, g.out(stp, "Result"), 0.9).outputs[0]
+    # ...with soft horizontal strata, so it reads as a rock face and not a sand bank
+    sv = g.n("ShaderNodeCombineXYZ", x + 150, y - 1100)
+    sps_ = g.n("ShaderNodeSeparateXYZ", x, y - 1100)
+    g.links.new(pos, sps_.inputs[0])
+    g.link(g.math("MULTIPLY", x + 80, y - 1050, g.out(sps_, "X"), 0.4), 0, sv, "X")
+    g.link(g.math("MULTIPLY", x + 80, y - 1100, g.out(sps_, "Y"), 0.4), 0, sv, "Y")
+    g.link(g.math("MULTIPLY", x + 80, y - 1150, g.out(sps_, "Z"), 5.0), 0, sv, "Z")
+    stn = g.n("ShaderNodeTexNoise", x + 300, y - 1100, noise_dimensions="3D")
+    g.set(stn, "Scale", 1.0)
+    g.set(stn, "Detail", 2.0)
+    g.link(sv, 0, stn, "Vector")
+    strata = g.maprange(x + 450, y - 1100, g.out(stn, "Fac"), 0.48, 0.56, smooth=True)
+    rlit = g.mixout(g.mix(x + 600, y - 1000, fac=g.math("MULTIPLY_ADD", x + 550, y - 1150, g.out(strata, "Result"),
+                          0.3, 0.6).outputs[0], a=g.out(pal, "rock_lit"), b=g.out(pal, "rock_shadow")))
+    dl = g.mixout(g.mix(x + 650, y + 450, fac=stp, a=dl, b=rlit))
+    ds = g.mixout(g.mix(x + 650, y + 250, fac=stp, a=ds, b=g.out(pal, "rock_shadow")))
+    dd = g.mixout(g.mix(x + 650, y + 50, fac=stp, a=dd, b=g.out(pal, "rock_deep")))
+    lit = g.mix(x + 720, y + 200, fac=f, a=dl, b=g.mixout(glit))
+    sh = g.mix(x + 720, y, fac=f, a=ds, b=g.out(pal, "grass_shadow"))
+    dp = g.mix(x + 720, y - 200, fac=f, a=dd, b=g.out(pal, "grass_deep"))
     return g.mixout(lit), g.mixout(sh), g.mixout(dp), f
 
 
