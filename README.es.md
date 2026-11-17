@@ -319,7 +319,7 @@ Complementos de Blender gratuitos y de código abierto del mismo autor. Todos fu
 
 <table>
 <tr>
-<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b> (esta página)<br><sub>Prados, árboles, flores y cielo de fondo de anime en un solo clic</sub></td>
+<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b> (esta página)<br><sub>Prados, árboles y cielo de fondo de anime, con estanques, cascadas y clima, en un solo clic</sub></td>
 <td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/senga-sketch"><img src="https://raw.githubusercontent.com/kanaworksai-hue/senga-sketch/main/docs/social_preview.png" width="300" alt="Senga Sketch"></a><br><b><a href="https://github.com/kanaworksai-hue/senga-sketch">Senga Sketch</a></b><br><sub>De 3D a dibujo de línea a tinta: tramado, lápiz, grabado, trama</sub></td>
 </tr>
 <tr>

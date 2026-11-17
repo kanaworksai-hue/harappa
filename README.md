@@ -319,7 +319,7 @@ Harappa を気に入ったら、[リポジトリのページ](https://github.com
 
 <table>
 <tr>
-<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b>（このページ）<br><sub>アニメ背景の原っぱ・木・花・空をワンクリックで</sub></td>
+<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b>（このページ）<br><sub>アニメ背景の原っぱ・木・空に、池・滝・天気までワンクリックで</sub></td>
 <td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/senga-sketch"><img src="https://raw.githubusercontent.com/kanaworksai-hue/senga-sketch/main/docs/social_preview.png" width="300" alt="Senga Sketch"></a><br><b><a href="https://github.com/kanaworksai-hue/senga-sketch">Senga Sketch</a></b><br><sub>3D をペンで描いた線画に。ハッチング・鉛筆・銅版画・トーン</sub></td>
 </tr>
 <tr>

@@ -319,7 +319,7 @@ Free, open-source Blender add-ons by the same author. Every one of them works wi
 
 <table>
 <tr>
-<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b> (this page)<br><sub>Anime-background meadows, trees, flowers and sky in one click</sub></td>
+<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b> (this page)<br><sub>Anime-background meadows, trees and sky, plus ponds, waterfalls and weather, in one click</sub></td>
 <td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/senga-sketch"><img src="https://raw.githubusercontent.com/kanaworksai-hue/senga-sketch/main/docs/social_preview.png" width="300" alt="Senga Sketch"></a><br><b><a href="https://github.com/kanaworksai-hue/senga-sketch">Senga Sketch</a></b><br><sub>3D into pen-and-ink line art: hatching, pencil, engraving, screentone</sub></td>
 </tr>
 <tr>

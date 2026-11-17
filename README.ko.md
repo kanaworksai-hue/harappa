@@ -319,7 +319,7 @@ Harappa가 마음에 드셨다면 [저장소 페이지](https://github.com/kanaw
 
 <table>
 <tr>
-<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b> (이 페이지)<br><sub>애니 배경풍 초원, 나무, 꽃, 하늘을 클릭 한 번으로</sub></td>
+<td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/harappa"><img src="docs/social_preview.png" width="300" alt="Harappa"></a><br><b>Harappa</b> (이 페이지)<br><sub>애니 배경풍 초원, 나무, 하늘에 연못, 폭포, 날씨까지 클릭 한 번으로</sub></td>
 <td align="center" width="50%"><a href="https://github.com/kanaworksai-hue/senga-sketch"><img src="https://raw.githubusercontent.com/kanaworksai-hue/senga-sketch/main/docs/social_preview.png" width="300" alt="Senga Sketch"></a><br><b><a href="https://github.com/kanaworksai-hue/senga-sketch">Senga Sketch</a></b><br><sub>3D를 펜화 선화로: 해칭, 연필, 판화, 스크린톤</sub></td>
 </tr>
 <tr>
